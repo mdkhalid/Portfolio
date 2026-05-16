@@ -1,0 +1,16 @@
+node_modules/
+.env
+dist/
+vite-err.log
+vite.log
+stderr.log
+stdout.log
+server/uploads/*.jpg
+server/uploads/*.jpeg
+server/uploads/*.png
+server/uploads/*.gif
+server/uploads/*.webp
+server/uploads/*.pdf
+server/uploads/*.doc
+server/uploads/*.docx
+server/uploads/*.txt

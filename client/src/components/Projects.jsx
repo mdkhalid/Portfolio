@@ -1,11 +1,24 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTheme } from '../context/ThemeContext'
-import { ExternalLink, X, ChevronRight } from 'lucide-react'
+import { ExternalLink, X, ChevronRight, Filter } from 'lucide-react'
 
 export default function Projects({ projects }) {
   const { dark } = useTheme()
   const [selected, setSelected] = useState(null)
+  const [activeTag, setActiveTag] = useState(null)
+
+  const allTags = useMemo(() => {
+    if (!projects?.length) return []
+    const tagSet = new Set()
+    projects.forEach(p => p.techStack?.forEach(t => tagSet.add(t)))
+    return [...tagSet].sort()
+  }, [projects])
+
+  const filtered = useMemo(() => {
+    if (!activeTag) return projects
+    return projects.filter(p => p.techStack?.includes(activeTag))
+  }, [projects, activeTag])
 
   if (!projects?.length) return null
 
@@ -22,32 +35,74 @@ export default function Projects({ projects }) {
           <p className={`text-lg ${dark ? 'text-gray-400' : 'text-gray-500'}`}>Featured work</p>
         </motion.div>
 
+        {/* Tag Filter */}
+        {allTags.length > 0 && (
+          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
+            className="flex flex-wrap items-center justify-center gap-2 mb-8">
+            <button onClick={() => setActiveTag(null)}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                !activeTag
+                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/25'
+                  : dark ? 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700' : 'bg-white text-gray-500 hover:text-gray-900 hover:bg-gray-50 border border-gray-200'
+              }`}>
+              All
+            </button>
+            {allTags.map(tag => (
+              <button key={tag} onClick={() => setActiveTag(tag === activeTag ? null : tag)}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                  activeTag === tag
+                    ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/25'
+                    : dark ? 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700' : 'bg-white text-gray-500 hover:text-gray-900 hover:bg-gray-50 border border-gray-200'
+                }`}>
+                {tag}
+              </button>
+            ))}
+          </motion.div>
+        )}
+
         <div className="grid md:grid-cols-2 gap-6">
-          {projects.map((p, i) => (
-            <motion.div key={p._id} initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-              transition={{ delay: i * 0.1 }}
-              onClick={() => setSelected(p)}
-              className={`p-6 rounded-2xl border cursor-pointer transition-all ${dark ? 'bg-gray-900 border-gray-700 hover:border-blue-500/50' : 'bg-white border-gray-200 hover:border-blue-400/50'} shadow-sm hover:shadow-lg group`}>
-              <div className="flex items-start justify-between mb-3">
-                <h3 className={`text-lg font-bold group-hover:text-blue-500 transition-colors ${dark ? 'text-gray-100' : 'text-gray-900'}`}>{p.name}</h3>
-                <ChevronRight size={18} className="opacity-0 group-hover:opacity-100 transition-opacity text-blue-500 flex-shrink-0 mt-1" />
-              </div>
-              <p className={`text-sm mb-3 line-clamp-2 ${dark ? 'text-gray-400' : 'text-gray-500'}`}>{p.description}</p>
-              <div className="flex flex-wrap gap-2">
-                {p.techStack?.slice(0, 5).map(t => (
-                  <span key={t} className={`px-2.5 py-1 rounded-lg text-xs font-medium ${dark ? 'bg-gray-800 text-gray-300' : 'bg-gray-200 text-gray-600'}`}>
-                    {t}
-                  </span>
-                ))}
-                {p.techStack?.length > 5 && (
-                  <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${dark ? 'bg-gray-800 text-gray-400' : 'bg-gray-200 text-gray-400'}`}>
-                    +{p.techStack.length - 5}
-                  </span>
-                )}
-              </div>
-            </motion.div>
-          ))}
+          <AnimatePresence mode="popLayout">
+            {filtered.map((p, i) => (
+              <motion.div key={p._id}
+                layout
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ delay: i * 0.05 }}
+                onClick={() => setSelected(p)}
+                className={`p-6 rounded-2xl border cursor-pointer transition-all ${dark ? 'bg-gray-900 border-gray-700 hover:border-blue-500/50' : 'bg-white border-gray-200 hover:border-blue-400/50'} shadow-sm hover:shadow-lg group`}>
+                <div className="flex items-start justify-between mb-3">
+                  <h3 className={`text-lg font-bold group-hover:text-blue-500 transition-colors ${dark ? 'text-gray-100' : 'text-gray-900'}`}>{p.name}</h3>
+                  <ChevronRight size={18} className="opacity-0 group-hover:opacity-100 transition-opacity text-blue-500 flex-shrink-0 mt-1" />
+                </div>
+                <p className={`text-sm mb-3 line-clamp-2 ${dark ? 'text-gray-400' : 'text-gray-500'}`}>{p.description}</p>
+                <div className="flex flex-wrap gap-2">
+                  {p.techStack?.slice(0, 5).map(t => (
+                    <span key={t} onClick={(e) => { e.stopPropagation(); setActiveTag(t === activeTag ? null : t) }}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
+                        activeTag === t
+                          ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                          : dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                      }`}>
+                      {t}
+                    </span>
+                  ))}
+                  {p.techStack?.length > 5 && (
+                    <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${dark ? 'bg-gray-800 text-gray-400' : 'bg-gray-200 text-gray-400'}`}>
+                      +{p.techStack.length - 5}
+                    </span>
+                  )}
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
+
+        {filtered.length === 0 && (
+          <p className={`text-center py-12 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
+            No projects match this filter.
+          </p>
+        )}
       </div>
 
       <AnimatePresence>
@@ -62,7 +117,7 @@ export default function Projects({ projects }) {
                 <div>
                   <h3 className={`text-2xl font-bold ${dark ? 'text-gray-100' : 'text-gray-900'}`}>{selected.name}</h3>
                   <p className={`text-sm ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
-                    {selected.role} · {selected.startDate} - {selected.endDate || 'Present'}
+                    {selected.role} &middot; {selected.startDate} - {selected.endDate || 'Present'}
                   </p>
                 </div>
                 <button onClick={() => setSelected(null)} className={`p-1.5 rounded-lg ${dark ? 'hover:bg-gray-800' : 'hover:bg-gray-100'}`}>

@@ -8,6 +8,7 @@ import Timeline from '../components/Timeline'
 import Projects from '../components/Projects'
 import Certifications from '../components/Certifications'
 import Contact from '../components/Contact'
+import SEO from '../components/SEO'
 
 export default function Home() {
   const [data, setData] = useState({ profile: {}, skills: [], experiences: [], education: [], certifications: [], projects: [], resumes: [] })
@@ -55,6 +56,11 @@ export default function Home() {
 
   return (
     <div>
+      <SEO
+        title={`${data.profile?.name || 'Mohammad Khalid'} - ${data.profile?.title || 'Portfolio'}`}
+        description={data.profile?.summary || 'Software Developer Portfolio showcasing projects, skills, and experience'}
+        image={data.profile?.avatar}
+      />
       <Navbar resumes={data.resumes} />
       <Hero profile={data.profile} resumes={data.resumes} />
       <Summary profile={data.profile} />

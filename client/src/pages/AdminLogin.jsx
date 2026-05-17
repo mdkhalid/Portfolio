@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { ArrowLeft, Sun, Moon } from 'lucide-react'
 import { motion } from 'framer-motion'
+import SEO from '../components/SEO'
 
 export default function AdminLogin() {
   const [username, setUsername] = useState('')
@@ -25,6 +26,7 @@ export default function AdminLogin() {
 
   return (
     <div className={`min-h-screen flex items-center justify-center relative overflow-hidden ${dark ? 'bg-gray-900' : 'bg-gray-50'}`}>
+      <SEO title="Admin Login - Mohammad Khalid Portfolio" description="Sign in to manage your portfolio" />
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500/20 rounded-full blur-3xl" />
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-emerald-500/20 rounded-full blur-3xl" />

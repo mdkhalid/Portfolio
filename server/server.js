@@ -12,6 +12,9 @@ const certificationsCtrl = require('./routes/certifications');
 const projectsCtrl = require('./routes/projects');
 const resumeCtrl = require('./routes/resumes');
 const analyticsCtrl = require('./routes/analytics');
+const contactCtrl = require('./routes/contact');
+const messagesCtrl = require('./routes/messages');
+const { authLimiter, contactLimiter, resumeLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
 app.use(cors());
@@ -20,6 +23,12 @@ app.use(express.json());
 connectDB();
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Rate-limited resume download
+app.get('/api/download-resume/:filename', resumeLimiter, (req, res) => {
+  const file = path.join(__dirname, 'uploads', req.params.filename);
+  res.download(file);
+});
 
 // Public routes
 app.get('/api/profile', profileCtrl.getAll);
@@ -30,9 +39,10 @@ app.get('/api/certifications', certificationsCtrl.getAll);
 app.get('/api/projects', projectsCtrl.getAll);
 app.get('/api/resumes', resumeCtrl.getAll);
 app.post('/api/analytics/track', analyticsCtrl.track);
+app.post('/api/contact', contactLimiter, contactCtrl.send);
 
 // Auth
-app.use('/api/auth', require('./routes/auth'));
+app.use('/api/auth', authLimiter, require('./routes/auth'));
 
 app.use('/api/upload', auth, require('./routes/upload'));
 app.use('/api/resume-files', auth, require('./routes/upload-resume'));
@@ -55,6 +65,9 @@ app.post('/api/projects', auth, projectsCtrl.create);
 app.put('/api/projects/:id', auth, projectsCtrl.update);
 app.delete('/api/projects/:id', auth, projectsCtrl.remove);
 app.get('/api/analytics/stats', auth, analyticsCtrl.stats);
+app.get('/api/messages', auth, messagesCtrl.getAll);
+app.put('/api/messages/:id/read', auth, messagesCtrl.markRead);
+app.delete('/api/messages/:id', auth, messagesCtrl.remove);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

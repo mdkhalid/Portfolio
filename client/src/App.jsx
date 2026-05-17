@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import Home from './pages/Home'
+import ResumePage from './pages/ResumePage'
 import AdminLogin from './pages/AdminLogin'
 import AdminDashboard from './pages/AdminDashboard'
 
@@ -14,6 +15,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Home />} />
+      <Route path="/resume" element={<ResumePage />} />
       <Route path="/admin" element={<AdminLogin />} />
       <Route path="/admin/dashboard" element={
         <ProtectedRoute>

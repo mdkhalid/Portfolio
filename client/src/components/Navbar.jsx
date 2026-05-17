@@ -1,7 +1,7 @@
 import { useTheme } from '../context/ThemeContext'
-import { Sun, Moon, Menu, X, Download } from 'lucide-react'
+import { Sun, Moon, Menu, X, Download, FileText } from 'lucide-react'
 import { useState, useEffect } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 
 const links = [
@@ -17,6 +17,7 @@ export default function Navbar({ resumes }) {
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const { pathname } = useLocation()
+  const navigate = useNavigate()
   const isHome = pathname === '/'
 
   useEffect(() => {
@@ -58,12 +59,12 @@ export default function Navbar({ resumes }) {
                 {l.label}
               </button>
             ))}
-            {resumes?.length > 0 && resumes.map(r => (
-              <a key={r._id} href={`/api/download-resume/${r.fileUrl.split('/').pop()}`} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600 shadow-sm">
-                <Download size={14} /> {r.label}
-              </a>
-            ))}
+            <button
+              onClick={() => navigate('/resume')}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all bg-gradient-to-r from-blue-600 to-cyan-500 text-white hover:from-blue-700 hover:to-cyan-600 shadow-sm"
+            >
+              <FileText size={14} /> Resume
+            </button>
             <button onClick={toggle} className={`p-2 rounded-full transition-colors ${dark ? 'bg-gray-800 text-yellow-400 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
               {dark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
@@ -127,24 +128,14 @@ export default function Navbar({ resumes }) {
                   </motion.button>
                 ))}
 
-                {resumes?.length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-800">
-                    {resumes.map((r, i) => (
-                      <motion.a
-                        key={r._id}
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: (links.length + i) * 0.05 }}
-                        href={`/api/download-resume/${r.fileUrl.split('/').pop()}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={() => setOpen(false)}
-                        className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 transition-all">
-                        <Download size={16} /> {r.label}
-                      </motion.a>
-                    ))}
-                  </div>
-                )}
+                <motion.button
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: links.length * 0.05 }}
+                  onClick={() => { setOpen(false); navigate('/resume'); }}
+                  className="w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all bg-gradient-to-r from-blue-600 to-cyan-500 text-white hover:from-blue-700 hover:to-cyan-600">
+                  <FileText size={16} /> View Resume
+                </motion.button>
               </div>
             </motion.div>
           </>

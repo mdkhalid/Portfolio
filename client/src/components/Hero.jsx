@@ -1,9 +1,11 @@
 import { motion } from 'framer-motion'
-import { ArrowDown, Globe, Link2, Mail } from 'lucide-react'
+import { ArrowDown, Globe, Link2, Mail, FileText } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
+import { useNavigate } from 'react-router-dom'
 
 export default function Hero({ profile }) {
   const { dark } = useTheme()
+  const navigate = useNavigate()
 
   const scrollTo = (id) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
 
@@ -56,6 +58,10 @@ export default function Hero({ profile }) {
           <button onClick={() => scrollTo('projects')}
             className={`px-6 py-3 rounded-xl font-medium border-2 transition-all ${dark ? 'border-gray-700 text-gray-300 hover:border-gray-500' : 'border-gray-300 text-gray-600 hover:border-gray-400'}`}>
             View Projects
+          </button>
+          <button onClick={() => navigate('/resume')}
+            className="px-6 py-3 rounded-xl font-medium border-2 border-emerald-500 text-emerald-500 hover:bg-emerald-500 hover:text-white transition-all flex items-center gap-2">
+            <FileText size={18} /> View Resume
           </button>
         </motion.div>
 

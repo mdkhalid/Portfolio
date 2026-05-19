@@ -4,6 +4,7 @@ import Home from './pages/Home'
 import ResumePage from './pages/ResumePage'
 import AdminLogin from './pages/AdminLogin'
 import AdminDashboard from './pages/AdminDashboard'
+import ChatPage from './pages/ChatPage'
 
 function ProtectedRoute({ children }) {
   const { isAdmin } = useAuth()
@@ -22,6 +23,7 @@ export default function App() {
           <AdminDashboard />
         </ProtectedRoute>
       } />
+      <Route path="/chat" element={<ChatPage />} />
     </Routes>
   )
 }

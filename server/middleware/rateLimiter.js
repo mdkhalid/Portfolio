@@ -27,4 +27,13 @@ const resumeLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-module.exports = { authLimiter, contactLimiter, resumeLimiter };
+// Chat: 20 messages per 15 minutes per IP
+const chatLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: 'Too many chat messages. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+module.exports = { authLimiter, contactLimiter, resumeLimiter, chatLimiter };

@@ -14,7 +14,8 @@ const resumeCtrl = require('./routes/resumes');
 const analyticsCtrl = require('./routes/analytics');
 const contactCtrl = require('./routes/contact');
 const messagesCtrl = require('./routes/messages');
-const { authLimiter, contactLimiter, resumeLimiter } = require('./middleware/rateLimiter');
+const chatCtrl = require('./routes/chat');
+const { authLimiter, contactLimiter, resumeLimiter, chatLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
 app.use(cors());
@@ -40,6 +41,9 @@ app.get('/api/projects', projectsCtrl.getAll);
 app.get('/api/resumes', resumeCtrl.getAll);
 app.post('/api/analytics/track', analyticsCtrl.track);
 app.post('/api/contact', contactLimiter, contactCtrl.send);
+
+// AI Chat
+app.post('/api/chat', chatLimiter, chatCtrl.chat);
 
 // Auth
 app.use('/api/auth', authLimiter, require('./routes/auth'));

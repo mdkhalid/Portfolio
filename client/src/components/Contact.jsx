@@ -109,7 +109,7 @@ export default function Contact({ profile }) {
               )}
 
               <button type="submit" disabled={status === 'sending'}
-                className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-white font-medium bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50">
+                className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-white font-medium bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">
                 {status === 'sending' ? (
                   <><Loader2 size={18} className="animate-spin" /> Sending...</>
                 ) : status === 'sent' ? (

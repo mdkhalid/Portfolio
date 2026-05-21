@@ -5,6 +5,7 @@ import ResumePage from './pages/ResumePage'
 import AdminLogin from './pages/AdminLogin'
 import AdminDashboard from './pages/AdminDashboard'
 import ChatPage from './pages/ChatPage'
+import ScrollToTop from './components/ScrollToTop'
 
 function ProtectedRoute({ children }) {
   const { isAdmin } = useAuth()
@@ -14,7 +15,9 @@ function ProtectedRoute({ children }) {
 
 export default function App() {
   return (
-    <Routes>
+    <>
+      <ScrollToTop />
+      <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/resume" element={<ResumePage />} />
       <Route path="/admin" element={<AdminLogin />} />
@@ -25,5 +28,6 @@ export default function App() {
       } />
       <Route path="/chat" element={<ChatPage />} />
     </Routes>
+    </>
   )
 }

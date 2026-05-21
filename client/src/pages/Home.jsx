@@ -54,6 +54,9 @@ export default function Home() {
     )
   }
 
+  const { visibleSections = {} } = data.profile || {}
+  const show = (key) => visibleSections[key] !== false
+
   return (
     <div>
       <SEO
@@ -61,14 +64,17 @@ export default function Home() {
         description={data.profile?.summary || 'Software Developer Portfolio showcasing projects, skills, and experience'}
         image={data.profile?.avatar}
       />
-      <Navbar resumes={data.resumes} />
-      <Hero profile={data.profile} resumes={data.resumes} />
-      <Summary profile={data.profile} />
-      <Skills skills={data.skills} />
-      <Timeline experiences={data.experiences} education={data.education} />
-      <Projects projects={data.projects} />
-      <Certifications certifications={data.certifications} />
-      <Contact profile={data.profile} />
+      {show('navbar') && <Navbar resumes={data.resumes} />}
+      {show('hero') && <Hero profile={data.profile} resumes={data.resumes} />}
+      {show('summary') && <Summary profile={data.profile} />}
+      {show('skills') && <Skills skills={data.skills} />}
+      {(show('experience') || show('education')) && <Timeline
+        experiences={show('experience') ? data.experiences : []}
+        education={show('education') ? data.education : []}
+      />}
+      {show('projects') && <Projects projects={data.projects} />}
+      {show('certifications') && <Certifications certifications={data.certifications} />}
+      {show('contact') && <Contact profile={data.profile} />}
     </div>
   )
 }

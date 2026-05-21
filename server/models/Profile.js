@@ -11,6 +11,20 @@ const profileSchema = new mongoose.Schema({
   summary: { type: String, default: '' },
   avatar: { type: String, default: '' },
   experienceYears: { type: Number, default: 18 },
+  visibleSections: {
+    type: Object,
+    default: {
+      navbar: true,
+      hero: true,
+      summary: true,
+      skills: true,
+      experience: true,
+      education: true,
+      projects: true,
+      certifications: true,
+      contact: true,
+    },
+  },
 });
 
 module.exports = mongoose.model('Profile', profileSchema);

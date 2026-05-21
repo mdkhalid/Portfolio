@@ -57,13 +57,13 @@ export default function Navbar({ resumes }) {
           <div className="hidden md:flex items-center gap-6">
             {links.map(l => (
               <button key={l.href} onClick={() => scrollTo(l.href)}
-                className={`text-sm font-medium transition-colors ${dark ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>
+                className={`text-sm font-medium transition-colors cursor-pointer ${dark ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>
                 {l.label}
               </button>
             ))}
             <button
               onClick={() => navigate('/chat')}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${
                 dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
@@ -71,22 +71,22 @@ export default function Navbar({ resumes }) {
             </button>
             <button
               onClick={() => navigate('/resume')}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all bg-gradient-to-r from-blue-600 to-cyan-500 text-white hover:from-blue-700 hover:to-cyan-600 shadow-sm"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all bg-gradient-to-r from-blue-600 to-cyan-500 text-white hover:from-blue-700 hover:to-cyan-600 shadow-sm cursor-pointer"
             >
               <FileText size={14} /> Resume
             </button>
-            <button onClick={toggle} className={`p-2 rounded-full transition-colors ${dark ? 'bg-gray-800 text-yellow-400 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+            <button onClick={toggle} className={`p-2 rounded-full transition-colors cursor-pointer ${dark ? 'bg-gray-800 text-yellow-400 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
               {dark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
           </div>
 
           {/* Mobile hamburger */}
           <div className="flex md:hidden items-center gap-2">
-            <button onClick={toggle} className={`p-2 rounded-full transition-colors ${dark ? 'bg-gray-800 text-yellow-400' : 'bg-gray-100 text-gray-600'}`}>
+            <button onClick={toggle} className={`p-2 rounded-full transition-colors cursor-pointer ${dark ? 'bg-gray-800 text-yellow-400' : 'bg-gray-100 text-gray-600'}`}>
               {dark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
             <button onClick={() => setOpen(!open)}
-              className={`p-2 rounded-lg transition-colors ${dark ? 'text-gray-300 hover:bg-gray-800' : 'text-gray-600 hover:bg-gray-100'}`}>
+              className={`p-2 rounded-lg transition-colors cursor-pointer ${dark ? 'text-gray-300 hover:bg-gray-800' : 'text-gray-600 hover:bg-gray-100'}`}>
               {open ? <X size={22} /> : <Menu size={22} />}
             </button>
           </div>
@@ -118,7 +118,7 @@ export default function Navbar({ resumes }) {
                   Menu
                 </span>
                 <button onClick={() => setOpen(false)}
-                  className={`p-2 rounded-lg transition-colors ${dark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-100'}`}>
+                  className={`p-2 rounded-lg transition-colors cursor-pointer ${dark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-100'}`}>
                   <X size={20} />
                 </button>
               </div>
@@ -131,7 +131,7 @@ export default function Navbar({ resumes }) {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.05 }}
                     onClick={() => scrollTo(l.href)}
-                    className={`w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                    className={`w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all cursor-pointer ${
                       dark ? 'text-gray-300 hover:bg-gray-800 hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                     }`}>
                     {l.label}
@@ -154,7 +154,7 @@ export default function Navbar({ resumes }) {
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: (links.length + 1) * 0.05 }}
                   onClick={() => { setOpen(false); navigate('/resume'); }}
-                  className="w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all bg-gradient-to-r from-blue-600 to-cyan-500 text-white hover:from-blue-700 hover:to-cyan-600">
+                  className="w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all bg-gradient-to-r from-blue-600 to-cyan-500 text-white hover:from-blue-700 hover:to-cyan-600 cursor-pointer">
                   <FileText size={16} /> View Resume
                 </motion.button>
               </div>

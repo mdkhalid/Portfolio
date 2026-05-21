@@ -65,7 +65,7 @@ export default function ResumePage() {
         <div className="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
           <button 
             onClick={() => window.history.back()} 
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${dark ? 'text-gray-300 hover:bg-gray-800' : 'text-gray-600 hover:bg-gray-100'}`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer ${dark ? 'text-gray-300 hover:bg-gray-800' : 'text-gray-600 hover:bg-gray-100'}`}
           >
             <ArrowLeft size={18} /> Back
           </button>
@@ -83,7 +83,7 @@ export default function ResumePage() {
             ))}
             <button
               onClick={handlePrint}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${dark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer ${dark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
             >
               <Printer size={16} /> Print
             </button>

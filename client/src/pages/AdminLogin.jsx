@@ -32,10 +32,10 @@ export default function AdminLogin() {
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-emerald-500/20 rounded-full blur-3xl" />
       </div>
 
-      <button onClick={toggle} className={`absolute top-4 right-4 p-2.5 rounded-full transition-colors z-10 ${dark ? 'bg-gray-800 text-yellow-400' : 'bg-white text-gray-600 shadow-md'}`}>
+      <button onClick={toggle} className={`absolute top-4 right-4 p-2.5 rounded-full transition-colors z-10 cursor-pointer ${dark ? 'bg-gray-800 text-yellow-400' : 'bg-white text-gray-600 shadow-md'}`}>
         {dark ? <Sun size={18} /> : <Moon size={18} />}
       </button>
-      <button onClick={() => navigate('/')} className={`absolute top-4 left-4 p-2.5 rounded-full transition-colors z-10 ${dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-white text-gray-600 shadow-md hover:bg-gray-50'}`}>
+      <button onClick={() => navigate('/')} className={`absolute top-4 left-4 p-2.5 rounded-full transition-colors z-10 cursor-pointer ${dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-white text-gray-600 shadow-md hover:bg-gray-50'}`}>
         <ArrowLeft size={18} />
       </button>
 
@@ -60,7 +60,7 @@ export default function AdminLogin() {
           </div>
           {error && <p className="text-blue-500 text-sm text-center">{error}</p>}
           <button type="submit"
-            className="w-full py-2.5 rounded-lg text-white font-medium bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all shadow-lg shadow-blue-500/25">
+            className="w-full py-2.5 rounded-lg text-white font-medium bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all shadow-lg shadow-blue-500/25 cursor-pointer">
             Sign In
           </button>
         </form>

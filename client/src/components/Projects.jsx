@@ -40,7 +40,7 @@ export default function Projects({ projects }) {
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
             className="flex flex-wrap items-center justify-center gap-2 mb-8">
             <button onClick={() => setActiveTag(null)}
-              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer ${
                 !activeTag
                   ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/25'
                   : dark ? 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700' : 'bg-white text-gray-500 hover:text-gray-900 hover:bg-gray-50 border border-gray-200'
@@ -49,7 +49,7 @@ export default function Projects({ projects }) {
             </button>
             {allTags.map(tag => (
               <button key={tag} onClick={() => setActiveTag(tag === activeTag ? null : tag)}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer ${
                   activeTag === tag
                     ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/25'
                     : dark ? 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700' : 'bg-white text-gray-500 hover:text-gray-900 hover:bg-gray-50 border border-gray-200'
@@ -120,7 +120,7 @@ export default function Projects({ projects }) {
                     {selected.role} &middot; {selected.startDate} - {selected.endDate || 'Present'}
                   </p>
                 </div>
-                <button onClick={() => setSelected(null)} className={`p-1.5 rounded-lg ${dark ? 'hover:bg-gray-800' : 'hover:bg-gray-100'}`}>
+                <button onClick={() => setSelected(null)} className={`p-1.5 rounded-lg cursor-pointer ${dark ? 'hover:bg-gray-800' : 'hover:bg-gray-100'}`}>
                   <X size={20} />
                 </button>
               </div>

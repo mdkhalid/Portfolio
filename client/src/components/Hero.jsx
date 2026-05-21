@@ -52,15 +52,15 @@ export default function Hero({ profile }) {
         <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.4 }}
           className="flex items-center justify-center gap-4 flex-wrap">
           <button onClick={() => scrollTo('contact')}
-            className="px-6 py-3 rounded-xl text-white font-medium bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all shadow-lg shadow-blue-500/25">
+            className="px-6 py-3 rounded-xl text-white font-medium bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all shadow-lg shadow-blue-500/25 cursor-pointer">
             Get In Touch
           </button>
           <button onClick={() => scrollTo('projects')}
-            className={`px-6 py-3 rounded-xl font-medium border-2 transition-all ${dark ? 'border-gray-700 text-gray-300 hover:border-gray-500' : 'border-gray-300 text-gray-600 hover:border-gray-400'}`}>
+            className={`px-6 py-3 rounded-xl font-medium border-2 transition-all cursor-pointer ${dark ? 'border-gray-700 text-gray-300 hover:border-gray-500' : 'border-gray-300 text-gray-600 hover:border-gray-400'}`}>
             View Projects
           </button>
           <button onClick={() => navigate('/resume')}
-            className="px-6 py-3 rounded-xl font-medium border-2 border-emerald-500 text-emerald-500 hover:bg-emerald-500 hover:text-white transition-all flex items-center gap-2">
+            className="px-6 py-3 rounded-xl font-medium border-2 border-emerald-500 text-emerald-500 hover:bg-emerald-500 hover:text-white transition-all flex items-center gap-2 cursor-pointer">
             <FileText size={18} /> View Resume
           </button>
         </motion.div>
@@ -88,7 +88,7 @@ export default function Hero({ profile }) {
 
       <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.2 }}
         onClick={() => scrollTo('summary')}
-        className={`absolute bottom-8 left-1/2 -translate-x-1/2 p-2 rounded-full animate-bounce ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
+        className={`absolute bottom-8 left-1/2 -translate-x-1/2 p-2 rounded-full animate-bounce cursor-pointer ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
         <ArrowDown size={24} />
       </motion.button>
     </section>

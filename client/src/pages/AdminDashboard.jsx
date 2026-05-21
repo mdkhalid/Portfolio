@@ -86,9 +86,21 @@ export default function AdminDashboard() {
     } catch (err) { console.error(err) }
   }
 
+  const sections = [
+    { key: 'navbar', label: 'Navbar' },
+    { key: 'hero', label: 'Hero' },
+    { key: 'summary', label: 'Summary' },
+    { key: 'skills', label: 'Skills' },
+    { key: 'experience', label: 'Experience' },
+    { key: 'education', label: 'Education' },
+    { key: 'projects', label: 'Projects' },
+    { key: 'certifications', label: 'Certifications' },
+    { key: 'contact', label: 'Contact' },
+  ]
+
   const ProfileForm = () => {
     const p = data.profile || {}
-    const [form, setForm] = useState({ name: p.name || '', email: p.email || '', phone: p.phone || '', location: p.location || '', linkedIn: p.linkedIn || '', github: p.github || '', title: p.title || '', summary: p.summary || '', avatar: p.avatar || '', experienceYears: p.experienceYears || 18 })
+    const [form, setForm] = useState({ name: p.name || '', email: p.email || '', phone: p.phone || '', location: p.location || '', linkedIn: p.linkedIn || '', github: p.github || '', title: p.title || '', summary: p.summary || '', avatar: p.avatar || '', experienceYears: p.experienceYears || 18, visibleSections: p.visibleSections || {} })
     const [uploading, setUploading] = useState(false)
 
     const handleAvatarUpload = async (e) => {
@@ -135,7 +147,7 @@ export default function AdminDashboard() {
                     <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" disabled={uploading} />
                   </label>
                   {form.avatar && (
-                    <button onClick={() => setForm({ ...form, avatar: '' })} className={'p-2 rounded-lg text-sm ' + (dark ? 'text-red-400 hover:bg-gray-700' : 'text-red-600 hover:bg-gray-100')}>
+                    <button onClick={() => setForm({ ...form, avatar: '' })} className={'p-2 rounded-lg text-sm cursor-pointer ' + (dark ? 'text-red-400 hover:bg-gray-700' : 'text-red-600 hover:bg-gray-100')}>
                       <Trash2 size={16} />
                     </button>
                   )}
@@ -147,8 +159,33 @@ export default function AdminDashboard() {
             </div>
           ))}
         </div>
+        <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+          <h3 className="text-sm font-semibold mb-4 uppercase tracking-wider text-gray-400">Section Visibility</h3>
+          <p className={'text-xs mb-4 ' + (dark ? 'text-gray-500' : 'text-gray-400')}>Toggle sections to show/hide on the portfolio homepage</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {sections.map(s => {
+              const visible = form.visibleSections?.[s.key] !== false
+              return (
+                <button key={s.key} onClick={() => setForm({ ...form, visibleSections: { ...form.visibleSections, [s.key]: !visible } })}
+                  className={'flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition-all cursor-pointer ' + (
+                    visible
+                      ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white border-transparent shadow-lg shadow-blue-500/25'
+                      : (dark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300')
+                  )}>
+                  <div className={'w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-all ' + (
+                    visible ? 'border-white bg-white' : (dark ? 'border-gray-500' : 'border-gray-300')
+                  )}>
+                    {visible && <div className="w-1.5 h-1.5 rounded-full bg-blue-600" />}
+                  </div>
+                  {s.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
         <button onClick={handleSave} disabled={saving}
-          className="px-6 py-2.5 rounded-lg text-white font-medium bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50">
+          className="px-6 py-2.5 rounded-lg text-white font-medium bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">
           {saving ? 'Saving...' : 'Save Profile'}
         </button>
       </div>
@@ -165,9 +202,9 @@ export default function AdminDashboard() {
               <h4 className="font-semibold">{cat.category}</h4>
               <div className="flex gap-1">
                 <button onClick={() => setEditing({ collection: 'skills', id: cat._id, data: cat })}
-                  className={'p-1.5 rounded-lg ' + (dark ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-200 text-blue-600')}><Edit3 size={14} /></button>
+                  className={'p-1.5 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-200 text-blue-600')}><Edit3 size={14} /></button>
                 <button onClick={() => deleteItem('skills', cat._id)}
-                  className={'p-1.5 rounded-lg ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}><Trash2 size={14} /></button>
+                  className={'p-1.5 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}><Trash2 size={14} /></button>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -180,7 +217,7 @@ export default function AdminDashboard() {
           </div>
         ))}
         <button onClick={() => setEditing({ collection: 'skills', id: null })}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all">
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all cursor-pointer">
           <Plus size={16} /> Add Category
         </button>
       </div>
@@ -203,15 +240,15 @@ export default function AdminDashboard() {
               </div>
               <div className="flex gap-1 flex-shrink-0">
                 <button onClick={() => setEditing({ collection, id: item._id, data: item })}
-                  className={'p-2 rounded-lg ' + (dark ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-200 text-blue-600')}><Edit3 size={16} /></button>
+                  className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-200 text-blue-600')}><Edit3 size={16} /></button>
                 <button onClick={() => deleteItem(collection, item._id)}
-                  className={'p-2 rounded-lg ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}><Trash2 size={16} /></button>
+                  className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}><Trash2 size={16} /></button>
               </div>
             </div>
           </div>
         ))}
         <button onClick={() => setEditing({ collection, id: null })}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all">
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all cursor-pointer">
           <Plus size={16} /> Add New
         </button>
       </div>
@@ -231,15 +268,15 @@ export default function AdminDashboard() {
               </div>
               <div className="flex gap-1 flex-shrink-0">
                 <button onClick={() => setEditing({ collection: 'resumes', id: item._id, data: item })}
-                  className={'p-2 rounded-lg ' + (dark ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-200 text-blue-600')}><Edit3 size={16} /></button>
+                  className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-200 text-blue-600')}><Edit3 size={16} /></button>
                 <button onClick={() => deleteItem('resumes', item._id)}
-                  className={'p-2 rounded-lg ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}><Trash2 size={16} /></button>
+                  className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}><Trash2 size={16} /></button>
               </div>
             </div>
           </div>
         ))}
         <button onClick={() => setEditing({ collection: 'resumes', id: null })}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all">
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all cursor-pointer">
           <Plus size={16} /> Add Resume
         </button>
       </div>
@@ -282,7 +319,7 @@ export default function AdminDashboard() {
                 </p>
               </div>
               <button onClick={(e) => { e.stopPropagation(); deleteMessage(msg._id) }}
-                className={'p-2 rounded-lg flex-shrink-0 ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}>
+                className={'p-2 rounded-lg flex-shrink-0 cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}>
                 <Trash2 size={16} />
               </button>
             </div>
@@ -401,7 +438,7 @@ export default function AdminDashboard() {
           className={'w-full max-w-lg p-6 rounded-2xl max-h-[80vh] overflow-y-auto ' + (dark ? 'bg-gray-900 border border-gray-700' : 'bg-white')}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold">{id ? 'Edit' : 'Add'} {collection}</h3>
-            <button onClick={() => setEditing(null)} className={'p-1.5 rounded-lg ' + (dark ? 'hover:bg-gray-800' : 'hover:bg-gray-100')}><X size={18} /></button>
+            <button onClick={() => setEditing(null)} className={'p-1.5 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-800' : 'hover:bg-gray-100')}><X size={18} /></button>
           </div>
           <div className="space-y-3">
             {fields.map(f => (
@@ -435,11 +472,11 @@ export default function AdminDashboard() {
                     }}
                       className={'w-20 px-3 py-2 rounded-lg border outline-none focus:ring-2 focus:ring-blue-500/50 ' + (dark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-900')} />
                     <button onClick={() => setForm({ ...form, items: form.items.filter((_, j) => j !== i) })}
-                      className={'p-2 rounded-lg ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}><X size={14} /></button>
+                      className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}><X size={14} /></button>
                   </div>
                 ))}
                 <button onClick={() => setForm({ ...form, items: [...(form.items || []), { name: '', level: 50 }] })}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all">
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all cursor-pointer">
                   <Plus size={14} /> Add Skill
                 </button>
               </div>
@@ -466,9 +503,9 @@ export default function AdminDashboard() {
             )}
           </div>
           <div className="flex justify-end gap-3 mt-6">
-            <button onClick={() => setEditing(null)} className={'px-4 py-2 rounded-lg text-sm font-medium ' + (dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>Cancel</button>
+            <button onClick={() => setEditing(null)} className={'px-4 py-2 rounded-lg text-sm font-medium cursor-pointer ' + (dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>Cancel</button>
             <button onClick={handleSave} disabled={saving}
-              className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50">
+              className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">
               {saving ? 'Saving...' : 'Save'}
             </button>
           </div>
@@ -498,10 +535,10 @@ export default function AdminDashboard() {
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <h1 className="text-lg font-bold bg-gradient-to-r from-blue-600 via-cyan-500 to-emerald-500 bg-clip-text text-transparent">Portfolio Admin</h1>
           <div className="flex items-center gap-3">
-            <button onClick={toggle} className={'p-2 rounded-full ' + (dark ? 'bg-gray-800 text-yellow-400' : 'bg-gray-100 text-gray-600')}>
+            <button onClick={toggle} className={'p-2 rounded-full cursor-pointer ' + (dark ? 'bg-gray-800 text-yellow-400' : 'bg-gray-100 text-gray-600')}>
               {dark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-            <button onClick={handleLogout} className={'flex items-center gap-2 px-3 py-2 rounded-lg text-sm ' + (dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
+            <button onClick={handleLogout} className={'flex items-center gap-2 px-3 py-2 rounded-lg text-sm cursor-pointer ' + (dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
               <LogOut size={16} /> Logout
             </button>
           </div>
@@ -514,7 +551,7 @@ export default function AdminDashboard() {
             const Icon = tab.icon
             return (
               <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-                className={'flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ' + (activeTab === tab.key
+                className={'flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer ' + (activeTab === tab.key
                   ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/25'
                   : (dark ? 'text-gray-400 hover:bg-gray-800 hover:text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'))}>
                 <Icon size={18} />
@@ -530,7 +567,7 @@ export default function AdminDashboard() {
               const Icon = tab.icon
               return (
                 <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-                  className={'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ' + (activeTab === tab.key
+                  className={'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all cursor-pointer ' + (activeTab === tab.key
                     ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white'
                     : (dark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'))}>
                   <Icon size={16} />

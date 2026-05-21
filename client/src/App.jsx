@@ -5,6 +5,7 @@ import ResumePage from './pages/ResumePage'
 import AdminLogin from './pages/AdminLogin'
 import AdminDashboard from './pages/AdminDashboard'
 import ChatPage from './pages/ChatPage'
+import ATSCheckerPage from './pages/ATSCheckerPage'
 import ScrollToTop from './components/ScrollToTop'
 
 function ProtectedRoute({ children }) {
@@ -27,6 +28,7 @@ export default function App() {
         </ProtectedRoute>
       } />
       <Route path="/chat" element={<ChatPage />} />
+      <Route path="/ats-checker" element={<ATSCheckerPage />} />
     </Routes>
     </>
   )

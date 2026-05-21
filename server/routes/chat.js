@@ -1,4 +1,4 @@
-const OpenAI = require('openai');
+const { getAIClient } = require('../ai/client');
 const Profile = require('../models/Profile');
 const Skill = require('../models/Skill');
 const Experience = require('../models/Experience');
@@ -6,15 +6,6 @@ const Education = require('../models/Education');
 const Project = require('../models/Project');
 const Certification = require('../models/Certification');
 const Resume = require('../models/Resume');
-
-let openai = null;
-
-function getOpenAI() {
-  if (!openai && process.env.OPENAI_API_KEY) {
-    openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  }
-  return openai;
-}
 
 async function buildResumeContext() {
   const [profile, skills, experiences, education, projects, certifications, resumes] = await Promise.all([
@@ -147,10 +138,10 @@ exports.chat = async (req, res) => {
     return res.status(400).json({ error: 'Message is required' });
   }
 
-  const client = getOpenAI();
+  const { client, model } = await getAIClient('chat');
 
   if (!client) {
-    // No API key configured — use rule-based fallback
+    // No API key configured for current provider — use rule-based fallback
     const context = await buildResumeContext();
     const lower = message.toLowerCase();
 
@@ -205,7 +196,7 @@ exports.chat = async (req, res) => {
     const context = await buildResumeContext();
 
     const completion = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model,
       messages: [
         { role: 'system', content: `${SYSTEM_PROMPT}\n\n${context}` },
         { role: 'user', content: message },
@@ -218,6 +209,6 @@ exports.chat = async (req, res) => {
     res.json({ reply });
   } catch (err) {
     console.error('Chat error:', err);
-    res.status(500).json({ error: 'Sorry, I encountered an error processing your request. Please try again.' });
+    res.status(503).json({ error: 'Service unavailable. Please try again later.' });
   }
 };

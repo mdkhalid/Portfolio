@@ -25,6 +25,11 @@ const profileSchema = new mongoose.Schema({
       contact: true,
     },
   },
+  aiProvider: {
+    type: String,
+    enum: ['openai', 'groq'],
+    default: 'openai',
+  },
 });
 
 module.exports = mongoose.model('Profile', profileSchema);

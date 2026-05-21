@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import axios from 'axios'
 import { motion } from 'framer-motion'
-import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, Upload, BarChart3, Mail, MailOpen, Eye } from 'lucide-react'
+import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, Upload, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle } from 'lucide-react'
 
 const API = axios.create()
 API.interceptors.request.use(config => {
@@ -34,17 +34,35 @@ export default function AdminDashboard() {
   const [editing, setEditing] = useState(null)
   const [saving, setSaving] = useState(false)
   const [analytics, setAnalytics] = useState(null)
+  const [activities, setActivities] = useState([])
+  const [activitiesLoading, setActivitiesLoading] = useState(false)
   const [messages, setMessages] = useState([])
   const [selectedMessage, setSelectedMessage] = useState(null)
+  const [toast, setToast] = useState(null)
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   useEffect(() => {
-    if (activeTab === 'analytics' && !analytics) {
-      API.get('/api/analytics/stats').then(r => setAnalytics(r.data)).catch(() => {})
+    if (activeTab === 'analytics') {
+      if (!analytics) API.get('/api/analytics/stats').then(r => setAnalytics(r.data)).catch(() => {})
+      refreshActivities()
     }
     if (activeTab === 'messages') {
       API.get('/api/messages').then(r => setMessages(r.data)).catch(() => {})
     }
   }, [activeTab])
+
+  const refreshActivities = async () => {
+    setActivitiesLoading(true)
+    try {
+      const { data } = await API.get('/api/activity')
+      setActivities(data)
+    } catch (err) { console.error(err) }
+    finally { setActivitiesLoading(false) }
+  }
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -100,7 +118,7 @@ export default function AdminDashboard() {
 
   const ProfileForm = () => {
     const p = data.profile || {}
-    const [form, setForm] = useState({ name: p.name || '', email: p.email || '', phone: p.phone || '', location: p.location || '', linkedIn: p.linkedIn || '', github: p.github || '', title: p.title || '', summary: p.summary || '', avatar: p.avatar || '', experienceYears: p.experienceYears || 18, visibleSections: p.visibleSections || {} })
+    const [form, setForm] = useState({ name: p.name || '', email: p.email || '', phone: p.phone || '', location: p.location || '', linkedIn: p.linkedIn || '', github: p.github || '', title: p.title || '', summary: p.summary || '', avatar: p.avatar || '', experienceYears: p.experienceYears || 18, visibleSections: p.visibleSections || {}, aiProvider: p.aiProvider || 'openai' })
     const [uploading, setUploading] = useState(false)
 
     const handleAvatarUpload = async (e) => {
@@ -121,7 +139,11 @@ export default function AdminDashboard() {
       try {
         const { data: updated } = await API.put('/api/profile', form)
         setData(prev => ({ ...prev, profile: updated }))
-      } catch (err) { console.error(err) }
+        showToast('Profile saved successfully!')
+      } catch (err) {
+        showToast('Failed to save profile. Please try again.', 'error')
+        console.error(err)
+      }
       finally { setSaving(false) }
     }
 
@@ -182,6 +204,51 @@ export default function AdminDashboard() {
               )
             })}
           </div>
+        </div>
+
+        {/* AI Provider Toggle */}
+        <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+          <h3 className="text-sm font-semibold mb-4 uppercase tracking-wider text-gray-400">AI Provider</h3>
+          <p className={'text-xs mb-4 ' + (dark ? 'text-gray-500' : 'text-gray-400')}>
+            Choose which AI API to use for chat and ATS resume scoring. Groq is free and uses Llama 3.3 70B.
+          </p>
+          <div className="flex gap-3">
+            <button onClick={() => setForm({ ...form, aiProvider: 'openai' })}
+              className={'flex-1 flex items-center justify-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition-all cursor-pointer ' + (
+                form.aiProvider === 'openai' || !form.aiProvider
+                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white border-transparent shadow-lg shadow-blue-500/25'
+                  : (dark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300')
+              )}>
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5095-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0-.7427 5.9608 5.9847 5.9847 0 0 0 3.161 3.6515 5.5648 5.5648 0 0 0 .1305 2.5932 6.0462 6.0462 0 0 0 5.867 4.5642 5.565 5.565 0 0 0 2.8897-.8859 5.9847 5.9847 0 0 0 3.4733 1.6436 6.0462 6.0462 0 0 0 5.2578-4.469 5.9847 5.9847 0 0 0-.7208-4.8385 5.5648 5.5648 0 0 0-.1305-2.5932z"/>
+              </svg>
+              <div className="text-left">
+                <div className="font-semibold">OpenAI</div>
+                <div className={'text-xs ' + (form.aiProvider === 'openai' || !form.aiProvider ? 'text-white/70' : (dark ? 'text-gray-500' : 'text-gray-400'))}>GPT-4o Mini</div>
+              </div>
+            </button>
+            <button onClick={() => setForm({ ...form, aiProvider: 'groq' })}
+              className={'flex-1 flex items-center justify-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition-all cursor-pointer ' + (
+                form.aiProvider === 'groq'
+                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white border-transparent shadow-lg shadow-blue-500/25'
+                  : (dark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300')
+              )}>
+              <svg className="w-5 h-5" viewBox="0 0 32 32" fill="none">
+                <circle cx="16" cy="16" r="16" fill="#F97316"/>
+                <path d="M12 8h13l-3 6h-7l-3 6H5l7-12z" fill="white"/>
+                <path d="M17 14h7l-3 6h-7l3-6z" fill="white" opacity="0.6"/>
+              </svg>
+              <div className="text-left">
+                <div className="font-semibold">Groq</div>
+                <div className={'text-xs ' + (form.aiProvider === 'groq' ? 'text-white/70' : (dark ? 'text-gray-500' : 'text-gray-400'))}>Llama 3.3 70B (Free)</div>
+              </div>
+            </button>
+          </div>
+          {form.aiProvider === 'groq' && (
+            <p className={'text-xs mt-2 ' + (dark ? 'text-amber-400' : 'text-amber-600')}>
+              Make sure you have <code className="px-1 py-0.5 rounded text-xs font-mono" style={{background: dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}}>GROQ_API_KEY</code> set in your server .env file.
+            </p>
+          )}
         </div>
 
         <button onClick={handleSave} disabled={saving}
@@ -351,34 +418,106 @@ export default function AdminDashboard() {
     } catch (err) { console.error(err) }
   }
 
+  const formatTimeAgo = (date) => {
+    const diff = Date.now() - new Date(date).getTime()
+    const mins = Math.floor(diff / 60000)
+    if (mins < 1) return 'Just now'
+    if (mins < 60) return mins + 'm ago'
+    const hrs = Math.floor(mins / 60)
+    if (hrs < 24) return hrs + 'h ago'
+    const days = Math.floor(hrs / 24)
+    if (days < 7) return days + 'd ago'
+    return new Date(date).toLocaleDateString()
+  }
+
+  const activityIcon = (type) => {
+    switch (type) {
+      case 'message': return <Mail size={16} className="text-blue-500" />
+      case 'resume_download': return <Download size={16} className="text-emerald-500" />
+      case 'page_view': return <Eye size={16} className="text-purple-500" />
+      default: return <Clock size={16} className="text-gray-400" />
+    }
+  }
+
   const renderAnalytics = () => {
-    if (!analytics) return <p className={'text-sm ' + (dark ? 'text-gray-400' : 'text-gray-500')}>Loading...</p>
-    const { total, unique, records } = analytics
-    const last7 = records?.slice(0, 7).reverse() || []
-    const maxViews = Math.max(...last7.map(r => r.pageViews), 1)
     return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 gap-4">
-          <div className={'p-6 rounded-xl border text-center ' + (dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200')}>
-            <div className="text-3xl font-bold bg-gradient-to-r from-blue-500 to-cyan-400 bg-clip-text text-transparent">{total}</div>
-            <p className={'text-sm mt-1 ' + (dark ? 'text-gray-400' : 'text-gray-500')}>Total Page Views</p>
-          </div>
-          <div className={'p-6 rounded-xl border text-center ' + (dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200')}>
-            <div className="text-3xl font-bold bg-gradient-to-r from-emerald-500 to-teal-400 bg-clip-text text-transparent">{unique}</div>
-            <p className={'text-sm mt-1 ' + (dark ? 'text-gray-400' : 'text-gray-500')}>Unique Visitors</p>
-          </div>
-        </div>
-        <div>
-          <h3 className="text-sm font-semibold mb-3 uppercase tracking-wider text-gray-400">Last 7 Days</h3>
-          <div className="flex items-end gap-2 h-32">
-            {last7.map(r => (
-              <div key={r.date} className="flex-1 flex flex-col items-center gap-1">
-                <div className={'w-full rounded-lg transition-all hover:opacity-80'} style={{ height: Math.max(4, (r.pageViews / maxViews) * 100) + '%', background: 'linear-gradient(to top, #3b82f6, #06b6d4)' }} />
-                <span className={'text-xs ' + (dark ? 'text-gray-500' : 'text-gray-400')}>{r.date.slice(5)}</span>
-                <span className={'text-xs font-medium ' + (dark ? 'text-gray-300' : 'text-gray-600')}>{r.pageViews}</span>
+      <div className="space-y-8">
+        {/* Stats section */}
+        {analytics && (
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <div className={'p-6 rounded-xl border text-center ' + (dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200')}>
+                <div className="text-3xl font-bold bg-gradient-to-r from-blue-500 to-cyan-400 bg-clip-text text-transparent">{analytics.total}</div>
+                <p className={'text-sm mt-1 ' + (dark ? 'text-gray-400' : 'text-gray-500')}>Total Page Views</p>
               </div>
-            ))}
+              <div className={'p-6 rounded-xl border text-center ' + (dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200')}>
+                <div className="text-3xl font-bold bg-gradient-to-r from-emerald-500 to-teal-400 bg-clip-text text-transparent">{analytics.unique}</div>
+                <p className={'text-sm mt-1 ' + (dark ? 'text-gray-400' : 'text-gray-500')}>Unique Visitors</p>
+              </div>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold mb-3 uppercase tracking-wider text-gray-400">Last 7 Days</h3>
+              {(() => {
+                const records = analytics.records || []
+                const last7 = records.slice(0, 7).reverse() || []
+                const maxViews = Math.max(...last7.map(r => r.pageViews), 1)
+                return (
+                  <div className="flex items-end gap-2 h-32">
+                    {last7.map(r => (
+                      <div key={r.date} className="flex-1 flex flex-col items-center gap-1">
+                        <div className={'w-full rounded-lg transition-all hover:opacity-80'} style={{ height: Math.max(4, (r.pageViews / maxViews) * 100) + '%', background: 'linear-gradient(to top, #3b82f6, #06b6d4)' }} />
+                        <span className={'text-xs ' + (dark ? 'text-gray-500' : 'text-gray-400')}>{r.date.slice(5)}</span>
+                        <span className={'text-xs font-medium ' + (dark ? 'text-gray-300' : 'text-gray-600')}>{r.pageViews}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+            </div>
+          </>
+        )}
+
+        {/* Activity Feed */}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Clock size={16} className="text-gray-400" />
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Recent Activity</h3>
+            </div>
+            <button onClick={refreshActivities} disabled={activitiesLoading}
+              className={'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ' + (
+                dark ? 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700'
+              )}>
+              <svg className={'w-3.5 h-3.5 ' + (activitiesLoading ? 'animate-spin' : '')} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10" />
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              </svg>
+              Refresh
+            </button>
           </div>
+          {activities.length === 0 ? (
+            <p className={'text-sm ' + (dark ? 'text-gray-500' : 'text-gray-400')}>No activity yet. Activities appear when visitors send messages or download resumes.</p>
+          ) : (
+            <div className="space-y-1">
+              {activities.map((a, i) => (
+                <div key={a._id || i}
+                  className={'flex items-start gap-3 px-4 py-3 rounded-xl transition-all ' + (dark ? 'hover:bg-gray-700/50' : 'hover:bg-gray-50')}>
+                  <div className={'p-2 rounded-lg flex-shrink-0 ' + (dark ? 'bg-gray-800' : 'bg-gray-100')}>
+                    {activityIcon(a.type)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={'text-sm font-medium truncate ' + (dark ? 'text-gray-200' : 'text-gray-700')}>{a.description}</p>
+                    <p className={'text-xs mt-0.5 ' + (dark ? 'text-gray-500' : 'text-gray-400')}>{formatTimeAgo(a.createdAt)}</p>
+                  </div>
+                  {a.type === 'message' && a.metadata?.name && (
+                    <span className={'text-xs px-2 py-0.5 rounded-full flex-shrink-0 ' + (dark ? 'bg-blue-500/10 text-blue-400' : 'bg-blue-50 text-blue-600')}>
+                      {a.metadata.name}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     )
@@ -531,6 +670,25 @@ export default function AdminDashboard() {
 
   return (
     <div className={'min-h-screen ' + (dark ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900')}>
+      {/* Toast notification */}
+      {toast && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          className={'fixed top-4 right-4 z-50 flex items-center gap-2.5 px-5 py-3 rounded-xl shadow-xl text-sm font-medium ' + (
+            toast.type === 'error'
+              ? 'bg-red-500 text-white'
+              : 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white'
+          )}
+        >
+          {toast.type === 'error' ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
+          {toast.message}
+          <button onClick={() => setToast(null)} className="ml-2 p-0.5 rounded hover:bg-white/20 transition-colors cursor-pointer">
+            <X size={16} />
+          </button>
+        </motion.div>
+      )}
       <header className={'sticky top-0 z-40 border-b ' + (dark ? 'bg-gray-900/90 backdrop-blur-xl border-gray-800' : 'bg-white/80 backdrop-blur-xl border-gray-200')}>
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <h1 className="text-lg font-bold bg-gradient-to-r from-blue-600 via-cyan-500 to-emerald-500 bg-clip-text text-transparent">Portfolio Admin</h1>

@@ -15,7 +15,9 @@ const analyticsCtrl = require('./routes/analytics');
 const contactCtrl = require('./routes/contact');
 const messagesCtrl = require('./routes/messages');
 const chatCtrl = require('./routes/chat');
-const { authLimiter, contactLimiter, resumeLimiter, chatLimiter } = require('./middleware/rateLimiter');
+const Activity = require('./models/Activity');
+const { authLimiter, contactLimiter, resumeLimiter, chatLimiter, atsLimiter } = require('./middleware/rateLimiter');
+const atsRouter = require('./routes/ats');
 
 const app = express();
 app.use(cors());
@@ -28,6 +30,12 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Rate-limited resume download
 app.get('/api/download-resume/:filename', resumeLimiter, (req, res) => {
   const file = path.join(__dirname, 'uploads', req.params.filename);
+  // Log activity (async, don't block download)
+  Activity.create({
+    type: 'resume_download',
+    description: 'Resume downloaded',
+    metadata: { filename: req.params.filename, ip: req.ip },
+  }).then(() => Activity.prune()).catch(() => {});
   res.download(file);
 });
 
@@ -45,8 +53,13 @@ app.post('/api/contact', contactLimiter, contactCtrl.send);
 // AI Chat
 app.post('/api/chat', chatLimiter, chatCtrl.chat);
 
+// ATS Resume Scoring
+app.post('/api/ats-score', atsLimiter, atsRouter.uploadMiddleware, atsRouter.score);
+
 // Auth
 app.use('/api/auth', authLimiter, require('./routes/auth'));
+
+app.get('/api/activity', auth, require('./routes/activity').getRecent);
 
 app.use('/api/upload', auth, require('./routes/upload'));
 app.use('/api/resume-files', auth, require('./routes/upload-resume'));

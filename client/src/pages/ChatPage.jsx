@@ -103,11 +103,10 @@ export default function ChatPage() {
     try {
       const { data } = await axios.post('/api/chat', { message: msg })
       setMessages(prev => [...prev, { role: 'assistant', content: data.reply }])
-    } catch {
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: "Sorry, I encountered an error. Please try again or check that the server is running."
-      }])
+    } catch (err) {
+      const serverMsg = err.response?.data?.error
+      const userMsg = serverMsg || 'The AI service is temporarily unavailable. Please try again later.'
+      setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${userMsg}` }])
     } finally {
       setLoading(false)
     }

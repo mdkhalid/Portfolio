@@ -36,4 +36,13 @@ const chatLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-module.exports = { authLimiter, contactLimiter, resumeLimiter, chatLimiter };
+// ATS Scoring: 5 requests per 15 minutes per IP
+const atsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { error: 'Too many ATS score requests. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+module.exports = { authLimiter, contactLimiter, resumeLimiter, chatLimiter, atsLimiter };

@@ -1,4 +1,5 @@
 const Message = require('../models/Message');
+const Activity = require('../models/Activity');
 
 // Email sending (nodemailer) — kept for future use
 // const nodemailer = require('nodemailer');
@@ -20,6 +21,13 @@ exports.send = async (req, res) => {
   try {
     // Save to database
     await Message.create({ name, email, subject, message });
+
+    // Log activity
+    Activity.create({
+      type: 'message',
+      description: `New message from ${name}`,
+      metadata: { name, email, subject },
+    }).then(() => Activity.prune()).catch(() => {});
 
     // Email notification — commented out for now (uncomment when EMAIL_USER/EMAIL_PASS env vars are set)
     // await transporter.sendMail({

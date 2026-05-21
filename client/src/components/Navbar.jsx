@@ -1,5 +1,5 @@
 import { useTheme } from '../context/ThemeContext'
-import { Sun, Moon, Menu, X, Download, FileText, MessageSquare } from 'lucide-react'
+import { Sun, Moon, Menu, X, Download, FileText, MessageSquare, Target } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -61,6 +61,14 @@ export default function Navbar({ resumes }) {
                 {l.label}
               </button>
             ))}
+            <button
+              onClick={() => navigate('/ats-checker')}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+                dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              <Target size={14} /> ATS Score
+            </button>
             <button
               onClick={() => navigate('/chat')}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${
@@ -142,6 +150,16 @@ export default function Navbar({ resumes }) {
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: links.length * 0.05 }}
+                  onClick={() => { setOpen(false); navigate('/ats-checker'); }}
+                  className={`w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                    dark ? 'text-gray-300 hover:bg-gray-800 hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                  }`}>
+                  <Target size={16} /> ATS Score
+                </motion.button>
+                <motion.button
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: (links.length + 1) * 0.05 }}
                   onClick={() => { setOpen(false); navigate('/chat'); }}
                   className={`w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                     dark ? 'text-gray-300 hover:bg-gray-800 hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
@@ -152,7 +170,7 @@ export default function Navbar({ resumes }) {
                 <motion.button
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: (links.length + 1) * 0.05 }}
+                  transition={{ delay: (links.length + 2) * 0.05 }}
                   onClick={() => { setOpen(false); navigate('/resume'); }}
                   className="w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all bg-gradient-to-r from-blue-600 to-cyan-500 text-white hover:from-blue-700 hover:to-cyan-600 cursor-pointer">
                   <FileText size={16} /> View Resume

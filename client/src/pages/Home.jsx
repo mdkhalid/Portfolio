@@ -9,10 +9,12 @@ import Projects from '../components/Projects'
 import Certifications from '../components/Certifications'
 import Contact from '../components/Contact'
 import SEO from '../components/SEO'
+import BentoHome from './BentoHome'
 
 export default function Home() {
   const [data, setData] = useState({ profile: {}, skills: [], experiences: [], education: [], certifications: [], projects: [], resumes: [] })
   const [loading, setLoading] = useState(true)
+  const [layoutOverride, setLayoutOverride] = useState(null) // null = db default, 'classic', 'bento'
   const tracked = useRef(false)
 
   useEffect(() => {
@@ -54,6 +56,9 @@ export default function Home() {
     )
   }
 
+  const useBento = layoutOverride !== null ? layoutOverride === 'bento' : data.profile?.useBentoTheme
+  const currentLayout = useBento ? 'bento' : 'classic'
+
   const { visibleSections = {} } = data.profile || {}
   const show = (key) => visibleSections[key] !== false
 
@@ -64,17 +69,23 @@ export default function Home() {
         description={data.profile?.summary || 'Software Developer Portfolio showcasing projects, skills, and experience'}
         image={data.profile?.avatar}
       />
-      {show('navbar') && <Navbar resumes={data.resumes} />}
-      {show('hero') && <Hero profile={data.profile} resumes={data.resumes} />}
-      {show('summary') && <Summary profile={data.profile} />}
-      {show('skills') && <Skills skills={data.skills} />}
-      {(show('experience') || show('education')) && <Timeline
-        experiences={show('experience') ? data.experiences : []}
-        education={show('education') ? data.education : []}
-      />}
-      {show('projects') && <Projects projects={data.projects} />}
-      {show('certifications') && <Certifications certifications={data.certifications} />}
-      {show('contact') && <Contact profile={data.profile} />}
+      <Navbar resumes={data.resumes} currentLayout={currentLayout} onToggleLayout={() => setLayoutOverride(useBento ? 'classic' : 'bento')} />
+      {useBento ? (
+        <BentoHome onToggleLayout={() => setLayoutOverride('classic')} />
+      ) : (
+        <>
+          {show('hero') && <Hero profile={data.profile} resumes={data.resumes} />}
+          {show('summary') && <Summary profile={data.profile} />}
+          {show('skills') && <Skills skills={data.skills} />}
+          {(show('experience') || show('education')) && <Timeline
+            experiences={show('experience') ? data.experiences : []}
+            education={show('education') ? data.education : []}
+          />}
+          {show('projects') && <Projects projects={data.projects} />}
+          {show('certifications') && <Certifications certifications={data.certifications} />}
+          {show('contact') && <Contact profile={data.profile} />}
+        </>
+      )}
     </div>
   )
 }

@@ -30,6 +30,10 @@ const profileSchema = new mongoose.Schema({
     enum: ['openai', 'groq'],
     default: 'openai',
   },
+  useBentoTheme: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 module.exports = mongoose.model('Profile', profileSchema);

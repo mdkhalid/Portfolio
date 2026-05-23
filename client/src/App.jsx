@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import Home from './pages/Home'
+import BentoHome from './pages/BentoHome'
 import ResumePage from './pages/ResumePage'
 import AdminLogin from './pages/AdminLogin'
 import AdminDashboard from './pages/AdminDashboard'
@@ -20,6 +21,7 @@ export default function App() {
       <ScrollToTop />
       <Routes>
       <Route path="/" element={<Home />} />
+      <Route path="/bento" element={<BentoHome />} />
       <Route path="/resume" element={<ResumePage />} />
       <Route path="/admin" element={<AdminLogin />} />
       <Route path="/admin/dashboard" element={

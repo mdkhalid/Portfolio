@@ -1,5 +1,5 @@
 import { useTheme } from '../context/ThemeContext'
-import { Sun, Moon, Menu, X, Download, FileText, MessageSquare, Target } from 'lucide-react'
+import { Sun, Moon, Menu, X, Download, FileText, MessageSquare, Target, Grid } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -14,7 +14,7 @@ const links = [
 
 
 
-export default function Navbar({ resumes }) {
+export default function Navbar({ resumes, currentLayout, onToggleLayout }) {
   const { dark, toggle } = useTheme()
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
@@ -83,6 +83,14 @@ export default function Navbar({ resumes }) {
             >
               <FileText size={14} /> Resume
             </button>
+            {onToggleLayout && (
+              <button
+                onClick={() => { onToggleLayout(); setOpen(false) }}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer bg-gradient-to-r from-violet-600 to-purple-500 text-white hover:from-violet-700 hover:to-purple-600 shadow-sm"
+              >
+                <Grid size={14} /> {currentLayout === 'bento' ? 'Classic' : 'Bento'}
+              </button>
+            )}
             <button onClick={toggle} className={`p-2 rounded-full transition-colors cursor-pointer ${dark ? 'bg-gray-800 text-yellow-400 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
               {dark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
@@ -175,6 +183,17 @@ export default function Navbar({ resumes }) {
                   className="w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all bg-gradient-to-r from-blue-600 to-cyan-500 text-white hover:from-blue-700 hover:to-cyan-600 cursor-pointer">
                   <FileText size={16} /> View Resume
                 </motion.button>
+
+                {onToggleLayout && (
+                  <motion.button
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: (links.length + 3) * 0.05 }}
+                    onClick={() => { setOpen(false); onToggleLayout(); }}
+                    className="w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all bg-gradient-to-r from-violet-600 to-purple-500 text-white hover:from-violet-700 hover:to-purple-600 cursor-pointer">
+                    <Grid size={16} /> {currentLayout === 'bento' ? 'Classic Layout' : 'Bento Layout'}
+                  </motion.button>
+                )}
               </div>
             </motion.div>
           </>

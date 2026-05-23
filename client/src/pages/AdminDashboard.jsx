@@ -1,10 +1,10 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import axios from 'axios'
 import { motion } from 'framer-motion'
-import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, Upload, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle } from 'lucide-react'
+import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, Upload, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react'
 
 const API = axios.create()
 API.interceptors.request.use(config => {
@@ -118,7 +118,7 @@ export default function AdminDashboard() {
 
   const ProfileForm = () => {
     const p = data.profile || {}
-    const [form, setForm] = useState({ name: p.name || '', email: p.email || '', phone: p.phone || '', location: p.location || '', linkedIn: p.linkedIn || '', github: p.github || '', title: p.title || '', summary: p.summary || '', avatar: p.avatar || '', experienceYears: p.experienceYears || 18, visibleSections: p.visibleSections || {}, aiProvider: p.aiProvider || 'openai' })
+    const [form, setForm] = useState({ name: p.name || '', email: p.email || '', phone: p.phone || '', location: p.location || '', linkedIn: p.linkedIn || '', github: p.github || '', title: p.title || '', summary: p.summary || '', avatar: p.avatar || '', experienceYears: p.experienceYears || 18, visibleSections: p.visibleSections || {}, aiProvider: p.aiProvider || 'openai', useBentoTheme: p.useBentoTheme || false })
     const [uploading, setUploading] = useState(false)
 
     const handleAvatarUpload = async (e) => {
@@ -150,7 +150,9 @@ export default function AdminDashboard() {
     return (
       <div className="space-y-4">
         <div className="grid md:grid-cols-2 gap-4">
-          {Object.entries(form).map(([key, val]) => (
+          {Object.entries(form)
+            .filter(([key]) => key !== 'visibleSections' && key !== 'aiProvider' && key !== 'useBentoTheme')
+            .map(([key, val]) => (
             <div key={key} className={key === 'summary' || key === 'avatar' ? 'md:col-span-2' : ''}>
               <label className={'block text-sm font-medium mb-1 ' + (dark ? 'text-gray-300' : 'text-gray-700')}>
                 {key === 'avatar' ? 'Avatar Image' : key.replace(/([A-Z])/g, ' ').replace(/^./, s => s.toUpperCase())}
@@ -251,8 +253,42 @@ export default function AdminDashboard() {
           )}
         </div>
 
+        {/* Layout Theme Settings */}
+        <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+          <h3 className="text-sm font-semibold mb-4 uppercase tracking-wider text-gray-400">Home Page Layout Style</h3>
+          <p className={'text-xs mb-4 ' + (dark ? 'text-gray-500' : 'text-gray-400')}>
+            Select which design layout is served as the home page (`/`) for visitors. Classic is linear, Bento is modular grid.
+          </p>
+          <div className="flex gap-3">
+            <button onClick={() => setForm({ ...form, useBentoTheme: false })}
+              className={'flex-1 flex items-center justify-center gap-3 px-4 py-3.5 rounded-xl border text-sm font-medium transition-all cursor-pointer ' + (
+                !form.useBentoTheme
+                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white border-transparent shadow-lg shadow-blue-500/25'
+                  : (dark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300')
+              )}>
+              <div className="text-left text-center w-full">
+                <div className="font-semibold">Classic Layout</div>
+                <div className={'text-xs ' + (!form.useBentoTheme ? 'text-white/70' : (dark ? 'text-gray-500' : 'text-gray-400'))}>Original Scroll Layout</div>
+              </div>
+            </button>
+            <button onClick={() => setForm({ ...form, useBentoTheme: true })}
+              className={'flex-1 flex items-center justify-center gap-3 px-4 py-3.5 rounded-xl border text-sm font-medium transition-all cursor-pointer ' + (
+                form.useBentoTheme
+                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white border-transparent shadow-lg shadow-blue-500/25'
+                  : (dark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300')
+              )}>
+              <div className="text-left text-center w-full">
+                <div className="font-semibold flex items-center justify-center gap-1.5">
+                  Bento Grid Layout <Sparkles size={14} className="text-yellow-400" />
+                </div>
+                <div className={'text-xs ' + (form.useBentoTheme ? 'text-white/70' : (dark ? 'text-gray-500' : 'text-gray-400'))}>Modern Bento Grid Layout</div>
+              </div>
+            </button>
+          </div>
+        </div>
+
         <button onClick={handleSave} disabled={saving}
-          className="px-6 py-2.5 rounded-lg text-white font-medium bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">
+          className="mt-6 px-6 py-2.5 rounded-lg text-white font-medium bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">
           {saving ? 'Saving...' : 'Save Profile'}
         </button>
       </div>

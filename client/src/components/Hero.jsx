@@ -79,10 +79,10 @@ export default function Hero({ profile }) {
               <Globe size={20} />
             </a>
           )}
-          <a href={`mailto:${profile?.email || ''}`}
-            className={`p-2.5 rounded-full transition-colors ${dark ? 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white' : 'bg-gray-200 text-gray-500 hover:bg-gray-300 hover:text-gray-800'}`}>
+          <button onClick={() => scrollTo('contact')}
+            className={`p-2.5 rounded-full transition-colors cursor-pointer ${dark ? 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white' : 'bg-gray-200 text-gray-500 hover:bg-gray-300 hover:text-gray-800'}`}>
             <Mail size={20} />
-          </a>
+          </button>
         </motion.div>
       </div>
 

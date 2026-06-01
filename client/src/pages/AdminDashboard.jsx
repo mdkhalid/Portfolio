@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import axios from 'axios'
 import { motion } from 'framer-motion'
-import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, Upload, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react'
+import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, Upload, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, Sparkles, BookOpen } from 'lucide-react'
 
 const API = axios.create()
 API.interceptors.request.use(config => {
@@ -21,6 +21,7 @@ const tabs = [
   { key: 'certifications', label: 'Certifications', icon: Award },
   { key: 'projects', label: 'Projects', icon: FolderGit2 },
   { key: 'resumes', label: 'Resumes', icon: FileText },
+  { key: 'articles', label: 'Blog', icon: BookOpen },
   { key: 'messages', label: 'Messages', icon: Mail },
   { key: 'analytics', label: 'Analytics', icon: BarChart3 },
 ]
@@ -67,13 +68,13 @@ export default function AdminDashboard() {
   useEffect(() => {
     const fetchAll = async () => {
       try {
-        const [profile, skills, experiences, education, certifications, projects, resumes] = await Promise.all([
+          const [profile, skills, experiences, education, certifications, projects, resumes, articles] = await Promise.all([
           API.get('/api/profile'), API.get('/api/skills'),
           API.get('/api/experiences'), API.get('/api/education'),
           API.get('/api/certifications'), API.get('/api/projects'),
-          API.get('/api/resumes'),
+          API.get('/api/resumes'), API.get('/api/admin/articles'),
         ])
-        setData({ profile: profile.data || {}, skills: skills.data, experiences: experiences.data, education: education.data, certifications: certifications.data, projects: projects.data, resumes: resumes.data })
+        setData({ profile: profile.data || {}, skills: skills.data, experiences: experiences.data, education: education.data, certifications: certifications.data, projects: projects.data, resumes: resumes.data, articles: articles.data })
       } catch (err) { console.error(err) }
     }
     fetchAll()
@@ -113,6 +114,7 @@ export default function AdminDashboard() {
     { key: 'education', label: 'Education' },
     { key: 'projects', label: 'Projects' },
     { key: 'certifications', label: 'Certifications' },
+    { key: 'blog', label: 'Blog' },
     { key: 'contact', label: 'Contact' },
   ]
 
@@ -386,6 +388,43 @@ export default function AdminDashboard() {
     )
   }
 
+  const renderArticles = () => {
+    const items = data.articles || []
+    return (
+      <div className="space-y-3">
+        {items.map(item => (
+          <div key={item._id} className={'p-4 rounded-xl border ' + (dark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200')}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold">{item.title}</p>
+                  {!item.published && (
+                    <span className={'text-xs px-2 py-0.5 rounded-full font-medium ' + (dark ? 'bg-amber-500/10 text-amber-400' : 'bg-amber-50 text-amber-700')}>
+                      Draft
+                    </span>
+                  )}
+                </div>
+                <p className={'text-sm mt-0.5 ' + (dark ? 'text-gray-400' : 'text-gray-500')}>
+                  {item.tags?.join(', ')} {item.createdAt ? '| ' + new Date(item.createdAt).toLocaleDateString() : ''}
+                </p>
+              </div>
+              <div className="flex gap-1 flex-shrink-0">
+                <button onClick={() => setEditing({ collection: 'articles', id: item._id, data: item })}
+                  className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-200 text-blue-600')}><Edit3 size={16} /></button>
+                <button onClick={() => deleteItem('articles', item._id)}
+                  className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}><Trash2 size={16} /></button>
+              </div>
+            </div>
+          </div>
+        ))}
+        <button onClick={() => setEditing({ collection: 'articles', id: null })}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 transition-all cursor-pointer">
+          <Plus size={16} /> New Article
+        </button>
+      </div>
+    )
+  }
+
   const renderMessages = () => {
     if (!messages.length) return <p className={'text-sm ' + (dark ? 'text-gray-400' : 'text-gray-500')}>No messages yet.</p>
     return (
@@ -575,7 +614,9 @@ export default function AdminDashboard() {
               ? [{ key: 'name', label: 'Project Name', type: 'text' }, { key: 'role', label: 'Role', type: 'text' }, { key: 'description', label: 'Description', type: 'textarea' }, { key: 'startDate', label: 'Start Date', type: 'text' }, { key: 'endDate', label: 'End Date', type: 'text' }, { key: 'techStack', label: 'Tech Stack (comma separated)', type: 'text' }, { key: 'bullets', label: 'Bullets (one per line)', type: 'textarea' }]
               : collection === 'resumes'
                 ? [{ key: 'label', label: 'Label', type: 'text' }]
-                : []
+                : collection === 'articles'
+                  ? [{ key: 'title', label: 'Title', type: 'text' }, { key: 'excerpt', label: 'Excerpt', type: 'text' }, { key: 'tags', label: 'Tags (comma separated)', type: 'text' }, { key: 'coverImage', label: 'Cover Image URL', type: 'text' }, { key: 'content', label: 'Content (Markdown)', type: 'textarea' }, { key: 'published', label: 'Published', type: 'select' }]
+                  : []
 
     const handleSave = () => {
       if (collection === 'resumes') {
@@ -604,6 +645,7 @@ export default function AdminDashboard() {
       let payload = { ...form }
       if (payload.bullets && typeof payload.bullets === 'string') payload.bullets = payload.bullets.split('\n').filter(Boolean)
       if (payload.techStack && typeof payload.techStack === 'string') payload.techStack = payload.techStack.split(',').map(s => s.trim()).filter(Boolean)
+      if (collection === 'articles' && typeof payload.tags === 'string') payload.tags = payload.tags.split(',').map(s => s.trim()).filter(Boolean)
       saveItem(collection, payload, id)
     }
 
@@ -621,10 +663,21 @@ export default function AdminDashboard() {
                 <label className={'block text-sm font-medium mb-1 ' + (dark ? 'text-gray-300' : 'text-gray-700')}>{f.label}</label>
                 {f.type === 'textarea' ? (
                   <textarea value={Array.isArray(form[f.key]) ? form[f.key].join('\n') : (form[f.key] || '')}
-                    onChange={e => setForm({ ...form, [f.key]: e.target.value })} rows={3}
-                    className={'w-full px-3 py-2 rounded-lg border outline-none focus:ring-2 focus:ring-blue-500/50 ' + (dark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-900')} />
+                    onChange={e => setForm({ ...form, [f.key]: e.target.value })} rows={collection === 'articles' && f.key === 'content' ? 12 : 3}
+                    className={'w-full px-3 py-2 rounded-lg border outline-none focus:ring-2 focus:ring-blue-500/50 font-mono text-sm ' + (dark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-900')} />
+                ) : f.type === 'select' ? (
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => setForm({ ...form, published: form.published !== false })}
+                      className={'relative w-12 h-6 rounded-full transition-colors ' + (form.published !== false ? 'bg-emerald-500' : (dark ? 'bg-gray-600' : 'bg-gray-300'))}>
+                      <div className={'absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ' + (form.published !== false ? 'translate-x-6' : 'translate-x-0.5')} />
+                    </button>
+                    <span className={'text-sm ' + (form.published !== false ? 'text-emerald-500 font-medium' : (dark ? 'text-gray-400' : 'text-gray-500'))}>
+                      {form.published !== false ? 'Published' : 'Draft'}
+                    </span>
+                  </div>
                 ) : (
-                  <input value={form[f.key] || ''} onChange={e => setForm({ ...form, [f.key]: e.target.value })}
+                  <input value={collection === 'articles' && f.key === 'tags' ? (Array.isArray(form[f.key]) ? form[f.key].join(', ') : (form[f.key] || '')) : (form[f.key] || '')}
+                    onChange={e => setForm({ ...form, [f.key]: e.target.value })}
                     className={'w-full px-3 py-2 rounded-lg border outline-none focus:ring-2 focus:ring-blue-500/50 ' + (dark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-900')} />
                 )}
               </div>
@@ -698,6 +751,7 @@ export default function AdminDashboard() {
       case 'certifications': return renderList('certifications', 'name')
       case 'projects': return renderList('projects', 'name')
       case 'resumes': return renderResumes()
+      case 'articles': return renderArticles()
       case 'messages': return renderMessages()
       case 'analytics': return renderAnalytics()
       default: return null

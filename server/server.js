@@ -15,6 +15,7 @@ const analyticsCtrl = require('./routes/analytics');
 const contactCtrl = require('./routes/contact');
 const messagesCtrl = require('./routes/messages');
 const chatCtrl = require('./routes/chat');
+const articlesCtrl = require('./routes/articles');
 const Activity = require('./models/Activity');
 const { authLimiter, contactLimiter, resumeLimiter, chatLimiter, atsLimiter } = require('./middleware/rateLimiter');
 const atsRouter = require('./routes/ats');
@@ -50,6 +51,10 @@ app.get('/api/resumes', resumeCtrl.getAll);
 app.post('/api/analytics/track', analyticsCtrl.track);
 app.post('/api/contact', contactLimiter, contactCtrl.send);
 
+// Articles
+app.get('/api/articles', articlesCtrl.getAll);
+app.get('/api/articles/:slug', articlesCtrl.getBySlug);
+
 // AI Chat
 app.post('/api/chat', chatLimiter, chatCtrl.chat);
 
@@ -63,6 +68,10 @@ app.get('/api/activity', auth, require('./routes/activity').getRecent);
 
 app.use('/api/upload', auth, require('./routes/upload'));
 app.use('/api/resume-files', auth, require('./routes/upload-resume'));
+app.get('/api/admin/articles', auth, articlesCtrl.getAllAdmin);
+app.post('/api/articles', auth, articlesCtrl.create);
+app.put('/api/articles/:id', auth, articlesCtrl.update);
+app.delete('/api/articles/:id', auth, articlesCtrl.remove);
 
 // Protected routes
 app.put('/api/profile', auth, profileCtrl.update);

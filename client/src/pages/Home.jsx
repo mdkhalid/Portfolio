@@ -8,6 +8,7 @@ import Timeline from '../components/Timeline'
 import Projects from '../components/Projects'
 import Certifications from '../components/Certifications'
 import Contact from '../components/Contact'
+import BlogSection from '../components/BlogSection'
 import SEO from '../components/SEO'
 import BentoHome from './BentoHome'
 
@@ -83,6 +84,7 @@ export default function Home() {
           />}
           {show('projects') && <Projects projects={data.projects} />}
           {show('certifications') && <Certifications certifications={data.certifications} />}
+          {show('blog') && <BlogSection />}
           {show('contact') && <Contact profile={data.profile} />}
         </>
       )}

@@ -7,7 +7,8 @@ import {
   Bot, User, Sparkles, ArrowLeft, Sun, Moon, 
   MapPin, Clock, Briefcase, GraduationCap, Award, 
   FolderGit2, FileText, Mail, Globe, Link2, ExternalLink,
-  ChevronRight, Quote, Grid, ArrowDown, ChevronDown, CheckCircle2, Phone, Send, Loader2
+  ChevronRight, Quote, Grid, ArrowDown, ChevronDown, CheckCircle2, Phone, Send, Loader2,
+  BookOpen, Calendar, Tag
 } from 'lucide-react'
 import SEO from '../components/SEO'
 
@@ -116,11 +117,11 @@ export default function BentoHome({ onToggleLayout }) {
     }
     const fetchData = async () => {
       try {
-        const [profile, skills, experiences, education, certifications, projects, resumes] = await Promise.all([
+        const [profile, skills, experiences, education, certifications, projects, resumes, articles] = await Promise.all([
           axios.get('/api/profile'), axios.get('/api/skills'),
           axios.get('/api/experiences'), axios.get('/api/education'),
           axios.get('/api/certifications'), axios.get('/api/projects'),
-          axios.get('/api/resumes'),
+          axios.get('/api/resumes'), axios.get('/api/articles', { params: { limit: 3, skip: 0 } }),
         ])
         setData({
           profile: profile.data,
@@ -130,6 +131,7 @@ export default function BentoHome({ onToggleLayout }) {
           certifications: certifications.data,
           projects: projects.data,
           resumes: resumes.data,
+          articles: articles.data.items,
         })
       } catch (err) {
         console.error('Failed to fetch Bento data:', err)
@@ -597,11 +599,34 @@ export default function BentoHome({ onToggleLayout }) {
               </motion.div>
             )}
 
+            {/* Blog Bento Card */}
+            {show('blog') && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                onClick={() => navigate('/blog')}
+                className={`p-6 rounded-3xl flex flex-col justify-between cursor-pointer group ${glassClass}`}
+              >
+                <div className={cardTitleClass}>
+                  <BookOpen size={13} className="text-orange-500" /> Latest Articles
+                </div>
+                <div className="my-2 flex-1">
+                  <p className={`text-sm font-bold ${dark ? 'text-gray-200' : 'text-gray-700'}`}>Technical Insights</p>
+                  <p className={`text-xs mt-1 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>Architecture, .NET, AI & more</p>
+                </div>
+                <div className="pt-2 border-t border-gray-800/10 dark:border-gray-100/5 flex items-center justify-between text-xs">
+                  <span className={dark ? 'text-gray-500' : 'text-gray-400'}>Read articles</span>
+                  <span className="font-semibold text-orange-400 uppercase tracking-widest group-hover:translate-x-1 transition-transform"><ChevronRight size={13} /></span>
+                </div>
+              </motion.div>
+            )}
+
             {/* Connect & Social Card */}
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
+              transition={{ delay: 0.45 }}
               className={`p-6 rounded-3xl flex flex-col justify-between ${glassClass}`}
             >
               <div className={cardTitleClass}>
@@ -739,6 +764,67 @@ export default function BentoHome({ onToggleLayout }) {
                     </div>
                   </div>
                 )}
+              </div>
+            </section>
+          )}
+
+          {/* Blog Section */}
+          {show('blog') && data.articles?.length > 0 && (
+            <section id="blog" className="mt-16 pt-10 border-t border-gray-800/10 dark:border-gray-100/5">
+              <div className="text-center mb-8">
+                <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-2.5 ${
+                  dark ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 'bg-orange-50 text-orange-700 border border-orange-200'
+                }`}>
+                  Blog
+                </span>
+                <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight">Technical Insights</h2>
+                <p className={`text-xs mt-1.5 ${dark ? 'text-gray-400' : 'text-gray-500'}`}>Thoughts on architecture, engineering, and technology</p>
+              </div>
+              <div className="grid md:grid-cols-3 gap-6">
+                {data.articles.slice(0, 3).map((article, i) => (
+                  <motion.div
+                    key={article._id}
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.1 }}
+                    onClick={() => navigate('/blog/' + article.slug)}
+                    className={`p-6 rounded-3xl cursor-pointer flex flex-col group ${glassClass}`}
+                  >
+                    {article.coverImage && (
+                      <div className="mb-4 -mx-6 -mt-6 rounded-t-2xl overflow-hidden h-36">
+                        <img src={article.coverImage} alt={article.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      </div>
+                    )}
+                    <div className="flex items-center gap-3 text-xs mb-3">
+                      <span className={`flex items-center gap-1 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
+                        <Calendar size={12} /> {new Date(article.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                      </span>
+                      {article.tags?.length > 0 && (
+                        <span className={`flex items-center gap-1 ${dark ? 'text-orange-400' : 'text-orange-600'}`}>
+                          <Tag size={12} /> {article.tags[0]}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="font-bold text-base mb-2 group-hover:text-orange-500 transition-colors line-clamp-2">{article.title}</h3>
+                    {article.excerpt && (
+                      <p className={`text-sm leading-relaxed mb-4 flex-1 line-clamp-3 ${dark ? 'text-gray-400' : 'text-gray-500'}`}>{article.excerpt}</p>
+                    )}
+                    <div className={`flex items-center gap-1 text-xs font-semibold mt-auto pt-3 border-t ${dark ? 'border-gray-800 text-orange-400' : 'border-gray-200 text-orange-600'}`}>
+                      Read More <ChevronRight size={12} />
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+              <div className="text-center mt-10">
+                <button onClick={() => navigate('/blog')}
+                  className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+                    dark
+                      ? 'bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white border border-gray-700'
+                      : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200 shadow-sm'
+                  }`}>
+                  <BookOpen size={16} /> View All Articles
+                </button>
               </div>
             </section>
           )}

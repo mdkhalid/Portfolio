@@ -23,6 +23,7 @@ const profileSchema = new mongoose.Schema({
       projects: true,
       certifications: true,
       contact: true,
+      blog: true,
     },
   },
   aiProvider: {

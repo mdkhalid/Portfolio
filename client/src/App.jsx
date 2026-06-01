@@ -7,6 +7,8 @@ import AdminLogin from './pages/AdminLogin'
 import AdminDashboard from './pages/AdminDashboard'
 import ChatPage from './pages/ChatPage'
 import ATSCheckerPage from './pages/ATSCheckerPage'
+import BlogPage from './pages/BlogPage'
+import ArticlePage from './pages/ArticlePage'
 import ScrollToTop from './components/ScrollToTop'
 
 function ProtectedRoute({ children }) {
@@ -31,6 +33,8 @@ export default function App() {
       } />
       <Route path="/chat" element={<ChatPage />} />
       <Route path="/ats-checker" element={<ATSCheckerPage />} />
+      <Route path="/blog" element={<BlogPage />} />
+      <Route path="/blog/:slug" element={<ArticlePage />} />
     </Routes>
     </>
   )

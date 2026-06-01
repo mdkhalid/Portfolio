@@ -3,6 +3,7 @@ import { Sun, Moon, Menu, X, FileText, MessageSquare, Target, Grid, BookOpen } f
 import { useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
+import Logo from './Logo'
 
 const links = [
   { label: 'Home', href: '#hero' },
@@ -49,8 +50,8 @@ export default function Navbar({ resumes, currentLayout, onToggleLayout }) {
           : dark ? 'bg-gray-900/80 backdrop-blur-xl border-b border-gray-800' : 'bg-white/80 backdrop-blur-xl border-b border-gray-200'
       }`}>
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-          <Link to="/" className="text-xl font-bold bg-gradient-to-r from-blue-600 via-cyan-500 to-emerald-500 bg-clip-text text-transparent">
-            MK
+          <Link to="/" className="flex items-center">
+            <Logo size={28} />
           </Link>
 
           {/* Desktop nav */}

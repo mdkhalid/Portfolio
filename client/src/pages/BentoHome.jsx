@@ -8,7 +8,7 @@ import {
   MapPin, Clock, Briefcase, GraduationCap, Award, 
   FolderGit2, FileText, Mail, Globe, Link2, ExternalLink,
   ChevronRight, Quote, Grid, ArrowDown, ChevronDown, CheckCircle2, Phone, Send, Loader2,
-  BookOpen, Calendar, Tag
+  BookOpen, Calendar, Tag, AlertTriangle
 } from 'lucide-react'
 import SEO from '../components/SEO'
 
@@ -618,6 +618,29 @@ export default function BentoHome({ onToggleLayout }) {
                 <div className="pt-2 border-t border-gray-800/10 dark:border-gray-100/5 flex items-center justify-between text-xs">
                   <span className={dark ? 'text-gray-500' : 'text-gray-400'}>Read articles</span>
                   <span className="font-semibold text-orange-400 uppercase tracking-widest group-hover:translate-x-1 transition-transform"><ChevronRight size={13} /></span>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Postmortems Bento Card */}
+            {show('blog') && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.45 }}
+                onClick={() => navigate('/postmortems')}
+                className={`p-6 rounded-3xl flex flex-col justify-between cursor-pointer group ${glassClass}`}
+              >
+                <div className={cardTitleClass}>
+                  <AlertTriangle size={13} className="text-red-500" /> Failure Log
+                </div>
+                <div className="my-2 flex-1">
+                  <p className={`text-sm font-bold ${dark ? 'text-gray-200' : 'text-gray-700'}`}>Production Postmortems</p>
+                  <p className={`text-xs mt-1 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>What broke, why, and what I learned</p>
+                </div>
+                <div className="pt-2 border-t border-gray-800/10 dark:border-gray-100/5 flex items-center justify-between text-xs">
+                  <span className={dark ? 'text-gray-500' : 'text-gray-400'}>Browse incidents</span>
+                  <span className="font-semibold text-red-400 uppercase tracking-widest group-hover:translate-x-1 transition-transform"><ChevronRight size={13} /></span>
                 </div>
               </motion.div>
             )}

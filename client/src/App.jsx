@@ -9,6 +9,8 @@ import ChatPage from './pages/ChatPage'
 import ATSCheckerPage from './pages/ATSCheckerPage'
 import BlogPage from './pages/BlogPage'
 import ArticlePage from './pages/ArticlePage'
+import PostmortemsPage from './pages/PostmortemsPage'
+import PostmortemDetailPage from './pages/PostmortemDetailPage'
 import ScrollToTop from './components/ScrollToTop'
 import CookieConsent from './components/CookieConsent'
 
@@ -37,6 +39,8 @@ export default function App() {
       <Route path="/ats-checker" element={<ATSCheckerPage />} />
       <Route path="/blog" element={<BlogPage />} />
       <Route path="/blog/:slug" element={<ArticlePage />} />
+      <Route path="/postmortems" element={<PostmortemsPage />} />
+      <Route path="/postmortems/:slug" element={<PostmortemDetailPage />} />
     </Routes>
     </>
   )

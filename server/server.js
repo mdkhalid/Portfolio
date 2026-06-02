@@ -16,6 +16,7 @@ const contactCtrl = require('./routes/contact');
 const messagesCtrl = require('./routes/messages');
 const chatCtrl = require('./routes/chat');
 const articlesCtrl = require('./routes/articles');
+const postmortemsCtrl = require('./routes/postmortems');
 const Activity = require('./models/Activity');
 const { authLimiter, contactLimiter, resumeLimiter, chatLimiter, atsLimiter } = require('./middleware/rateLimiter');
 const atsRouter = require('./routes/ats');
@@ -112,6 +113,9 @@ app.post('/api/contact', contactLimiter, contactCtrl.send);
 app.get('/api/articles', articlesCtrl.getAll);
 app.get('/api/articles/:slug', articlesCtrl.getBySlug);
 
+app.get('/api/postmortems', postmortemsCtrl.getAll);
+app.get('/api/postmortems/:slug', postmortemsCtrl.getBySlug);
+
 app.post('/api/chat', chatLimiter, chatCtrl.chat);
 app.post('/api/ats-score', atsLimiter, atsRouter.uploadMiddleware, atsRouter.score);
 
@@ -125,6 +129,11 @@ app.get('/api/admin/articles', auth, articlesCtrl.getAllAdmin);
 app.post('/api/articles', auth, articlesCtrl.create);
 app.put('/api/articles/:id', auth, articlesCtrl.update);
 app.delete('/api/articles/:id', auth, articlesCtrl.remove);
+
+app.get('/api/admin/postmortems', auth, postmortemsCtrl.getAllAdmin);
+app.post('/api/postmortems', auth, postmortemsCtrl.create);
+app.put('/api/postmortems/:id', auth, postmortemsCtrl.update);
+app.delete('/api/postmortems/:id', auth, postmortemsCtrl.remove);
 
 app.put('/api/profile', auth, profileCtrl.update);
 app.post('/api/skills', auth, skillsCtrl.create);

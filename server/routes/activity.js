@@ -1,10 +1,8 @@
 const Activity = require('../models/Activity');
+const { asyncHandler } = require('../middleware/errorHandler');
 
-exports.getRecent = async (req, res) => {
-  try {
-    const items = await Activity.find().sort({ createdAt: -1 }).limit(30);
-    res.json(items);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+exports.getRecent = asyncHandler(async (req, res) => {
+  const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 30));
+  const items = await Activity.find().sort({ createdAt: -1 }).limit(limit);
+  res.json(items);
+});

@@ -6,7 +6,7 @@ import axios from 'axios'
 
 export default function Contact({ profile }) {
   const { dark } = useTheme()
-  const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' })
+  const [form, setForm] = useState({ name: '', email: '', subject: '', message: '', company: '' })
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
 
@@ -17,7 +17,7 @@ export default function Contact({ profile }) {
     try {
       await axios.post('/api/contact', form)
       setStatus('sent')
-      setForm({ name: '', email: '', subject: '', message: '' })
+      setForm({ name: '', email: '', subject: '', message: '', company: '' })
       setTimeout(() => setStatus('idle'), 5000)
     } catch (err) {
       setStatus('idle')
@@ -103,6 +103,19 @@ export default function Contact({ profile }) {
 
               <textarea placeholder="Your message..." required rows={5} value={form.message}
                 onChange={e => setForm({ ...form, message: e.target.value })} className={inputClass} />
+
+              {/* Honeypot — hidden from real users, bots fill it */}
+              <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px', top: 'auto', width: 1, height: 1, overflow: 'hidden' }}>
+                <label htmlFor="contact-company">Company</label>
+                <input
+                  id="contact-company"
+                  type="text"
+                  tabIndex={-1}
+                  autoComplete="off"
+                  value={form.company}
+                  onChange={(e) => setForm({ ...form, company: e.target.value })}
+                />
+              </div>
 
               {error && (
                 <p className="text-sm text-red-500">{error}</p>

@@ -1,29 +1,55 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useState, useCallback } from 'react'
 import axios from 'axios'
 
 const AuthContext = createContext()
 
-export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem('token'))
-  const [user, setUser] = useState(() => {
-    const u = localStorage.getItem('user')
-    return u ? JSON.parse(u) : null
-  })
+const STORAGE_KEY = 'auth'
 
-  const login = async (username, password) => {
-    const { data } = await axios.post('/api/auth/login', { username, password })
-    localStorage.setItem('token', data.token)
-    localStorage.setItem('user', JSON.stringify({ username: data.username }))
-    setToken(data.token)
-    setUser({ username: data.username })
+const loadAuth = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return { token: null, user: null }
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object') {
+      return { token: parsed.token || null, user: parsed.user || null }
+    }
+  } catch {
+    // ignore parse errors
   }
+  return { token: null, user: null }
+}
 
-  const logout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
+const saveAuth = (data) => {
+  try {
+    if (data && data.token) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+    } else {
+      localStorage.removeItem(STORAGE_KEY)
+    }
+  } catch {
+    // localStorage may be unavailable
+  }
+}
+
+const initial = loadAuth()
+
+export function AuthProvider({ children }) {
+  const [token, setToken] = useState(initial.token)
+  const [user, setUser] = useState(initial.user)
+
+  const login = useCallback(async (username, password) => {
+    const { data } = await axios.post('/api/auth/login', { username, password })
+    const next = { token: data.token, user: { username: data.username } }
+    saveAuth(next)
+    setToken(next.token)
+    setUser(next.user)
+  }, [])
+
+  const logout = useCallback(() => {
+    saveAuth(null)
     setToken(null)
     setUser(null)
-  }
+  }, [])
 
   return (
     <AuthContext.Provider value={{ token, user, login, logout, isAdmin: !!token }}>

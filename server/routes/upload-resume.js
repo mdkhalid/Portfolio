@@ -1,44 +1,99 @@
 const router = require('express').Router();
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 const Resume = require('../models/Resume');
+const { asyncHandler, AppError } = require('../middleware/errorHandler');
+const { str } = require('../middleware/validate');
+const { cleanPlain } = require('../middleware/sanitize');
+const { validateFileType, ensureUploadsDir } = require('../utils/fileType');
+const { isPathSafe } = require('../utils/security');
+
+const ALLOWED_EXTS = ['pdf', 'doc', 'docx', 'txt'];
+const MAX_SIZE = 10 * 1024 * 1024;
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, path.join(__dirname, '..', 'uploads')),
-  filename: (req, file, cb) => cb(null, 'resume-' + Date.now() + path.extname(file.originalname)),
+  destination: (req, file, cb) => cb(null, ensureUploadsDir()),
+  filename: (req, file, cb) => {
+    const rand = crypto.randomBytes(8).toString('hex');
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `resume-${Date.now()}-${rand}${ext}`);
+  },
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: MAX_SIZE, files: 1 },
   fileFilter: (req, file, cb) => {
-    const allowed = /\.(pdf|doc|docx|txt)$/i;
-    if (allowed.test(path.extname(file.originalname))) return cb(null, true);
-    cb(new Error('Only PDF, DOC, DOCX, or TXT files are allowed'));
+    const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
+    if (!ALLOWED_EXTS.includes(ext)) {
+      return cb(new AppError('Only PDF, DOC, DOCX, or TXT files are allowed', 400, 'DISALLOWED_FILE'));
+    }
+    cb(null, true);
   },
 });
 
-router.post('/', upload.single('file'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
-  const item = await Resume.create({ label: req.body.label, fileUrl: '/uploads/' + req.file.filename });
-  res.status(201).json(item);
-});
+const sniff = (file) => {
+  if (!file) return null;
+  const fd = fs.openSync(file.path, 'r');
+  const head = Buffer.alloc(16);
+  fs.readSync(fd, head, 0, 16, 0);
+  fs.closeSync(fd);
+  return head;
+};
 
-router.put('/:id', upload.single('file'), async (req, res) => {
-  const update = {};
-  if (req.body.label) update.label = req.body.label;
-  if (req.file) update.fileUrl = '/uploads/' + req.file.filename;
-  const item = await Resume.findByIdAndUpdate(req.params.id, update, { returnDocument: 'after' });
-  res.json(item);
-});
+router.post(
+  '/',
+  upload.single('file'),
+  asyncHandler(async (req, res) => {
+    if (!req.file) throw new AppError('No file uploaded', 400, 'MISSING_FILE');
+    const head = sniff(req.file);
+    validateFileType(head, ALLOWED_EXTS, 'resume');
+    const label = cleanPlain(str(req.body, 'label', { min: 1, max: 200, optional: true }) || req.file.originalname);
+    const item = await Resume.create({ label, fileUrl: '/uploads/' + path.basename(req.file.path) });
+    res.status(201).json(item);
+  })
+);
 
-router.delete('/:id', async (req, res) => {
-  await Resume.findByIdAndDelete(req.params.id);
-  res.json({ message: 'Deleted' });
-});
+router.put(
+  '/:id',
+  upload.single('file'),
+  asyncHandler(async (req, res) => {
+    if (!isPathSafe(req.params.id)) {
+      throw new AppError('Invalid id', 400, 'INVALID_ID');
+    }
+    const update = {};
+    if (req.body.label !== undefined) {
+      update.label = cleanPlain(str(req.body, 'label', { min: 1, max: 200 }));
+    }
+    if (req.file) {
+      const head = sniff(req.file);
+      validateFileType(head, ALLOWED_EXTS, 'resume');
+      update.fileUrl = '/uploads/' + path.basename(req.file.path);
+    }
+    const item = await Resume.findByIdAndUpdate(req.params.id, update, { returnDocument: 'after' });
+    if (!item) throw new AppError('Not found', 404, 'NOT_FOUND');
+    res.json(item);
+  })
+);
+
+router.delete(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    if (!isPathSafe(req.params.id)) {
+      throw new AppError('Invalid id', 400, 'INVALID_ID');
+    }
+    const item = await Resume.findByIdAndDelete(req.params.id);
+    if (!item) throw new AppError('Not found', 404, 'NOT_FOUND');
+    res.json({ message: 'Deleted' });
+  })
+);
 
 router.use((err, req, res, next) => {
-  res.status(400).json({ message: err.message });
+  if (res.headersSent) return next(err);
+  if (err instanceof AppError) return res.status(err.status).json({ error: err.message, code: err.code });
+  res.status(400).json({ error: err.message || 'Upload failed' });
 });
 
 module.exports = router;

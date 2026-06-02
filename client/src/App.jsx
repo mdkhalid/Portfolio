@@ -10,6 +10,7 @@ import ATSCheckerPage from './pages/ATSCheckerPage'
 import BlogPage from './pages/BlogPage'
 import ArticlePage from './pages/ArticlePage'
 import ScrollToTop from './components/ScrollToTop'
+import CookieConsent from './components/CookieConsent'
 
 function ProtectedRoute({ children }) {
   const { isAdmin } = useAuth()
@@ -21,6 +22,7 @@ export default function App() {
   return (
     <>
       <ScrollToTop />
+      <CookieConsent />
       <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/bento" element={<BentoHome />} />

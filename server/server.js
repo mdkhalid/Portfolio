@@ -1,7 +1,7 @@
-require('dotenv').config();
+const env = require('./config/env');
 const express = require('express');
 const path = require('path');
-const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 const connectDB = require('./config/db');
 const auth = require('./middleware/auth');
 const profileCtrl = require('./routes/profile');
@@ -19,28 +19,86 @@ const articlesCtrl = require('./routes/articles');
 const Activity = require('./models/Activity');
 const { authLimiter, contactLimiter, resumeLimiter, chatLimiter, atsLimiter } = require('./middleware/rateLimiter');
 const atsRouter = require('./routes/ats');
+const {
+  helmetMiddleware,
+  corsMiddleware,
+  sanitizeMiddleware,
+  hppMiddleware,
+  compressionMiddleware,
+  isProd,
+} = require('./middleware/security');
+const { errorHandler, notFoundHandler, asyncHandler } = require('./middleware/errorHandler');
+const { isPathSafe } = require('./utils/security');
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+
+app.set('trust proxy', Number(env.TRUST_PROXY) || 1);
+app.disable('x-powered-by');
+
+app.use(helmetMiddleware);
+app.use(corsMiddleware);
+app.use(compressionMiddleware);
+
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ extended: false, limit: '100kb' }));
+
+app.use(sanitizeMiddleware);
+app.use(hppMiddleware);
+
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isProd ? 300 : 1000,
+  message: { error: 'Too many requests. Please slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api', globalLimiter);
 
 connectDB();
 
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use(
+  '/uploads',
+  express.static(path.join(__dirname, 'uploads'), {
+    fallthrough: false,
+    maxAge: '7d',
+    setHeaders: (res) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    },
+  })
+);
 
-// Rate-limited resume download
-app.get('/api/download-resume/:filename', resumeLimiter, (req, res) => {
-  const file = path.join(__dirname, 'uploads', req.params.filename);
-  // Log activity (async, don't block download)
-  Activity.create({
-    type: 'resume_download',
-    description: 'Resume downloaded',
-    metadata: { filename: req.params.filename, ip: req.ip },
-  }).then(() => Activity.prune()).catch(() => {});
-  res.download(file);
-});
+app.get(
+  '/api/download-resume/:filename',
+  resumeLimiter,
+  asyncHandler(async (req, res) => {
+    const filename = req.params.filename;
+    if (!isPathSafe(filename)) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    const file = path.join(__dirname, 'uploads', filename);
+    const uploadsDir = path.join(__dirname, 'uploads');
+    const resolved = path.resolve(file);
+    if (!resolved.startsWith(path.resolve(uploadsDir) + path.sep)) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+    Activity.create({
+      type: 'resume_download',
+      description: 'Resume downloaded',
+      metadata: { filename, ip: req.ip },
+    })
+      .then(() => Activity.prune())
+      .catch(() => {});
+    res.download(resolved, (err) => {
+      if (err && !res.headersSent) {
+        res.status(404).json({ error: 'File not found' });
+      }
+    });
+  })
+);
 
-// Public routes
+app.get('/api/health', (req, res) => res.json({ ok: true, env: env.NODE_ENV }));
+
 app.get('/api/profile', profileCtrl.getAll);
 app.get('/api/skills', skillsCtrl.getAll);
 app.get('/api/experiences', experiencesCtrl.getAll);
@@ -51,17 +109,12 @@ app.get('/api/resumes', resumeCtrl.getAll);
 app.post('/api/analytics/track', analyticsCtrl.track);
 app.post('/api/contact', contactLimiter, contactCtrl.send);
 
-// Articles
 app.get('/api/articles', articlesCtrl.getAll);
 app.get('/api/articles/:slug', articlesCtrl.getBySlug);
 
-// AI Chat
 app.post('/api/chat', chatLimiter, chatCtrl.chat);
-
-// ATS Resume Scoring
 app.post('/api/ats-score', atsLimiter, atsRouter.uploadMiddleware, atsRouter.score);
 
-// Auth
 app.use('/api/auth', authLimiter, require('./routes/auth'));
 
 app.get('/api/activity', auth, require('./routes/activity').getRecent);
@@ -73,7 +126,6 @@ app.post('/api/articles', auth, articlesCtrl.create);
 app.put('/api/articles/:id', auth, articlesCtrl.update);
 app.delete('/api/articles/:id', auth, articlesCtrl.remove);
 
-// Protected routes
 app.put('/api/profile', auth, profileCtrl.update);
 app.post('/api/skills', auth, skillsCtrl.create);
 app.put('/api/skills/:id', auth, skillsCtrl.update);
@@ -95,5 +147,23 @@ app.get('/api/messages', auth, messagesCtrl.getAll);
 app.put('/api/messages/:id/read', auth, messagesCtrl.markRead);
 app.delete('/api/messages/:id', auth, messagesCtrl.remove);
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.use(notFoundHandler);
+app.use(errorHandler);
+
+const PORT = env.PORT;
+const server = app.listen(PORT, () =>
+  console.log(`Server running on port ${PORT} (${env.NODE_ENV})`)
+);
+
+const shutdown = (signal) => {
+  console.log(`\n[shutdown] Received ${signal}, closing server...`);
+  server.close(() => {
+    require('mongoose').connection.close(false, () => process.exit(0));
+  });
+  setTimeout(() => process.exit(1), 10000).unref();
+};
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('unhandledRejection', (err) => {
+  console.error('[unhandledRejection]', err);
+});

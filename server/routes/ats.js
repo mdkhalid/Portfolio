@@ -2,10 +2,14 @@ const { getAIClient } = require('../ai/client');
 const { PDFParse } = require('pdf-parse');
 const multer = require('multer');
 const path = require('path');
+const { asyncHandler, AppError } = require('../middleware/errorHandler');
+const { str } = require('../middleware/validate');
+const { validateFileType } = require('../utils/fileType');
+const { sanitizeForAI } = require('../utils/security');
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (ext !== '.pdf') return cb(new Error('Only PDF files are allowed'));
@@ -15,37 +19,34 @@ const upload = multer({
 
 exports.uploadMiddleware = upload.single('resume');
 
-exports.score = async (req, res) => {
+exports.score = asyncHandler(async (req, res) => {
+  if (!req.file) throw new AppError('Resume file (PDF) is required', 400, 'MISSING_FILE');
+  const jobDescriptionRaw = str(req.body, 'jobDescription', { min: 20, max: 10000 });
+  const jobDescription = sanitizeForAI(jobDescriptionRaw);
+
+  validateFileType(req.file.buffer, ['pdf'], 'resume PDF');
+
+  let resumeText;
   try {
-    if (!req.file) return res.status(400).json({ error: 'Resume file (PDF) is required' });
-    if (!req.body.jobDescription || typeof req.body.jobDescription !== 'string') {
-      return res.status(400).json({ error: 'Job description is required' });
-    }
+    const parser = new PDFParse({ data: req.file.buffer });
+    const parsed = await parser.getText();
+    parser.destroy();
+    resumeText = parsed.text;
+  } catch (err) {
+    throw new AppError('Failed to parse PDF. Ensure it is a valid PDF file.', 400, 'PDF_PARSE_FAILED');
+  }
 
-    // Extract text from PDF
-    let resumeText;
-    try {
-      const parser = new PDFParse({ data: req.file.buffer });
-      const parsed = await parser.getText();
-      parser.destroy();
-      resumeText = parsed.text;
-    } catch (err) {
-      return res.status(400).json({ error: 'Failed to parse PDF. Ensure it is a valid PDF file.' });
-    }
+  if (!resumeText || resumeText.trim().length < 50) {
+    throw new AppError('Could not extract enough text from the PDF. Ensure the PDF contains readable text.', 400, 'PDF_EMPTY');
+  }
 
-    if (!resumeText || resumeText.trim().length < 50) {
-      return res.status(400).json({ error: 'Could not extract enough text from the PDF. Ensure the PDF contains readable text.' });
-    }
+  const { client, model } = await getAIClient('ats');
 
-    const jobDescription = req.body.jobDescription.trim();
-    const { client, model } = await getAIClient('ats');
+  if (!client) {
+    return res.json(generateFallbackScore(resumeText, jobDescription));
+  }
 
-    if (!client) {
-      // Fallback scoring when no API key for current provider
-      return res.json(generateFallbackScore(resumeText, jobDescription));
-    }
-
-    const prompt = `You are an expert ATS (Applicant Tracking System) resume analyzer. Analyze the following resume against the job description and provide a detailed ATS compatibility score.
+  const prompt = `You are an expert ATS (Applicant Tracking System) resume analyzer. Analyze the following resume against the job description and provide a detailed ATS compatibility score.
 
 Return your analysis as valid JSON only (no markdown, no code fences). Use this exact structure:
 {
@@ -70,6 +71,7 @@ ${resumeText.slice(0, 8000)}
 JOB DESCRIPTION:
 ${jobDescription.slice(0, 4000)}`;
 
+  try {
     const completion = await client.chat.completions.create({
       model,
       messages: [
@@ -84,7 +86,7 @@ ${jobDescription.slice(0, 4000)}`;
       response_format: { type: 'json_object' },
     });
 
-    const text = completion.choices[0]?.message?.content;
+    const text = completion.choices?.[0]?.message?.content;
     if (!text) return res.json(generateFallbackScore(resumeText, jobDescription));
 
     try {
@@ -94,22 +96,21 @@ ${jobDescription.slice(0, 4000)}`;
       res.json(generateFallbackScore(resumeText, jobDescription));
     }
   } catch (err) {
-    console.error('ATS score error:', err);
+    console.error('ATS upstream error:', err);
     res.status(503).json({ error: 'Service unavailable. Please try again later.' });
   }
-};
+});
 
 function generateFallbackScore(resumeText, jobDescription) {
   const resumeLower = resumeText.toLowerCase();
   const jdLower = jobDescription.toLowerCase();
 
-  // Extract keywords from JD (words that look like skills/tech)
-  const jdWords = jdLower.split(/\W+/).filter(w => w.length > 3);
+  const jdWords = jdLower.split(/\W+/).filter((w) => w.length > 3);
   const stopWords = new Set(['this', 'that', 'with', 'from', 'have', 'been', 'will', 'your', 'their', 'what', 'which', 'about', 'into', 'than', 'then', 'also', 'more', 'some', 'such', 'only', 'other', 'over', 'very', 'just', 'could', 'should', 'would']);
-  
-  const uniqueJdWords = [...new Set(jdWords)].filter(w => !stopWords.has(w));
-  const matched = uniqueJdWords.filter(w => resumeLower.includes(w));
-  
+
+  const uniqueJdWords = [...new Set(jdWords)].filter((w) => !stopWords.has(w));
+  const matched = uniqueJdWords.filter((w) => resumeLower.includes(w));
+
   const keywordMatch = uniqueJdWords.length > 0 ? Math.round((matched.length / uniqueJdWords.length) * 100) : 50;
   const overallScore = Math.min(100, Math.max(30, keywordMatch - 5 + Math.floor(Math.random() * 15)));
 
@@ -123,7 +124,7 @@ function generateFallbackScore(resumeText, jobDescription) {
       formatting: { score: 85, label: 'Formatting & Parsability', description: 'PDF was parsed successfully' },
     },
     matchingKeywords: matched.slice(0, 15),
-    missingKeywords: uniqueJdWords.filter(w => !resumeLower.includes(w)).slice(0, 15),
+    missingKeywords: uniqueJdWords.filter((w) => !resumeLower.includes(w)).slice(0, 15),
     strengths: ['Resume is machine-readable (PDF format)', 'Contains relevant professional experience'],
     improvements: ['Consider adding more keywords from the job description', 'Tailor your summary to match the role'],
     summary: 'Your resume has been analyzed. For a more accurate AI-powered analysis, configure an OPENAI_API_KEY in your server environment.',

@@ -4,6 +4,7 @@ import { useAuth } from './context/AuthContext'
 import Home from './pages/Home'
 import ScrollToTop from './components/ScrollToTop'
 import CookieConsent from './components/CookieConsent'
+import ChatWidget from './components/ChatWidget'
 
 const BentoHome = lazy(() => import('./pages/BentoHome'))
 const ResumePage = lazy(() => import('./pages/ResumePage'))
@@ -15,6 +16,7 @@ const BlogPage = lazy(() => import('./pages/BlogPage'))
 const ArticlePage = lazy(() => import('./pages/ArticlePage'))
 const PostmortemsPage = lazy(() => import('./pages/PostmortemsPage'))
 const PostmortemDetailPage = lazy(() => import('./pages/PostmortemDetailPage'))
+const LiveChatPage = lazy(() => import('./pages/LiveChatPage'))
 
 function ProtectedRoute({ children }) {
   const { isAdmin } = useAuth()
@@ -39,6 +41,7 @@ export default function App() {
     <>
       <ScrollToTop />
       <CookieConsent />
+      <ChatWidget />
       <SuspenseWrapper>
         <Routes>
         <Route path="/" element={<Home />} />
@@ -56,6 +59,7 @@ export default function App() {
         <Route path="/blog/:slug" element={<ArticlePage />} />
         <Route path="/postmortems" element={<PostmortemsPage />} />
         <Route path="/postmortems/:slug" element={<PostmortemDetailPage />} />
+        <Route path="/live-chat" element={<LiveChatPage />} />
       </Routes>
       </SuspenseWrapper>
     </>

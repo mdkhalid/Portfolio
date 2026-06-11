@@ -28,6 +28,7 @@
     "openai": "^6.38.0",
     "pdf-parse": "^2.4.5",
     "sanitize-html": "^2.17.4",
+    "socket.io": "^4.8.3",
     "validator": "^13.15.35"
   },
   "devDependencies": {

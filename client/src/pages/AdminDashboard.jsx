@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { useApiAuth } from '../lib/api'
 import { motion } from 'framer-motion'
-import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, BookOpen, Phone, PhoneCall } from 'lucide-react'
+import { io } from 'socket.io-client'
+import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, BookOpen, Phone, PhoneCall, MessagesSquare, Send, MessageCircle, Users } from 'lucide-react'
 import EditModal from '../features/admin/components/EditModal'
 import ProfileForm from '../features/admin/components/ProfileForm'
 
@@ -19,6 +20,7 @@ const tabs = [
   { key: 'articles', label: 'Blog', icon: BookOpen },
   { key: 'messages', label: 'Messages', icon: Mail },
   { key: 'leads', label: 'Leads', icon: Phone },
+  { key: 'livechat', label: 'Live Chat', icon: MessagesSquare },
   { key: 'analytics', label: 'Analytics', icon: BarChart3 },
 ]
 
@@ -39,10 +41,49 @@ export default function AdminDashboard() {
   const [leads, setLeads] = useState([])
   const [toast, setToast] = useState(null)
 
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type })
-    setTimeout(() => setToast(null), 3000)
-  }
+  // Live Chat state
+  const [chatActive, setChatActive] = useState([])
+  const [chatWaiting, setChatWaiting] = useState([])
+  const [selectedChat, setSelectedChat] = useState(null)
+  const [chatMessages, setChatMessages] = useState([])
+  const [chatInput, setChatInput] = useState('')
+  const chatSocketRef = useRef(null)
+  const chatEndRef = useRef(null)
+
+  useEffect(() => {
+    if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages])
+
+  useEffect(() => {
+    if (activeTab !== 'livechat') return
+    const socket = io(window.location.origin, { query: { role: 'admin' } })
+    chatSocketRef.current = socket
+
+    socket.on('chat:state', (data) => {
+      setChatActive(data.active || [])
+      setChatWaiting(data.waiting || [])
+    })
+
+    socket.on('chat:new', (session) => {
+      setChatActive((prev) => [...prev, session])
+    })
+
+    socket.on('chat:message', (data) => {
+      if (data.sessionId === selectedChat?._id) {
+        setChatMessages((prev) => [...prev, data.message])
+      }
+    })
+
+    socket.on('chat:closed', (data) => {
+      setChatActive((prev) => prev.filter((c) => c._id !== data.sessionId))
+      if (selectedChat?._id === data.sessionId) {
+        setSelectedChat(null)
+        setChatMessages([])
+      }
+    })
+
+    return () => { socket.disconnect() }
+  }, [activeTab, selectedChat?._id])
 
   useEffect(() => {
     if (activeTab === 'analytics') {
@@ -483,6 +524,153 @@ export default function AdminDashboard() {
     )
   }
 
+  const renderLiveChat = () => {
+    const selectChat = (session) => {
+      setSelectedChat(session)
+      setChatMessages([])
+
+      const fetchHistory = async () => {
+        try {
+          const { data } = await API.get('/api/livechat/' + session._id + '/messages')
+          setChatMessages(data)
+        } catch {}
+      }
+      fetchHistory()
+    }
+
+    const sendMessage = () => {
+      const msg = chatInput.trim()
+      if (!msg || !selectedChat) return
+      const socket = chatSocketRef.current
+      if (socket) {
+        socket.emit('admin:message', { sessionId: selectedChat._id, content: msg })
+      }
+      setChatMessages((prev) => [...prev, { role: 'admin', content: msg, timestamp: new Date() }])
+      setChatInput('')
+    }
+
+    const endChat = (sessionId) => {
+      if (!confirm('End this chat?')) return
+      const socket = chatSocketRef.current
+      if (socket) socket.emit('admin:end-chat', { sessionId })
+    }
+
+    const glassCard = dark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200 shadow-sm'
+
+    return (
+      <div className="flex flex-col lg:flex-row gap-6 h-[600px]">
+        {/* Sidebar */}
+        <div className="lg:w-72 flex-shrink-0 flex flex-col gap-3 overflow-y-auto">
+          {/* Queue */}
+          {chatWaiting.length > 0 && (
+            <div className={'p-3 rounded-xl border ' + glassCard}>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-amber-500 flex items-center gap-1.5 mb-2">
+                <Users size={14} /> Queue ({chatWaiting.length})
+              </h4>
+              <div className="space-y-1.5">
+                {chatWaiting.map((s) => (
+                  <div key={s._id} className={'flex items-center justify-between p-2 rounded-lg text-xs ' + (dark ? 'bg-gray-900' : 'bg-gray-50')}>
+                    <span className="font-medium truncate">{s.visitorName}</span>
+                    <span className="text-amber-500 font-bold">#{s.queuePosition}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Active */}
+          <div className={'flex-1 p-3 rounded-xl border overflow-y-auto ' + glassCard}>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-500 flex items-center gap-1.5 mb-2">
+              <MessageCircle size={14} /> Active ({chatActive.length}/3)
+            </h4>
+            {chatActive.length === 0 ? (
+              <p className={'text-xs ' + (dark ? 'text-gray-500' : 'text-gray-400')}>No active chats</p>
+            ) : (
+              <div className="space-y-1.5">
+                {chatActive.map((s) => (
+                  <button key={s._id} onClick={() => selectChat(s)}
+                    className={'w-full text-left p-2.5 rounded-xl text-xs transition-all cursor-pointer ' + (
+                      selectedChat?._id === s._id
+                        ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-md'
+                        : dark ? 'bg-gray-900 hover:bg-gray-700 text-gray-200' : 'bg-gray-50 hover:bg-gray-100 text-gray-700'
+                    )}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold truncate">{s.visitorName}</span>
+                      <span className="text-[10px] opacity-70">{s.messageCount || 0} msgs</span>
+                    </div>
+                    {s.lastMessage && (
+                      <p className="truncate mt-0.5 opacity-70">{s.lastMessage.content}</p>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Chat Area */}
+        <div className={'flex-1 flex flex-col rounded-xl border overflow-hidden ' + glassCard}>
+          {!selectedChat ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <MessagesSquare size={48} className="mx-auto mb-3 text-gray-400" />
+                <p className={'text-sm ' + (dark ? 'text-gray-500' : 'text-gray-400')}>Select a chat to start responding</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className={'flex items-center justify-between px-4 py-3 border-b ' + (dark ? 'border-gray-700' : 'border-gray-200')}>
+                <div>
+                  <h3 className="font-semibold text-sm">{selectedChat.visitorName}</h3>
+                  <p className={'text-xs ' + (dark ? 'text-gray-500' : 'text-gray-400')}>{selectedChat.visitorId?.slice(0, 8)}...</p>
+                </div>
+                <button onClick={() => endChat(selectedChat._id)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-red-400 hover:bg-red-500/10 transition-all cursor-pointer">
+                  End Chat
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {chatMessages.length === 0 && (
+                  <p className={'text-center text-sm ' + (dark ? 'text-gray-500' : 'text-gray-400')}>No messages yet</p>
+                )}
+                {chatMessages.map((msg, i) => (
+                  <div key={i} className={`flex items-start gap-2 ${msg.role === 'visitor' ? '' : 'flex-row-reverse'}`}>
+                    <div className={'px-3 py-2 rounded-xl text-sm max-w-[80%] ' + (
+                      msg.role === 'visitor'
+                        ? dark ? 'bg-gray-900 text-gray-200' : 'bg-gray-100 text-gray-800'
+                        : msg.role === 'admin'
+                          ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white'
+                          : dark ? 'bg-gray-900 text-gray-400 italic' : 'bg-gray-100 text-gray-500 italic'
+                    )}>
+                      {msg.role === 'visitor' && <p className="text-[10px] font-semibold text-emerald-500 mb-0.5">{selectedChat.visitorName}</p>}
+                      {msg.content}
+                    </div>
+                  </div>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+              <div className={'p-3 border-t ' + (dark ? 'border-gray-700' : 'border-gray-200')}>
+                <div className="flex items-end gap-2">
+                  <textarea value={chatInput} onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                    placeholder="Type your response..."
+                    rows={1}
+                    className={'flex-1 resize-none outline-none text-sm leading-relaxed py-2 px-3 rounded-xl border max-h-20 ' + (
+                      dark ? 'bg-gray-900 border-gray-700 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400'
+                    )} />
+                  <button onClick={sendMessage} disabled={!chatInput.trim()}
+                    className="p-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600 transition-all disabled:opacity-50 shadow-md cursor-pointer">
+                    <Send size={18} />
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   const renderTab = () => {
     switch (activeTab) {
       case 'profile': return (
@@ -505,6 +693,7 @@ export default function AdminDashboard() {
       case 'articles': return renderArticles()
       case 'messages': return renderMessages()
       case 'leads': return renderLeads()
+      case 'livechat': return renderLiveChat()
       case 'analytics': return renderAnalytics()
       default: return null
     }

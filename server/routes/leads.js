@@ -1,4 +1,5 @@
 const Lead = require('../models/Lead');
+const ChatSession = require('../models/ChatSession');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const { str, mongoId } = require('../middleware/validate');
 const { cleanPlain } = require('../middleware/sanitize');
@@ -17,6 +18,13 @@ exports.markStatus = asyncHandler(async (req, res) => {
   const item = await Lead.findByIdAndUpdate(id, { status }, { new: true });
   if (!item) throw new AppError('Not found', 404, 'NOT_FOUND');
   res.json(item);
+});
+
+exports.getChatMessages = asyncHandler(async (req, res) => {
+  const id = mongoId(req.params.id, 'session id');
+  const session = await ChatSession.findById(id).select('messages');
+  if (!session) throw new AppError('Not found', 404, 'NOT_FOUND');
+  res.json(session.messages);
 });
 
 exports.remove = asyncHandler(async (req, res) => {

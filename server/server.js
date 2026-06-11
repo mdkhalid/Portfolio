@@ -1,8 +1,10 @@
 const env = require('./config/env');
 const express = require('express');
+const http = require('http');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 const connectDB = require('./config/db');
+const { setupSocket } = require('./socket');
 const auth = require('./middleware/auth');
 const profileCtrl = require('./routes/profile');
 const skillsCtrl = require('./routes/skills');
@@ -160,6 +162,7 @@ app.delete('/api/messages/:id', auth, messagesCtrl.remove);
 app.get('/api/leads', auth, leadsCtrl.getAll);
 app.put('/api/leads/:id/status', auth, leadsCtrl.markStatus);
 app.delete('/api/leads/:id', auth, leadsCtrl.remove);
+app.get('/api/livechat/:id/messages', auth, leadsCtrl.getChatMessages);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
@@ -168,7 +171,9 @@ module.exports = app;
 
 if (require.main === module) {
   const PORT = env.PORT;
-  const server = app.listen(PORT, () =>
+  const server = http.createServer(app);
+  setupSocket(server);
+  server.listen(PORT, () =>
     console.log(`Server running on port ${PORT} (${env.NODE_ENV})`)
   );
 

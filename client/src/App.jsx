@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import Home from './pages/Home'
 import ScrollToTop from './components/ScrollToTop'
@@ -37,11 +37,14 @@ function SuspenseWrapper({ children }) {
 }
 
 export default function App() {
+  const { pathname } = useLocation()
+  const hideChat = pathname.startsWith('/admin')
+
   return (
     <>
       <ScrollToTop />
       <CookieConsent />
-      <ChatWidget />
+      {!hideChat && <ChatWidget />}
       <SuspenseWrapper>
         <Routes>
         <Route path="/" element={<Home />} />

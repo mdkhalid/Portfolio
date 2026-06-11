@@ -49,6 +49,12 @@ export default function AdminDashboard() {
   const [chatInput, setChatInput] = useState('')
   const chatSocketRef = useRef(null)
   const chatEndRef = useRef(null)
+  const selectedChatRef = useRef(null)
+  const chatMessagesRef = useRef({})
+
+  useEffect(() => {
+    selectedChatRef.current = selectedChat
+  }, [selectedChat])
 
   useEffect(() => {
     if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' })
@@ -69,21 +75,26 @@ export default function AdminDashboard() {
     })
 
     socket.on('chat:message', (data) => {
-      if (data.sessionId === selectedChat?._id) {
-        setChatMessages((prev) => [...prev, data.message])
+      const sid = data.sessionId
+      chatMessagesRef.current[sid] = [...(chatMessagesRef.current[sid] || []), data.message]
+      const cur = selectedChatRef.current
+      if (cur && cur._id === sid) {
+        setChatMessages(chatMessagesRef.current[sid])
       }
     })
 
     socket.on('chat:closed', (data) => {
       setChatActive((prev) => prev.filter((c) => c._id !== data.sessionId))
-      if (selectedChat?._id === data.sessionId) {
+      delete chatMessagesRef.current[data.sessionId]
+      const cur = selectedChatRef.current
+      if (cur && cur._id === data.sessionId) {
         setSelectedChat(null)
         setChatMessages([])
       }
     })
 
     return () => { socket.disconnect() }
-  }, [activeTab, selectedChat?._id])
+  }, [activeTab])
 
   useEffect(() => {
     if (activeTab === 'analytics') {
@@ -404,6 +415,11 @@ export default function AdminDashboard() {
     } catch (err) { console.error(err) }
   }
 
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
+
   const deleteMessage = async (id) => {
     if (!confirm('Delete this message?')) return
     try {
@@ -527,15 +543,20 @@ export default function AdminDashboard() {
   const renderLiveChat = () => {
     const selectChat = (session) => {
       setSelectedChat(session)
-      setChatMessages([])
 
-      const fetchHistory = async () => {
-        try {
-          const { data } = await API.get('/api/livechat/' + session._id + '/messages')
-          setChatMessages(data)
-        } catch {}
+      if (chatMessagesRef.current[session._id]) {
+        setChatMessages(chatMessagesRef.current[session._id])
+      } else {
+        setChatMessages([])
+        const fetchHistory = async () => {
+          try {
+            const { data } = await API.get('/api/livechat/' + session._id + '/messages')
+            chatMessagesRef.current[session._id] = data || []
+            setChatMessages(data || [])
+          } catch {}
+        }
+        fetchHistory()
       }
-      fetchHistory()
     }
 
     const sendMessage = () => {

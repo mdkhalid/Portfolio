@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Sparkles, Trash2, Upload } from 'lucide-react'
 
 const sections = [
@@ -31,6 +31,24 @@ export default function ProfileForm({ API, dark, profile, saving, setSaving, set
     useBentoTheme: profile.useBentoTheme || false,
   })
   const [uploading, setUploading] = useState(false)
+
+  useEffect(() => {
+    setForm({
+      name: profile.name || '',
+      email: profile.email || '',
+      phone: profile.phone || '',
+      location: profile.location || '',
+      linkedIn: profile.linkedIn || '',
+      github: profile.github || '',
+      title: profile.title || '',
+      summary: profile.summary || '',
+      avatar: profile.avatar || '',
+      experienceYears: profile.experienceYears || 18,
+      visibleSections: profile.visibleSections || {},
+      aiProvider: profile.aiProvider || 'openai',
+      useBentoTheme: profile.useBentoTheme || false,
+    })
+  }, [profile])
 
   const handleAvatarUpload = async (e) => {
     const file = e.target.files?.[0]

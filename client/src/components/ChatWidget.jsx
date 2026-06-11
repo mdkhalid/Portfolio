@@ -65,18 +65,11 @@ export default function ChatWidget() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!joined) handleJoin(); else handleSend() }
   }
 
-  const resetAndClose = () => {
-    setOpen(false)
-    setStep('name')
-    setName('')
-    setMessages([])
-    setInput('')
-    setStatus(null)
-  }
+  const minimize = () => { setOpen(false); setInput('') }
 
   return (
     <>
-      <button onClick={() => setOpen(true)}
+      <button onClick={() => setOpen(v => !v)}
         className="fixed bottom-6 right-6 z-[60] w-14 h-14 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 hover:scale-105 transition-all cursor-pointer">
         {open ? <X size={24} /> : <MessageCircle size={24} />}
       </button>
@@ -86,7 +79,7 @@ export default function ChatWidget() {
           <>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm"
-              onClick={resetAndClose} />
+              onClick={minimize} />
             <motion.div initial={{ opacity: 0, y: 50, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 50, scale: 0.95 }}
               transition={{ type: 'spring', damping: 25, stiffness: 260 }}
               className="fixed bottom-24 right-6 z-[70] w-[380px] max-w-[calc(100vw-2rem)] h-[560px] max-h-[calc(100vh-8rem)] rounded-2xl overflow-hidden shadow-2xl border flex flex-col bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700">
@@ -102,7 +95,7 @@ export default function ChatWidget() {
                     {!connected ? 'Connecting...' : status?.status === 'active' ? 'Connected' : status?.status === 'waiting' ? 'In queue' : status?.status === 'closed' ? 'Ended' : 'Start a conversation'}
                   </p>
                 </div>
-                <button onClick={resetAndClose} className="p-1 rounded-lg hover:bg-white/20 transition-colors cursor-pointer">
+                <button onClick={minimize} className="p-1 rounded-lg hover:bg-white/20 transition-colors cursor-pointer">
                   <X size={18} />
                 </button>
               </div>

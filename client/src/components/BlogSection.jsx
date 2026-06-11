@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useTheme } from '../context/ThemeContext'
-import axios from 'axios'
-import { Calendar, Tag, ChevronRight, BookOpen } from 'lucide-react'
+import api from '../lib/api'
+import { Calendar, Tag, Clock, ChevronRight, BookOpen } from 'lucide-react'
 
 export default function BlogSection() {
   const { dark } = useTheme()
@@ -14,7 +14,7 @@ export default function BlogSection() {
   useEffect(() => {
     const fetch = async () => {
       try {
-        const { data } = await axios.get('/api/articles', { params: { limit: 3, skip: 0 } })
+        const { data } = await api.get('/api/articles', { params: { limit: 3, skip: 0 } })
         setArticles(data.items)
       } catch (err) {
         console.error('Failed to fetch articles:', err)
@@ -65,13 +65,18 @@ export default function BlogSection() {
             >
               {article.coverImage && (
                 <div className="mb-4 -mx-6 -mt-6 rounded-t-2xl overflow-hidden h-36">
-                  <img src={article.coverImage} alt={article.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  <img src={article.coverImage} alt={article.title} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                 </div>
               )}
               <div className="flex items-center gap-3 text-xs mb-3">
                 <span className={`flex items-center gap-1 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
                   <Calendar size={12} /> {formatDate(article.createdAt)}
                 </span>
+                {article.readingTime > 0 && (
+                  <span className={`flex items-center gap-1 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
+                    <Clock size={12} /> {article.readingTime} min read
+                  </span>
+                )}
                 {article.tags?.length > 0 && (
                   <span className={`flex items-center gap-1 ${dark ? 'text-orange-400' : 'text-orange-600'}`}>
                     <Tag size={12} /> {article.tags[0]}

@@ -3,114 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useTheme } from '../context/ThemeContext'
 import { ArrowLeft, Sun, Moon, Upload, FileText, Briefcase, Loader2, Target, CheckCircle2, XCircle, Lightbulb, TrendingUp, Sparkles, ScrollText, AlertCircle, BarChart3 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import axios from 'axios'
+import api from '../lib/api'
 import SEO from '../components/SEO'
-
-function CircularScore({ score, size = 180 }) {
-  const radius = (size - 20) / 2
-  const circumference = 2 * Math.PI * radius
-  const offset = circumference - (score / 100) * circumference
-  const strokeWidth = 12
-
-  const getColor = (s) => {
-    if (s >= 80) return '#10b981'
-    if (s >= 60) return '#3b82f6'
-    if (s >= 40) return '#f59e0b'
-    return '#ef4444'
-  }
-
-  const color = getColor(score)
-
-  return (
-    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="transform -rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeWidth={strokeWidth} className="text-gray-200 dark:text-gray-700" />
-        <motion.circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={color}
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          initial={{ strokeDashoffset: circumference }}
-          animate={{ strokeDashoffset: offset }}
-          transition={{ duration: 1.5, ease: 'easeOut' }}
-          className="drop-shadow-lg"
-          style={{ filter: `drop-shadow(0 0 8px ${color}40)` }}
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <motion.span
-          initial={{ opacity: 0, scale: 0.5 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.6, delay: 0.8, type: 'spring' }}
-          className="text-4xl font-bold"
-          style={{ color }}
-        >
-          {score}
-        </motion.span>
-        <span className={`text-xs font-medium mt-0.5 ${score >= 60 ? 'text-emerald-500' : score >= 40 ? 'text-amber-500' : 'text-red-500'}`}>
-          {score >= 80 ? 'Excellent' : score >= 60 ? 'Good' : score >= 40 ? 'Needs Work' : 'Low'}
-        </span>
-      </div>
-    </div>
-  )
-}
-
-function ScoreBar({ label, score, index }) {
-  const getColor = (s) => {
-    if (s >= 80) return 'from-emerald-500 to-emerald-400'
-    if (s >= 60) return 'from-blue-500 to-cyan-400'
-    if (s >= 40) return 'from-amber-500 to-amber-400'
-    return 'from-red-500 to-red-400'
-  }
-
-  const getBg = (s) => {
-    if (s >= 80) return 'bg-emerald-500/20'
-    if (s >= 60) return 'bg-blue-500/20'
-    if (s >= 40) return 'bg-amber-500/20'
-    return 'bg-red-500/20'
-  }
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: 0.3 + index * 0.1, duration: 0.4 }}
-      className="space-y-1.5"
-    >
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-medium text-gray-700 dark:text-gray-300">{label}</span>
-        <span className="font-bold" style={{ color: score >= 80 ? '#10b981' : score >= 60 ? '#3b82f6' : score >= 40 ? '#f59e0b' : '#ef4444' }}>{score}%</span>
-      </div>
-      <div className="h-2.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
-        <motion.div
-          initial={{ width: 0 }}
-          animate={{ width: `${score}%` }}
-          transition={{ duration: 1, delay: 0.5 + index * 0.1, ease: 'easeOut' }}
-          className={`h-full rounded-full bg-gradient-to-r ${getColor(score)} shadow-sm`}
-          style={{ boxShadow: `0 0 12px ${score >= 60 ? '#3b82f640' : score >= 40 ? '#f59e0b40' : '#ef444440'}` }}
-        />
-      </div>
-    </motion.div>
-  )
-}
-
-function KeywordTag({ word, match }) {
-  const { dark } = useTheme()
-  return (
-    <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-      match
-        ? dark ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-        : dark ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-red-50 text-red-700 border border-red-200'
-    }`}>
-      {match ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-      {word}
-    </span>
-  )
-}
+import CircularScore from '../components/ats/CircularScore'
+import ScoreBar from '../components/ats/ScoreBar'
+import KeywordTag from '../components/ats/KeywordTag'
 
 const SAMPLE_JD = `We are looking for a Senior Full Stack Developer with expertise in React, Node.js, and cloud technologies. The ideal candidate has strong experience with MongoDB, REST APIs, microservices architecture, and CI/CD pipelines. Knowledge of Docker, Kubernetes, and AWS is preferred. The role requires leading development teams, conducting code reviews, and delivering scalable solutions.`;
 
@@ -159,7 +56,7 @@ export default function ATSCheckerPage() {
     formData.append('jobDescription', jobDescription.trim())
 
     try {
-      const { data } = await axios.post('/api/ats-score', formData)
+      const { data } = await api.post('/api/ats-score', formData)
       setResult(data)
     } catch (err) {
       const serverMsg = err.response?.data?.error
@@ -557,5 +454,4 @@ export default function ATSCheckerPage() {
     </>
   )
 }
-
 

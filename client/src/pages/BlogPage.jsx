@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { useTheme } from '../context/ThemeContext'
 import { useNavigate } from 'react-router-dom'
-import axios from 'axios'
-import { ArrowLeft, Sun, Moon, Calendar, Tag, Clock, FileText, ChevronRight, Sparkles, Search, X } from 'lucide-react'
+import api from '../lib/api'
+import { ArrowLeft, Sun, Moon, Calendar, Tag, Clock, FileText, ChevronRight, Sparkles, X } from 'lucide-react'
 import SEO from '../components/SEO'
 
 export default function BlogPage() {
@@ -24,7 +24,7 @@ export default function BlogPage() {
         const skip = page * limit
         const params = { limit, skip }
         if (activeTag) params.tag = activeTag
-        const { data } = await axios.get('/api/articles', { params })
+        const { data } = await api.get('/api/articles', { params })
         if (page === 0) {
           setArticles(data.items)
         } else {
@@ -135,13 +135,18 @@ export default function BlogPage() {
                   >
                     {article.coverImage && (
                       <div className="mb-4 -mx-6 -mt-6 rounded-t-2xl overflow-hidden h-40">
-                        <img src={article.coverImage} alt={article.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                        <img src={article.coverImage} alt={article.title} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                       </div>
                     )}
                     <div className="flex items-center gap-3 text-xs mb-3">
                       <span className={`flex items-center gap-1 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
                         <Calendar size={12} /> {formatDate(article.createdAt)}
                       </span>
+                      {article.readingTime > 0 && (
+                        <span className={`flex items-center gap-1 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
+                          <Clock size={12} /> {article.readingTime} min read
+                        </span>
+                      )}
                       {article.tags?.length > 0 && (
                         <span className={`flex items-center gap-1 ${dark ? 'text-orange-400' : 'text-orange-600'}`}>
                           <Tag size={12} /> {article.tags[0]}

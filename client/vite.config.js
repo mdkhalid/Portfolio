@@ -7,4 +7,12 @@ export default defineConfig({
   server: {
     proxy: { '/api': 'http://localhost:5000', '/uploads': 'http://localhost:5000' },
   },
+  build: {
+    target: 'es2020',
+    cssMinify: true,
+    cssCodeSplit: false,
+    sourcemap: false,
+    reportCompressedSize: false,
+    chunkSizeWarningLimit: 1000,
+  },
 })

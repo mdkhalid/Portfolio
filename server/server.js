@@ -17,6 +17,7 @@ const messagesCtrl = require('./routes/messages');
 const chatCtrl = require('./routes/chat');
 const articlesCtrl = require('./routes/articles');
 const postmortemsCtrl = require('./routes/postmortems');
+const leadsCtrl = require('./routes/leads');
 const Activity = require('./models/Activity');
 const { authLimiter, contactLimiter, resumeLimiter, chatLimiter, atsLimiter } = require('./middleware/rateLimiter');
 const atsRouter = require('./routes/ats');
@@ -156,23 +157,31 @@ app.get('/api/messages', auth, messagesCtrl.getAll);
 app.put('/api/messages/:id/read', auth, messagesCtrl.markRead);
 app.delete('/api/messages/:id', auth, messagesCtrl.remove);
 
+app.get('/api/leads', auth, leadsCtrl.getAll);
+app.put('/api/leads/:id/status', auth, leadsCtrl.markStatus);
+app.delete('/api/leads/:id', auth, leadsCtrl.remove);
+
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-const PORT = env.PORT;
-const server = app.listen(PORT, () =>
-  console.log(`Server running on port ${PORT} (${env.NODE_ENV})`)
-);
+module.exports = app;
 
-const shutdown = (signal) => {
-  console.log(`\n[shutdown] Received ${signal}, closing server...`);
-  server.close(() => {
-    require('mongoose').connection.close(false, () => process.exit(0));
+if (require.main === module) {
+  const PORT = env.PORT;
+  const server = app.listen(PORT, () =>
+    console.log(`Server running on port ${PORT} (${env.NODE_ENV})`)
+  );
+
+  const shutdown = (signal) => {
+    console.log(`\n[shutdown] Received ${signal}, closing server...`);
+    server.close(() => {
+      require('mongoose').connection.close(false, () => process.exit(0));
+    });
+    setTimeout(() => process.exit(1), 10000).unref();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('unhandledRejection', (err) => {
+    console.error('[unhandledRejection]', err);
   });
-  setTimeout(() => process.exit(1), 10000).unref();
-};
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('unhandledRejection', (err) => {
-  console.error('[unhandledRejection]', err);
-});
+}

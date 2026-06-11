@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import axios from 'axios'
+import api from '../lib/api'
 import Navbar from '../components/Navbar'
 import Hero from '../components/Hero'
 import Summary from '../components/Summary'
@@ -21,15 +21,15 @@ export default function Home() {
   useEffect(() => {
     if (!tracked.current && !localStorage.getItem('token')) {
       tracked.current = true
-      axios.post('/api/analytics/track').catch(() => {})
+      api.post('/api/analytics/track').catch(() => {})
     }
     const fetchData = async () => {
       try {
         const [profile, skills, experiences, education, certifications, projects, resumes] = await Promise.all([
-          axios.get('/api/profile'), axios.get('/api/skills'),
-          axios.get('/api/experiences'), axios.get('/api/education'),
-          axios.get('/api/certifications'), axios.get('/api/projects'),
-          axios.get('/api/resumes'),
+          api.get('/api/profile'), api.get('/api/skills'),
+          api.get('/api/experiences'), api.get('/api/education'),
+          api.get('/api/certifications'), api.get('/api/projects'),
+          api.get('/api/resumes'),
         ])
         setData({
           profile: profile.data,

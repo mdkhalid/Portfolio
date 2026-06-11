@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useTheme } from '../context/ThemeContext'
-import axios from 'axios'
+import api from '../lib/api'
 import ReactMarkdown from 'react-markdown'
 import MermaidDiagram from '../components/MermaidDiagram'
 import { ArrowLeft, Sun, Moon, Calendar, Tag, Clock, AlertTriangle, CheckCircle2, XCircle, AlertCircle, Activity, Server, FileText, Share2, Link2, Check } from 'lucide-react'
@@ -81,7 +81,7 @@ export default function PostmortemDetailPage() {
       setLoading(true)
       setError(null)
       try {
-        const { data } = await axios.get('/api/postmortems/' + slug)
+        const { data } = await api.get('/api/postmortems/' + slug)
         setPm(data)
       } catch (err) {
         if (err.response?.status === 404) setError('Postmortem not found')

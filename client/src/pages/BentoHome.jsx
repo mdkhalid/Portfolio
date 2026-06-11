@@ -1,102 +1,21 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { useTheme } from '../context/ThemeContext'
 import { useNavigate } from 'react-router-dom'
-import axios from 'axios'
+import api from '../lib/api'
 import { 
-  Bot, User, Sparkles, ArrowLeft, Sun, Moon, 
-  MapPin, Clock, Briefcase, GraduationCap, Award, 
+  Bot, User, Sparkles, ArrowLeft, Sun, Moon,
+  MapPin, Clock, Briefcase, GraduationCap, Award,
   FolderGit2, FileText, Mail, Globe, Link2, ExternalLink,
-  ChevronRight, Quote, Grid, ArrowDown, ChevronDown, CheckCircle2, Phone, Send, Loader2,
+  ChevronRight, Quote, Grid,
   BookOpen, Calendar, Tag, AlertTriangle
 } from 'lucide-react'
 import SEO from '../components/SEO'
-
-// Subtitle Specialty Carousel
-function SpecialtyCarousel({ dark }) {
-  const specialties = [
-    'Senior Solution Architect',
-    'Enterprise .NET Core Expert',
-    'Full-Stack Developer',
-    'AI Solutions Integrator'
-  ]
-  const [index, setIndex] = useState(0)
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setIndex(prev => (prev + 1) % specialties.length)
-    }, 3000)
-    return () => clearInterval(timer)
-  }, [])
-
-  return (
-    <div className="h-8 overflow-hidden relative mt-1.5 flex items-center justify-center md:justify-start">
-      <AnimatePresence mode="wait">
-        <motion.p
-          key={specialties[index]}
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: -20, opacity: 0 }}
-          transition={{ duration: 0.5, ease: 'easeInOut' }}
-          className={`text-lg md:text-xl font-semibold bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 bg-clip-text text-transparent`}
-        >
-          {specialties[index]}
-        </motion.p>
-      </AnimatePresence>
-    </div>
-  )
-}
-
-// Live Time in Delhi India (Asia/Kolkata)
-function LiveClock({ dark }) {
-  const [time, setTime] = useState('')
-  const [seconds, setSeconds] = useState(0)
-
-  useEffect(() => {
-    const updateTime = () => {
-      const options = {
-        timeZone: 'Asia/Kolkata',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: true
-      }
-      const formatter = new Intl.DateTimeFormat([], options)
-      setTime(formatter.format(new Date()))
-      setSeconds(prev => prev + 1)
-    }
-
-    updateTime()
-    const timer = setInterval(updateTime, 1000)
-    return () => clearInterval(timer)
-  }, [])
-
-  return (
-    <div className="flex items-center gap-3">
-      <div className="relative flex items-center justify-center">
-        <motion.div 
-          animate={{ rotate: 360 }}
-          transition={{ duration: 15, repeat: Infinity, ease: 'linear' }}
-          className={`p-1.5 rounded-full ${dark ? 'bg-cyan-500/10 text-cyan-400' : 'bg-cyan-50 text-cyan-600'}`}
-        >
-          <Clock size={16} />
-        </motion.div>
-        <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500"></span>
-        </span>
-      </div>
-      <div>
-        <p className={`text-xs font-semibold ${dark ? 'text-gray-400' : 'text-gray-500'} uppercase tracking-widest`}>
-          Local Time (Delhi)
-        </p>
-        <p className={`text-sm font-bold font-mono tracking-tight ${dark ? 'text-white' : 'text-gray-800'}`}>
-          {time || 'Loading...'}
-        </p>
-      </div>
-    </div>
-  )
-}
+import SpecialtyCarousel from '../components/bento/SpecialtyCarousel'
+import LiveClock from '../components/bento/LiveClock'
+import ProjectCard from '../components/bento/ProjectCard'
+import ProjectDetailModal from '../components/bento/ProjectDetailModal'
+import BentoContactSection from '../components/bento/BentoContactSection'
 
 export default function BentoHome({ onToggleLayout }) {
   const { dark, toggle } = useTheme()
@@ -105,23 +24,20 @@ export default function BentoHome({ onToggleLayout }) {
   const [loading, setLoading] = useState(true)
   const [selectedProject, setSelectedProject] = useState(null)
   const [activeTag, setActiveTag] = useState(null)
-  const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' })
-  const [formStatus, setFormStatus] = useState('idle')
-  const [formError, setFormError] = useState('')
   const tracked = useRef(false)
 
   useEffect(() => {
     if (!tracked.current && !localStorage.getItem('token')) {
       tracked.current = true
-      axios.post('/api/analytics/track').catch(() => {})
+      api.post('/api/analytics/track').catch(() => {})
     }
     const fetchData = async () => {
       try {
         const [profile, skills, experiences, education, certifications, projects, resumes, articles] = await Promise.all([
-          axios.get('/api/profile'), axios.get('/api/skills'),
-          axios.get('/api/experiences'), axios.get('/api/education'),
-          axios.get('/api/certifications'), axios.get('/api/projects'),
-          axios.get('/api/resumes'), axios.get('/api/articles', { params: { limit: 3, skip: 0 } }),
+          api.get('/api/profile'), api.get('/api/skills'),
+          api.get('/api/experiences'), api.get('/api/education'),
+          api.get('/api/certifications'), api.get('/api/projects'),
+          api.get('/api/resumes'), api.get('/api/articles', { params: { limit: 3, skip: 0 } }),
         ])
         setData({
           profile: profile.data,
@@ -141,21 +57,6 @@ export default function BentoHome({ onToggleLayout }) {
     }
     fetchData()
   }, [])
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setFormStatus('sending')
-    setFormError('')
-    try {
-      await axios.post('/api/contact', form)
-      setFormStatus('sent')
-      setForm({ name: '', email: '', subject: '', message: '' })
-      setTimeout(() => setFormStatus('idle'), 5000)
-    } catch (err) {
-      setFormStatus('idle')
-      setFormError(err.response?.data?.error || 'Failed to send message')
-    }
-  }
 
   const allTags = useMemo(() => {
     if (!data.projects?.length) return []
@@ -481,43 +382,8 @@ export default function BentoHome({ onToggleLayout }) {
 
                 {/* Grid list of project blocks */}
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredProjects?.slice(0, 6).map((proj, i) => (
-                    <motion.div 
-                      key={proj._id}
-                      layout
-                      onClick={() => setSelectedProject(proj)}
-                      className={`p-5 rounded-2xl cursor-pointer transition-all border group relative flex flex-col justify-between min-h-[170px] ${
-                        dark 
-                          ? 'bg-gray-950/40 border-gray-900 hover:border-blue-500/50' 
-                          : 'bg-white border-gray-200 hover:border-blue-400/50 hover:shadow-md'
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-start justify-between mb-2">
-                          <h3 className={`font-bold group-hover:text-blue-500 text-base transition-colors ${dark ? 'text-gray-100' : 'text-gray-850'}`}>
-                            {proj.name}
-                          </h3>
-                          <ChevronRight size={16} className="opacity-0 group-hover:opacity-100 transition-opacity text-blue-500" />
-                        </div>
-                        <p className={`text-sm leading-relaxed line-clamp-3 mb-4 ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
-                          {proj.description}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {proj.techStack?.slice(0, 3).map(badge => (
-                          <span key={badge} className={`px-2 py-0.5 rounded-md text-xs font-bold ${
-                            dark ? 'bg-gray-900 text-gray-300' : 'bg-gray-100 text-gray-600'
-                          }`}>
-                            {badge}
-                          </span>
-                        ))}
-                        {proj.techStack?.length > 3 && (
-                          <span className={`px-2 py-0.5 rounded-md text-xs font-bold ${dark ? 'bg-gray-900 text-gray-500' : 'bg-gray-100 text-gray-400'}`}>
-                            +{proj.techStack.length - 3}
-                          </span>
-                        )}
-                      </div>
-                    </motion.div>
+                  {filteredProjects?.slice(0, 6).map((proj) => (
+                    <ProjectCard key={proj._id} project={proj} dark={dark} onClick={setSelectedProject} />
                   ))}
                 </div>
               </motion.div>
@@ -816,13 +682,18 @@ export default function BentoHome({ onToggleLayout }) {
                   >
                     {article.coverImage && (
                       <div className="mb-4 -mx-6 -mt-6 rounded-t-2xl overflow-hidden h-36">
-                        <img src={article.coverImage} alt={article.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                        <img src={article.coverImage} alt={article.title} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                       </div>
                     )}
                     <div className="flex items-center gap-3 text-xs mb-3">
                       <span className={`flex items-center gap-1 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
                         <Calendar size={12} /> {new Date(article.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
                       </span>
+                      {article.readingTime > 0 && (
+                        <span className={`flex items-center gap-1 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
+                          <Clock size={12} /> {article.readingTime} min read
+                        </span>
+                      )}
                       {article.tags?.length > 0 && (
                         <span className={`flex items-center gap-1 ${dark ? 'text-orange-400' : 'text-orange-600'}`}>
                           <Tag size={12} /> {article.tags[0]}
@@ -854,7 +725,7 @@ export default function BentoHome({ onToggleLayout }) {
 
           {/* Contact Section */}
           {show('contact') && (
-                    <section id="contact" className="mt-16 pt-10 border-t border-gray-800/10 dark:border-gray-100/5">
+            <section id="contact" className="mt-16 pt-10 border-t border-gray-800/10 dark:border-gray-100/5">
               <div className="text-center mb-8">
                 <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-2.5 ${
                   dark ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-blue-50 text-blue-700 border border-blue-200'
@@ -864,81 +735,7 @@ export default function BentoHome({ onToggleLayout }) {
                 <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight">Get In Touch</h2>
                 <p className={`text-xs mt-1.5 ${dark ? 'text-gray-400' : 'text-gray-500'}`}>Let's work together</p>
               </div>
-              <div className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
-                {/* Contact Info */}
-                <div className={`p-6 md:p-8 rounded-3xl ${glassClass}`}>
-                  <h3 className={`text-base font-bold mb-5 ${dark ? 'text-gray-100' : 'text-gray-900'}`}>Contact Information</h3>
-                  <div className="space-y-4">
-                    {email && (
-                      <a href={`mailto:${email}`} className={`flex items-center gap-4 p-3.5 rounded-2xl transition-colors ${dark ? 'hover:bg-gray-800' : 'hover:bg-gray-50'}`}>
-                        <div className="p-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 text-white">
-                          <Mail size={18} />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Email</p>
-                          <p className={`text-sm font-medium truncate ${dark ? 'text-gray-100' : 'text-gray-900'}`}>{email}</p>
-                        </div>
-                      </a>
-                    )}
-                    {phone && (
-                      <div className={`flex items-center gap-4 p-3.5 rounded-2xl ${dark ? 'hover:bg-gray-800' : 'hover:bg-gray-50'}`}>
-                        <div className="p-2.5 rounded-xl bg-gradient-to-r from-cyan-400 to-emerald-400 text-white">
-                          <Phone size={18} />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Phone</p>
-                          <p className={`text-sm font-medium ${dark ? 'text-gray-100' : 'text-gray-900'}`}>{phone}</p>
-                        </div>
-                      </div>
-                    )}
-                    {location && (
-                      <div className={`flex items-center gap-4 p-3.5 rounded-2xl ${dark ? 'hover:bg-gray-800' : 'hover:bg-gray-50'}`}>
-                        <div className="p-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-emerald-500 text-white">
-                          <MapPin size={18} />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Location</p>
-                          <p className={`text-sm font-medium ${dark ? 'text-gray-100' : 'text-gray-900'}`}>{location}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Contact Form */}
-                <div className={`p-6 md:p-8 rounded-3xl ${glassClass}`}>
-                  <h3 className={`text-base font-bold mb-4 ${dark ? 'text-gray-100' : 'text-gray-900'}`}>Send a Message</h3>
-                  <form onSubmit={handleSubmit} className="space-y-3.5">
-                    <div className="grid grid-cols-2 gap-3.5">
-                      <input type="text" placeholder="Your Name" required value={form.name}
-                        onChange={e => setForm({ ...form, name: e.target.value })}
-                        className={`w-full px-4 py-2.5 rounded-xl border outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm ${dark ? 'bg-gray-800/60 border-gray-700 text-white placeholder-gray-500' : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'}`} />
-                      <input type="email" placeholder="Your Email" required value={form.email}
-                        onChange={e => setForm({ ...form, email: e.target.value })}
-                        className={`w-full px-4 py-2.5 rounded-xl border outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm ${dark ? 'bg-gray-800/60 border-gray-700 text-white placeholder-gray-500' : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'}`} />
-                    </div>
-                    <input type="text" placeholder="Subject (optional)" value={form.subject}
-                      onChange={e => setForm({ ...form, subject: e.target.value })}
-                      className={`w-full px-4 py-2.5 rounded-xl border outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm ${dark ? 'bg-gray-800/60 border-gray-700 text-white placeholder-gray-500' : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'}`} />
-                    <textarea placeholder="Your message..." required rows={4} value={form.message}
-                      onChange={e => setForm({ ...form, message: e.target.value })}
-                      className={`w-full px-4 py-2.5 rounded-xl border outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm resize-none ${dark ? 'bg-gray-800/60 border-gray-700 text-white placeholder-gray-500' : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'}`} />
-                    {formError && (
-                      <p className="text-sm text-red-500">{formError}</p>
-                    )}
-                    <button type="submit" disabled={formStatus === 'sending'}
-                      className="w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">
-                      {formStatus === 'sending' ? (
-                        <><Loader2 size={16} className="animate-spin" /> Sending...</>
-                      ) : formStatus === 'sent' ? (
-                        <><CheckCircle size={16} /> Message Sent!</>
-                      ) : (
-                        <><Send size={16} /> Send Message</>
-                      )}
-                    </button>
-                  </form>
-                </div>
-              </div>
+              <BentoContactSection dark={dark} profile={data.profile} />
             </section>
           )}
 
@@ -953,77 +750,7 @@ export default function BentoHome({ onToggleLayout }) {
       </div>
 
       {/* High-Fidelity Project Details Dialog Modal */}
-      <AnimatePresence>
-        {selectedProject && (
-          <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-            onClick={() => setSelectedProject(null)}
-          >
-            <motion.div 
-              initial={{ scale: 0.95, opacity: 0 }} 
-              animate={{ scale: 1, opacity: 1 }} 
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={e => e.stopPropagation()}
-              className={`max-w-2xl w-full p-6 md:p-8 rounded-3xl shadow-2xl max-h-[85vh] overflow-y-auto ${
-                dark ? 'bg-gray-900 border border-gray-800 text-white' : 'bg-white text-gray-900'
-              }`}
-            >
-              <div className="flex items-start justify-between mb-4 border-b border-gray-850/10 dark:border-gray-100/5 pb-3">
-                <div>
-                  <h3 className="text-xl md:text-2xl font-bold tracking-tight">{selectedProject.name}</h3>
-                  <p className={`text-xs mt-1 font-semibold ${dark ? 'text-cyan-400' : 'text-cyan-600'}`}>
-                    Role: {selectedProject.role} &middot; {selectedProject.startDate} - {selectedProject.endDate || 'Present'}
-                  </p>
-                </div>
-                <button 
-                  onClick={() => setSelectedProject(null)} 
-                  className={`p-1.5 rounded-lg cursor-pointer transition-colors ${
-                    dark ? 'hover:bg-gray-850 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500 hover:text-gray-900'
-                  }`}
-                >
-                  <ArrowLeft size={16} />
-                </button>
-              </div>
-              
-              <div className="my-4">
-                <p className={`text-sm leading-relaxed ${dark ? 'text-gray-300' : 'text-gray-650'}`}>
-                  {selectedProject.description}
-                </p>
-              </div>
-
-              <div className="my-4">
-                <p className={`text-xs font-bold uppercase tracking-wider mb-2 ${dark ? 'text-gray-400' : 'text-gray-500'}`}>Tech Stack Used</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedProject.techStack?.map(t => (
-                    <span key={t} className={`px-3 py-1 rounded-xl text-xs font-semibold ${
-                      dark ? 'bg-gray-950 text-cyan-400 border border-gray-800' : 'bg-gray-50 text-cyan-600 border border-gray-200'
-                    }`}>
-                      {t}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {selectedProject.bullets?.length > 0 && (
-                <div className="my-4 pt-3.5 border-t border-gray-800/10 dark:border-gray-100/5">
-                  <p className={`text-xs font-bold uppercase tracking-wider mb-2.5 ${dark ? 'text-gray-400' : 'text-gray-500'}`}>Key Highlights</p>
-                  <ul className="space-y-2.5">
-                    {selectedProject.bullets.map((b, i) => (
-                      <li key={i} className={`text-xs leading-relaxed flex items-start gap-2.5 ${dark ? 'text-gray-300' : 'text-gray-650'}`}>
-                        <CheckCircle2 size={13} className="text-cyan-500 mt-0.5 flex-shrink-0" />
-                        {b}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <ProjectDetailModal project={selectedProject} dark={dark} onClose={() => setSelectedProject(null)} />
     </>
   )
 }

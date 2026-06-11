@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback } from 'react'
-import axios from 'axios'
+import api from '../lib/api'
 
 const AuthContext = createContext()
 
@@ -38,7 +38,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(initial.user)
 
   const login = useCallback(async (username, password) => {
-    const { data } = await axios.post('/api/auth/login', { username, password })
+    const { data } = await api.post('/api/auth/login', { username, password })
     const next = { token: data.token, user: { username: data.username } }
     saveAuth(next)
     setToken(next.token)

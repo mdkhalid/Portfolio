@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useTheme } from '../context/ThemeContext'
 import { Mail, MapPin, Phone, Send, CheckCircle, Loader2 } from 'lucide-react'
-import axios from 'axios'
+import api from '../lib/api'
 
 export default function Contact({ profile }) {
   const { dark } = useTheme()
@@ -15,7 +15,7 @@ export default function Contact({ profile }) {
     setStatus('sending')
     setError('')
     try {
-      await axios.post('/api/contact', form)
+      await api.post('/api/contact', form)
       setStatus('sent')
       setForm({ name: '', email: '', subject: '', message: '', company: '' })
       setTimeout(() => setStatus('idle'), 5000)

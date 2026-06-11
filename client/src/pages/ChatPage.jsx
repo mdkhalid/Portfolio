@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useTheme } from '../context/ThemeContext'
 import { Bot, User, Loader2, Sparkles, ChevronDown, ArrowUp, ArrowLeft, Sun, Moon } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import axios from 'axios'
+import api from '../lib/api'
 import SEO from '../components/SEO'
 
 const SUGGESTIONS = [
@@ -101,7 +101,7 @@ export default function ChatPage() {
     setLoading(true)
 
     try {
-      const { data } = await axios.post('/api/chat', { message: msg })
+      const { data } = await api.post('/api/chat', { message: msg })
       setMessages(prev => [...prev, { role: 'assistant', content: data.reply }])
     } catch (err) {
       const serverMsg = err.response?.data?.error

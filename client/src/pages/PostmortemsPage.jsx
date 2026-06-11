@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTheme } from '../context/ThemeContext'
 import { useNavigate } from 'react-router-dom'
-import axios from 'axios'
+import api from '../lib/api'
 import { ArrowLeft, Sun, Moon, Calendar, Tag, AlertTriangle, CheckCircle2, Activity, FileText, ChevronRight, Sparkles, Search, X, Clock } from 'lucide-react'
 import SEO from '../components/SEO'
 
@@ -50,7 +50,7 @@ export default function PostmortemsPage() {
         if (activeSeverity) params.severity = activeSeverity
         if (activeStatus) params.status = activeStatus
         if (search.trim()) params.q = search.trim()
-        const { data } = await axios.get('/api/postmortems', { params })
+        const { data } = await api.get('/api/postmortems', { params })
         if (page === 0) setItems(data.items)
         else setItems(prev => [...prev, ...data.items])
         setTotal(data.total)

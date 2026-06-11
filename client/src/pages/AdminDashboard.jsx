@@ -2,16 +2,11 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
-import axios from 'axios'
+import { useApiAuth } from '../lib/api'
 import { motion } from 'framer-motion'
-import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, Upload, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, Sparkles, BookOpen } from 'lucide-react'
-
-const API = axios.create()
-API.interceptors.request.use(config => {
-  const token = localStorage.getItem('token')
-  if (token) config.headers.Authorization = 'Bearer ' + token
-  return config
-})
+import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, BookOpen, Phone, PhoneCall } from 'lucide-react'
+import EditModal from '../features/admin/components/EditModal'
+import ProfileForm from '../features/admin/components/ProfileForm'
 
 const tabs = [
   { key: 'profile', label: 'Profile', icon: User },
@@ -23,10 +18,12 @@ const tabs = [
   { key: 'resumes', label: 'Resumes', icon: FileText },
   { key: 'articles', label: 'Blog', icon: BookOpen },
   { key: 'messages', label: 'Messages', icon: Mail },
+  { key: 'leads', label: 'Leads', icon: Phone },
   { key: 'analytics', label: 'Analytics', icon: BarChart3 },
 ]
 
 export default function AdminDashboard() {
+  const API = useApiAuth()
   const { logout } = useAuth()
   const { dark, toggle } = useTheme()
   const navigate = useNavigate()
@@ -39,6 +36,7 @@ export default function AdminDashboard() {
   const [activitiesLoading, setActivitiesLoading] = useState(false)
   const [messages, setMessages] = useState([])
   const [selectedMessage, setSelectedMessage] = useState(null)
+  const [leads, setLeads] = useState([])
   const [toast, setToast] = useState(null)
 
   const showToast = (message, type = 'success') => {
@@ -53,6 +51,9 @@ export default function AdminDashboard() {
     }
     if (activeTab === 'messages') {
       API.get('/api/messages').then(r => setMessages(r.data)).catch(() => {})
+    }
+    if (activeTab === 'leads') {
+      API.get('/api/leads').then(r => setLeads(r.data.items)).catch(() => {})
     }
   }, [activeTab])
 
@@ -103,198 +104,6 @@ export default function AdminDashboard() {
       await API.delete('/api/' + collection + '/' + id)
       setData(prev => ({ ...prev, [collection]: prev[collection].filter(i => i._id !== id) }))
     } catch (err) { console.error(err) }
-  }
-
-  const sections = [
-    { key: 'navbar', label: 'Navbar' },
-    { key: 'hero', label: 'Hero' },
-    { key: 'summary', label: 'Summary' },
-    { key: 'skills', label: 'Skills' },
-    { key: 'experience', label: 'Experience' },
-    { key: 'education', label: 'Education' },
-    { key: 'projects', label: 'Projects' },
-    { key: 'certifications', label: 'Certifications' },
-    { key: 'blog', label: 'Blog' },
-    { key: 'contact', label: 'Contact' },
-  ]
-
-  const ProfileForm = () => {
-    const p = data.profile || {}
-    const [form, setForm] = useState({ name: p.name || '', email: p.email || '', phone: p.phone || '', location: p.location || '', linkedIn: p.linkedIn || '', github: p.github || '', title: p.title || '', summary: p.summary || '', avatar: p.avatar || '', experienceYears: p.experienceYears || 18, visibleSections: p.visibleSections || {}, aiProvider: p.aiProvider || 'openai', useBentoTheme: p.useBentoTheme || false })
-    const [uploading, setUploading] = useState(false)
-
-    const handleAvatarUpload = async (e) => {
-      const file = e.target.files?.[0]
-      if (!file) return
-      setUploading(true)
-      try {
-        const fd = new FormData()
-        fd.append('avatar', file)
-        const { data } = await API.post('/api/upload/avatar', fd)
-        setForm(f => ({ ...f, avatar: data.url }))
-      } catch (err) { console.error(err) }
-      finally { setUploading(false) }
-    }
-
-    const handleSave = async () => {
-      setSaving(true)
-      try {
-        const { data: updated } = await API.put('/api/profile', form)
-        setData(prev => ({ ...prev, profile: updated }))
-        showToast('Profile saved successfully!')
-      } catch (err) {
-        showToast('Failed to save profile. Please try again.', 'error')
-        console.error(err)
-      }
-      finally { setSaving(false) }
-    }
-
-    return (
-      <div className="space-y-4">
-        <div className="grid md:grid-cols-2 gap-4">
-          {Object.entries(form)
-            .filter(([key]) => key !== 'visibleSections' && key !== 'aiProvider' && key !== 'useBentoTheme')
-            .map(([key, val]) => (
-            <div key={key} className={key === 'summary' || key === 'avatar' ? 'md:col-span-2' : ''}>
-              <label className={'block text-sm font-medium mb-1 ' + (dark ? 'text-gray-300' : 'text-gray-700')}>
-                {key === 'avatar' ? 'Avatar Image' : key.replace(/([A-Z])/g, ' ').replace(/^./, s => s.toUpperCase())}
-              </label>
-              {key === 'summary' ? (
-                <textarea value={val} onChange={e => setForm({ ...form, [key]: e.target.value })} rows={4}
-                  className={'w-full px-3 py-2 rounded-lg border outline-none focus:ring-2 focus:ring-blue-500/50 ' + (dark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-900')} />
-              ) : key === 'avatar' ? (
-                <div className="flex items-center gap-4">
-                  {form.avatar && (
-                    <img src={form.avatar} alt="Avatar" className="w-16 h-16 rounded-full object-cover border-2 border-blue-500/50" />
-                  )}
-                  <label className={'flex items-center gap-2 px-4 py-2.5 rounded-lg border cursor-pointer text-sm font-medium transition-all ' + (dark ? 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600' : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100')}>
-                    <Upload size={16} />
-                    {uploading ? 'Uploading...' : 'Choose Image'}
-                    <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" disabled={uploading} />
-                  </label>
-                  {form.avatar && (
-                    <button onClick={() => setForm({ ...form, avatar: '' })} className={'p-2 rounded-lg text-sm cursor-pointer ' + (dark ? 'text-red-400 hover:bg-gray-700' : 'text-red-600 hover:bg-gray-100')}>
-                      <Trash2 size={16} />
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <input value={val} onChange={e => setForm({ ...form, [key]: e.target.value })}
-                  className={'w-full px-3 py-2 rounded-lg border outline-none focus:ring-2 focus:ring-blue-500/50 ' + (dark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-900')} />
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-          <h3 className="text-sm font-semibold mb-4 uppercase tracking-wider text-gray-400">Section Visibility</h3>
-          <p className={'text-xs mb-4 ' + (dark ? 'text-gray-500' : 'text-gray-400')}>Toggle sections to show/hide on the portfolio homepage</p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {sections.map(s => {
-              const visible = form.visibleSections?.[s.key] !== false
-              return (
-                <button key={s.key} onClick={() => setForm({ ...form, visibleSections: { ...form.visibleSections, [s.key]: !visible } })}
-                  className={'flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition-all cursor-pointer ' + (
-                    visible
-                      ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white border-transparent shadow-lg shadow-blue-500/25'
-                      : (dark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300')
-                  )}>
-                  <div className={'w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-all ' + (
-                    visible ? 'border-white bg-white' : (dark ? 'border-gray-500' : 'border-gray-300')
-                  )}>
-                    {visible && <div className="w-1.5 h-1.5 rounded-full bg-blue-600" />}
-                  </div>
-                  {s.label}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* AI Provider Toggle */}
-        <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-          <h3 className="text-sm font-semibold mb-4 uppercase tracking-wider text-gray-400">AI Provider</h3>
-          <p className={'text-xs mb-4 ' + (dark ? 'text-gray-500' : 'text-gray-400')}>
-            Choose which AI API to use for chat and ATS resume scoring. Groq is free and uses Llama 3.3 70B.
-          </p>
-          <div className="flex gap-3">
-            <button onClick={() => setForm({ ...form, aiProvider: 'openai' })}
-              className={'flex-1 flex items-center justify-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition-all cursor-pointer ' + (
-                form.aiProvider === 'openai' || !form.aiProvider
-                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white border-transparent shadow-lg shadow-blue-500/25'
-                  : (dark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300')
-              )}>
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5095-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0-.7427 5.9608 5.9847 5.9847 0 0 0 3.161 3.6515 5.5648 5.5648 0 0 0 .1305 2.5932 6.0462 6.0462 0 0 0 5.867 4.5642 5.565 5.565 0 0 0 2.8897-.8859 5.9847 5.9847 0 0 0 3.4733 1.6436 6.0462 6.0462 0 0 0 5.2578-4.469 5.9847 5.9847 0 0 0-.7208-4.8385 5.5648 5.5648 0 0 0-.1305-2.5932z"/>
-              </svg>
-              <div className="text-left">
-                <div className="font-semibold">OpenAI</div>
-                <div className={'text-xs ' + (form.aiProvider === 'openai' || !form.aiProvider ? 'text-white/70' : (dark ? 'text-gray-500' : 'text-gray-400'))}>GPT-4o Mini</div>
-              </div>
-            </button>
-            <button onClick={() => setForm({ ...form, aiProvider: 'groq' })}
-              className={'flex-1 flex items-center justify-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition-all cursor-pointer ' + (
-                form.aiProvider === 'groq'
-                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white border-transparent shadow-lg shadow-blue-500/25'
-                  : (dark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300')
-              )}>
-              <svg className="w-5 h-5" viewBox="0 0 32 32" fill="none">
-                <circle cx="16" cy="16" r="16" fill="#F97316"/>
-                <path d="M12 8h13l-3 6h-7l-3 6H5l7-12z" fill="white"/>
-                <path d="M17 14h7l-3 6h-7l3-6z" fill="white" opacity="0.6"/>
-              </svg>
-              <div className="text-left">
-                <div className="font-semibold">Groq</div>
-                <div className={'text-xs ' + (form.aiProvider === 'groq' ? 'text-white/70' : (dark ? 'text-gray-500' : 'text-gray-400'))}>Llama 3.3 70B (Free)</div>
-              </div>
-            </button>
-          </div>
-          {form.aiProvider === 'groq' && (
-            <p className={'text-xs mt-2 ' + (dark ? 'text-amber-400' : 'text-amber-600')}>
-              Make sure you have <code className="px-1 py-0.5 rounded text-xs font-mono" style={{background: dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}}>GROQ_API_KEY</code> set in your server .env file.
-            </p>
-          )}
-        </div>
-
-        {/* Layout Theme Settings */}
-        <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-          <h3 className="text-sm font-semibold mb-4 uppercase tracking-wider text-gray-400">Home Page Layout Style</h3>
-          <p className={'text-xs mb-4 ' + (dark ? 'text-gray-500' : 'text-gray-400')}>
-            Select which design layout is served as the home page (`/`) for visitors. Classic is linear, Bento is modular grid.
-          </p>
-          <div className="flex gap-3">
-            <button onClick={() => setForm({ ...form, useBentoTheme: false })}
-              className={'flex-1 flex items-center justify-center gap-3 px-4 py-3.5 rounded-xl border text-sm font-medium transition-all cursor-pointer ' + (
-                !form.useBentoTheme
-                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white border-transparent shadow-lg shadow-blue-500/25'
-                  : (dark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300')
-              )}>
-              <div className="text-left text-center w-full">
-                <div className="font-semibold">Classic Layout</div>
-                <div className={'text-xs ' + (!form.useBentoTheme ? 'text-white/70' : (dark ? 'text-gray-500' : 'text-gray-400'))}>Original Scroll Layout</div>
-              </div>
-            </button>
-            <button onClick={() => setForm({ ...form, useBentoTheme: true })}
-              className={'flex-1 flex items-center justify-center gap-3 px-4 py-3.5 rounded-xl border text-sm font-medium transition-all cursor-pointer ' + (
-                form.useBentoTheme
-                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white border-transparent shadow-lg shadow-blue-500/25'
-                  : (dark ? 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300')
-              )}>
-              <div className="text-left text-center w-full">
-                <div className="font-semibold flex items-center justify-center gap-1.5">
-                  Bento Grid Layout <Sparkles size={14} className="text-yellow-400" />
-                </div>
-                <div className={'text-xs ' + (form.useBentoTheme ? 'text-white/70' : (dark ? 'text-gray-500' : 'text-gray-400'))}>Modern Bento Grid Layout</div>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        <button onClick={handleSave} disabled={saving}
-          className="mt-6 px-6 py-2.5 rounded-lg text-white font-medium bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">
-          {saving ? 'Saving...' : 'Save Profile'}
-        </button>
-      </div>
-    )
   }
 
   const renderSkills = () => {
@@ -484,6 +293,76 @@ export default function AdminDashboard() {
     )
   }
 
+  const renderLeads = () => {
+    if (!leads.length) return <p className={'text-sm ' + (dark ? 'text-gray-400' : 'text-gray-500')}>No leads yet. Leads appear when visitors share their contact info via the chat assistant.</p>
+    return (
+      <div className="space-y-3">
+        {leads.map(lead => (
+          <div key={lead._id}
+            className={'p-4 rounded-xl border transition-all ' + (
+              lead.status === 'new'
+                ? (dark ? 'bg-gray-800 border-emerald-500/30' : 'bg-white border-emerald-200')
+                : (dark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200')
+            )}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <PhoneCall size={16} className={lead.status === 'new' ? 'text-emerald-500' : 'text-gray-400'} />
+                  <p className={'font-semibold truncate ' + (lead.status === 'new' && (dark ? 'text-white' : 'text-gray-900'))}>{lead.name || 'Unknown'}</p>
+                  {lead.status === 'new' && <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />}
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                  {lead.phone && (
+                    <a href={'tel:' + lead.phone} className={'text-sm font-medium flex items-center gap-1 ' + (dark ? 'text-blue-400' : 'text-blue-600')}>
+                      <Phone size={12} /> {lead.phone}
+                    </a>
+                  )}
+                  {lead.email && (
+                    <a href={'mailto:' + lead.email} className={'text-sm ' + (dark ? 'text-blue-400' : 'text-blue-600')}>{lead.email}</a>
+                  )}
+                  <span className={'text-xs ' + (dark ? 'text-gray-500' : 'text-gray-400')}>{new Date(lead.createdAt).toLocaleString()}</span>
+                </div>
+                {lead.message && (
+                  <p className={'text-sm mt-2 line-clamp-2 ' + (dark ? 'text-gray-400' : 'text-gray-500')}>{lead.message}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <select value={lead.status} onChange={(e) => updateLeadStatus(lead._id, e.target.value)}
+                  className={'text-xs px-2 py-1 rounded-lg border cursor-pointer ' + (
+                    dark ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-gray-50 border-gray-200 text-gray-700'
+                  )}>
+                  <option value="new">New</option>
+                  <option value="contacted">Contacted</option>
+                  <option value="qualified">Qualified</option>
+                  <option value="closed">Closed</option>
+                </select>
+                <button onClick={() => deleteLead(lead._id)}
+                  className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}>
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  const updateLeadStatus = async (id, status) => {
+    try {
+      const { data } = await API.put('/api/leads/' + id + '/status', { status })
+      setLeads(prev => prev.map(l => l._id === id ? data : l))
+    } catch (err) { console.error(err) }
+  }
+
+  const deleteLead = async (id) => {
+    if (!confirm('Delete this lead?')) return
+    try {
+      await API.delete('/api/leads/' + id)
+      setLeads(prev => prev.filter(l => l._id !== id))
+    } catch (err) { console.error(err) }
+  }
+
   const deleteMessage = async (id) => {
     if (!confirm('Delete this message?')) return
     try {
@@ -510,6 +389,7 @@ export default function AdminDashboard() {
       case 'message': return <Mail size={16} className="text-blue-500" />
       case 'resume_download': return <Download size={16} className="text-emerald-500" />
       case 'page_view': return <Eye size={16} className="text-purple-500" />
+      case 'lead': return <PhoneCall size={16} className="text-emerald-500" />
       default: return <Clock size={16} className="text-gray-400" />
     }
   }
@@ -584,9 +464,14 @@ export default function AdminDashboard() {
                     <p className={'text-sm font-medium truncate ' + (dark ? 'text-gray-200' : 'text-gray-700')}>{a.description}</p>
                     <p className={'text-xs mt-0.5 ' + (dark ? 'text-gray-500' : 'text-gray-400')}>{formatTimeAgo(a.createdAt)}</p>
                   </div>
-                  {a.type === 'message' && a.metadata?.name && (
+                  {(a.type === 'message' && a.metadata?.name) && (
                     <span className={'text-xs px-2 py-0.5 rounded-full flex-shrink-0 ' + (dark ? 'bg-blue-500/10 text-blue-400' : 'bg-blue-50 text-blue-600')}>
                       {a.metadata.name}
+                    </span>
+                  )}
+                  {(a.type === 'lead' && a.metadata?.phone) && (
+                    <span className={'text-xs px-2 py-0.5 rounded-full flex-shrink-0 ' + (dark ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-50 text-emerald-600')}>
+                      {a.metadata.phone}
                     </span>
                   )}
                 </div>
@@ -598,153 +483,19 @@ export default function AdminDashboard() {
     )
   }
 
-  const EditModal = () => {
-    if (!editing) return null
-    const { collection, id, data: editData } = editing
-    const [form, setForm] = useState(editData || {})
-    const fields = collection === 'skills'
-      ? [{ key: 'category', label: 'Category Name', type: 'text' }]
-      : collection === 'experiences'
-        ? [{ key: 'company', label: 'Company', type: 'text' }, { key: 'role', label: 'Role', type: 'text' }, { key: 'location', label: 'Location', type: 'text' }, { key: 'startDate', label: 'Start Date', type: 'text' }, { key: 'endDate', label: 'End Date', type: 'text' }, { key: 'bullets', label: 'Bullets (one per line)', type: 'textarea' }]
-        : collection === 'education'
-          ? [{ key: 'degree', label: 'Degree', type: 'text' }, { key: 'field', label: 'Field', type: 'text' }, { key: 'institution', label: 'Institution', type: 'text' }, { key: 'location', label: 'Location', type: 'text' }, { key: 'startDate', label: 'Start Date', type: 'text' }, { key: 'endDate', label: 'End Date', type: 'text' }]
-            : collection === 'certifications'
-              ? [{ key: 'name', label: 'Name', type: 'text' }, { key: 'issuer', label: 'Issuer', type: 'text' }, { key: 'date', label: 'Date', type: 'text' }, { key: 'link', label: 'Link', type: 'text' }]
-            : collection === 'projects'
-              ? [{ key: 'name', label: 'Project Name', type: 'text' }, { key: 'role', label: 'Role', type: 'text' }, { key: 'description', label: 'Description', type: 'textarea' }, { key: 'startDate', label: 'Start Date', type: 'text' }, { key: 'endDate', label: 'End Date', type: 'text' }, { key: 'techStack', label: 'Tech Stack (comma separated)', type: 'text' }, { key: 'bullets', label: 'Bullets (one per line)', type: 'textarea' }]
-              : collection === 'resumes'
-                ? [{ key: 'label', label: 'Label', type: 'text' }]
-                : collection === 'articles'
-                  ? [{ key: 'title', label: 'Title', type: 'text' }, { key: 'excerpt', label: 'Excerpt', type: 'text' }, { key: 'tags', label: 'Tags (comma separated)', type: 'text' }, { key: 'coverImage', label: 'Cover Image URL', type: 'text' }, { key: 'content', label: 'Content (Markdown)', type: 'textarea' }, { key: 'published', label: 'Published', type: 'select' }]
-                  : []
-
-    const handleSave = () => {
-      if (collection === 'resumes') {
-        const fd = new FormData()
-        fd.append('label', form.label || '')
-        if (form._newFile) fd.append('file', form._newFile)
-        setSaving(true)
-        ;(async () => {
-          try {
-            const { data: result } = id
-              ? await API.put('/api/resume-files/' + id, fd)
-              : await API.post('/api/resume-files', fd)
-            const endpoint = '/api/resume-files'
-            setData(prev => ({
-              ...prev,
-              resumes: id
-                ? prev.resumes.map(i => i._id === id ? result : i)
-                : [...(prev.resumes || []), result],
-            }))
-            setEditing(null)
-          } catch (err) { console.error(err) }
-          finally { setSaving(false) }
-        })()
-        return
-      }
-      let payload = { ...form }
-      if (payload.bullets && typeof payload.bullets === 'string') payload.bullets = payload.bullets.split('\n').filter(Boolean)
-      if (payload.techStack && typeof payload.techStack === 'string') payload.techStack = payload.techStack.split(',').map(s => s.trim()).filter(Boolean)
-      if (collection === 'articles' && typeof payload.tags === 'string') payload.tags = payload.tags.split(',').map(s => s.trim()).filter(Boolean)
-      saveItem(collection, payload, id)
-    }
-
-    return (
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setEditing(null)}>
-        <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} onClick={e => e.stopPropagation()}
-          className={'w-full max-w-lg p-6 rounded-2xl max-h-[80vh] overflow-y-auto ' + (dark ? 'bg-gray-900 border border-gray-700' : 'bg-white')}>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold">{id ? 'Edit' : 'Add'} {collection}</h3>
-            <button onClick={() => setEditing(null)} className={'p-1.5 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-800' : 'hover:bg-gray-100')}><X size={18} /></button>
-          </div>
-          <div className="space-y-3">
-            {fields.map(f => (
-              <div key={f.key}>
-                <label className={'block text-sm font-medium mb-1 ' + (dark ? 'text-gray-300' : 'text-gray-700')}>{f.label}</label>
-                {f.type === 'textarea' ? (
-                  <textarea value={Array.isArray(form[f.key]) ? form[f.key].join('\n') : (form[f.key] || '')}
-                    onChange={e => setForm({ ...form, [f.key]: e.target.value })} rows={collection === 'articles' && f.key === 'content' ? 12 : 3}
-                    className={'w-full px-3 py-2 rounded-lg border outline-none focus:ring-2 focus:ring-blue-500/50 font-mono text-sm ' + (dark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-900')} />
-                ) : f.type === 'select' ? (
-                  <div className="flex items-center gap-3">
-                    <button onClick={() => setForm({ ...form, published: form.published !== false })}
-                      className={'relative w-12 h-6 rounded-full transition-colors ' + (form.published !== false ? 'bg-emerald-500' : (dark ? 'bg-gray-600' : 'bg-gray-300'))}>
-                      <div className={'absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ' + (form.published !== false ? 'translate-x-6' : 'translate-x-0.5')} />
-                    </button>
-                    <span className={'text-sm ' + (form.published !== false ? 'text-emerald-500 font-medium' : (dark ? 'text-gray-400' : 'text-gray-500'))}>
-                      {form.published !== false ? 'Published' : 'Draft'}
-                    </span>
-                  </div>
-                ) : (
-                  <input value={collection === 'articles' && f.key === 'tags' ? (Array.isArray(form[f.key]) ? form[f.key].join(', ') : (form[f.key] || '')) : (form[f.key] || '')}
-                    onChange={e => setForm({ ...form, [f.key]: e.target.value })}
-                    className={'w-full px-3 py-2 rounded-lg border outline-none focus:ring-2 focus:ring-blue-500/50 ' + (dark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-900')} />
-                )}
-              </div>
-            ))}
-            {collection === 'skills' && (
-              <div>
-                <label className={'block text-sm font-medium mb-2 ' + (dark ? 'text-gray-300' : 'text-gray-700')}>Skill Items</label>
-                {(form.items || []).map((item, i) => (
-                  <div key={i} className="flex gap-2 items-center mb-2">
-                    <input value={item.name} onChange={e => {
-                      const items = [...(form.items || [])]
-                      items[i] = { ...items[i], name: e.target.value }
-                      setForm({ ...form, items })
-                    }} placeholder="Skill name"
-                      className={'w-full px-3 py-2 rounded-lg border outline-none focus:ring-2 focus:ring-blue-500/50 ' + (dark ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-400')} />
-                    <input type="number" min="0" max="100" value={item.level} onChange={e => {
-                      const items = [...(form.items || [])]
-                      items[i] = { ...items[i], level: Number(e.target.value) }
-                      setForm({ ...form, items })
-                    }}
-                      className={'w-20 px-3 py-2 rounded-lg border outline-none focus:ring-2 focus:ring-blue-500/50 ' + (dark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-900')} />
-                    <button onClick={() => setForm({ ...form, items: form.items.filter((_, j) => j !== i) })}
-                      className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}><X size={14} /></button>
-                  </div>
-                ))}
-                <button onClick={() => setForm({ ...form, items: [...(form.items || []), { name: '', level: 50 }] })}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all cursor-pointer">
-                  <Plus size={14} /> Add Skill
-                </button>
-              </div>
-            )}
-            {collection === 'resumes' && (
-              <div>
-                <label className={'block text-sm font-medium mb-2 ' + (dark ? 'text-gray-300' : 'text-gray-700')}>Resume File</label>
-                {form.fileUrl && (
-                  <div className={'flex items-center gap-2 mb-2 p-2 rounded-lg text-sm ' + (dark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600')}>
-                    <FileText size={14} />
-                    {form.fileUrl.split('/').pop()}
-                  </div>
-                )}
-                <label className={'flex items-center gap-2 px-4 py-2.5 rounded-lg border cursor-pointer text-sm font-medium transition-all ' + (dark ? 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600' : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100')}>
-                  <Upload size={16} />
-                  {form._newFile ? form._newFile.name : 'Choose File'}
-                  <input type="file" accept=".pdf,.doc,.docx,.txt" onChange={e => {
-                    const file = e.target.files?.[0]
-                    if (file) setForm({ ...form, _newFile: file })
-                  }} className="hidden" />
-                </label>
-                <p className={'text-xs mt-1 ' + (dark ? 'text-gray-500' : 'text-gray-400')}>Allowed: PDF, DOC, DOCX, TXT (max 10MB)</p>
-              </div>
-            )}
-          </div>
-          <div className="flex justify-end gap-3 mt-6">
-            <button onClick={() => setEditing(null)} className={'px-4 py-2 rounded-lg text-sm font-medium cursor-pointer ' + (dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>Cancel</button>
-            <button onClick={handleSave} disabled={saving}
-              className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-          </div>
-        </motion.div>
-      </motion.div>
-    )
-  }
-
   const renderTab = () => {
     switch (activeTab) {
-      case 'profile': return <ProfileForm />
+      case 'profile': return (
+        <ProfileForm
+          API={API}
+          dark={dark}
+          profile={data.profile || {}}
+          saving={saving}
+          setData={setData}
+          setSaving={setSaving}
+          showToast={showToast}
+        />
+      )
       case 'skills': return renderSkills()
       case 'experiences': return renderList('experiences', 'company')
       case 'education': return renderList('education', 'degree')
@@ -753,6 +504,7 @@ export default function AdminDashboard() {
       case 'resumes': return renderResumes()
       case 'articles': return renderArticles()
       case 'messages': return renderMessages()
+      case 'leads': return renderLeads()
       case 'analytics': return renderAnalytics()
       default: return null
     }
@@ -833,7 +585,16 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      <EditModal />
+      <EditModal
+        API={API}
+        dark={dark}
+        editing={editing}
+        saveItem={saveItem}
+        saving={saving}
+        setData={setData}
+        setEditing={setEditing}
+        setSaving={setSaving}
+      />
     </div>
   )
 }

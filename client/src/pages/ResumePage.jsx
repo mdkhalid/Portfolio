@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { useTheme } from '../context/ThemeContext'
 import { Download, Printer, ArrowLeft } from 'lucide-react'
-import axios from 'axios'
+import api from '../lib/api'
 
 export default function ResumePage() {
   const { dark } = useTheme()
@@ -13,12 +13,12 @@ export default function ResumePage() {
     const fetchData = async () => {
       try {
         const [profile, experiences, education, skills, projects, resumes] = await Promise.all([
-          axios.get('/api/profile'),
-          axios.get('/api/experiences'),
-          axios.get('/api/education'),
-          axios.get('/api/skills'),
-          axios.get('/api/projects'),
-          axios.get('/api/resumes'),
+          api.get('/api/profile'),
+          api.get('/api/experiences'),
+          api.get('/api/education'),
+          api.get('/api/skills'),
+          api.get('/api/projects'),
+          api.get('/api/resumes'),
         ])
         setData({
           profile: profile.data,

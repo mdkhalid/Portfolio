@@ -13,17 +13,8 @@ const { isPathSafe } = require('../utils/security');
 const ALLOWED_EXTS = ['pdf', 'doc', 'docx', 'txt'];
 const MAX_SIZE = 10 * 1024 * 1024;
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, ensureUploadsDir()),
-  filename: (req, file, cb) => {
-    const rand = crypto.randomBytes(8).toString('hex');
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `resume-${Date.now()}-${rand}${ext}`);
-  },
-});
-
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: MAX_SIZE, files: 1 },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
@@ -34,24 +25,20 @@ const upload = multer({
   },
 });
 
-const sniff = (file) => {
-  if (!file) return null;
-  const fd = fs.openSync(file.path, 'r');
-  const head = Buffer.alloc(16);
-  fs.readSync(fd, head, 0, 16, 0);
-  fs.closeSync(fd);
-  return head;
-};
-
 router.post(
   '/',
   upload.single('file'),
   asyncHandler(async (req, res) => {
     if (!req.file) throw new AppError('No file uploaded', 400, 'MISSING_FILE');
-    const head = sniff(req.file);
-    validateFileType(head, ALLOWED_EXTS, 'resume');
+    validateFileType(req.file.buffer, ALLOWED_EXTS, 'resume');
     const label = cleanPlain(str(req.body, 'label', { min: 1, max: 200, optional: true }) || req.file.originalname);
-    const item = await Resume.create({ label, fileUrl: '/uploads/' + path.basename(req.file.path) });
+    const rand = crypto.randomBytes(8).toString('hex');
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    const filename = `resume-${Date.now()}-${rand}${ext}`;
+    const uploadDir = ensureUploadsDir();
+    const filePath = path.join(uploadDir, filename);
+    fs.writeFileSync(filePath, req.file.buffer);
+    const item = await Resume.create({ label, fileUrl: '/uploads/' + filename });
     res.status(201).json(item);
   })
 );
@@ -68,9 +55,14 @@ router.put(
       update.label = cleanPlain(str(req.body, 'label', { min: 1, max: 200 }));
     }
     if (req.file) {
-      const head = sniff(req.file);
-      validateFileType(head, ALLOWED_EXTS, 'resume');
-      update.fileUrl = '/uploads/' + path.basename(req.file.path);
+      validateFileType(req.file.buffer, ALLOWED_EXTS, 'resume');
+      const rand = crypto.randomBytes(8).toString('hex');
+      const ext = path.extname(req.file.originalname).toLowerCase();
+      const filename = `resume-${Date.now()}-${rand}${ext}`;
+      const uploadDir = ensureUploadsDir();
+      const filePath = path.join(uploadDir, filename);
+      fs.writeFileSync(filePath, req.file.buffer);
+      update.fileUrl = '/uploads/' + filename;
     }
     const item = await Resume.findByIdAndUpdate(req.params.id, update, { returnDocument: 'after' });
     if (!item) throw new AppError('Not found', 404, 'NOT_FOUND');

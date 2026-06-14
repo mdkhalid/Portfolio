@@ -20,6 +20,7 @@ const sanitizeKeys = (obj) => {
 const noSqlSanitize = (req, res, next) => {
   if (req.body) sanitizeKeys(req.body);
   if (req.params) sanitizeKeys(req.params);
+  if (req.query) sanitizeKeys(req.query);
   next();
 };
 

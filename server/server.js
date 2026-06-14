@@ -21,6 +21,7 @@ const articlesCtrl = require('./routes/articles');
 const postmortemsCtrl = require('./routes/postmortems');
 const leadsCtrl = require('./routes/leads');
 const Activity = require('./models/Activity');
+const Resume = require('./models/Resume');
 const { authLimiter, contactLimiter, resumeLimiter, chatLimiter, atsLimiter } = require('./middleware/rateLimiter');
 const atsRouter = require('./routes/ats');
 const {
@@ -80,16 +81,23 @@ app.get(
     if (!isPathSafe(filename)) {
       return res.status(400).json({ error: 'Invalid filename' });
     }
+
+    const resume = await Resume.findOne({ fileUrl: '/uploads/' + filename });
+    if (!resume) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
     const file = path.join(__dirname, 'uploads', filename);
     const uploadsDir = path.join(__dirname, 'uploads');
     const resolved = path.resolve(file);
     if (!resolved.startsWith(path.resolve(uploadsDir) + path.sep)) {
       return res.status(400).json({ error: 'Invalid path' });
     }
+
     Activity.create({
       type: 'resume_download',
       description: 'Resume downloaded',
-      metadata: { filename, ip: req.ip },
+      metadata: { filename, ip: req.ip, resumeId: resume._id },
     })
       .then(() => Activity.prune())
       .catch(() => {});

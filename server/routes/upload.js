@@ -9,17 +9,8 @@ const { validateFileType, ensureUploadsDir } = require('../utils/fileType');
 const ALLOWED_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 const MAX_SIZE = 5 * 1024 * 1024;
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, ensureUploadsDir()),
-  filename: (req, file, cb) => {
-    const rand = crypto.randomBytes(8).toString('hex');
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `avatar-${Date.now()}-${rand}${ext}`);
-  },
-});
-
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: MAX_SIZE, files: 1 },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
@@ -36,13 +27,17 @@ router.post(
   asyncHandler(async (req, res) => {
     if (!req.file) throw new AppError('No file uploaded', 400, 'MISSING_FILE');
 
-    const fd = fs.openSync(req.file.path, 'r');
-    const head = Buffer.alloc(16);
-    fs.readSync(fd, head, 0, 16, 0);
-    fs.closeSync(fd);
-    const detected = validateFileType(head, ALLOWED_EXTS, 'avatar');
+    validateFileType(req.file.buffer, ALLOWED_EXTS, 'avatar');
 
-    const url = '/uploads/' + path.basename(req.file.path);
+    const rand = crypto.randomBytes(8).toString('hex');
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    const filename = `avatar-${Date.now()}-${rand}${ext}`;
+    const uploadDir = ensureUploadsDir();
+    const filePath = path.join(uploadDir, filename);
+    fs.writeFileSync(filePath, req.file.buffer);
+
+    const url = '/uploads/' + filename;
+    const detected = validateFileType(req.file.buffer, ALLOWED_EXTS, 'avatar');
     res.json({ url, type: detected });
   })
 );

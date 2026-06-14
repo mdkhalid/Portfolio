@@ -4,8 +4,19 @@ const ChatSession = require('../models/ChatSession');
 const MAX_ACTIVE = 3;
 
 function setupSocket(server) {
+  const parseList = (val) =>
+    (val || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+  const allowedOrigins = parseList(process.env.CLIENT_URL);
+  const defaults = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+  const merged = [...new Set([...defaults, ...allowedOrigins])];
+  const origins = process.env.NODE_ENV === 'production' ? allowedOrigins : merged;
+
   const io = new Server(server, {
-    cors: { origin: '*', methods: ['GET', 'POST'] },
+    cors: { origin: origins, methods: ['GET', 'POST'], credentials: true },
   });
 
   io.on('connection', (socket) => {

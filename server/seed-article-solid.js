@@ -579,7 +579,7 @@ const seed = async () => {
   const result = await Article.findOneAndUpdate(
     { slug: SOLID_ARTICLE.slug },
     { $set: SOLID_ARTICLE },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
+    { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
   );
 
   console.log('Upserted article:');

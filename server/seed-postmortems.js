@@ -399,7 +399,7 @@ const seed = async () => {
     const result = await Postmortem.findOneAndUpdate(
       { slug: pm.slug },
       { $set: pm },
-      { upsert: true, new: true, returnDocument: 'after', setDefaultsOnInsert: true }
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
     if (result.createdAt.getTime() === result.updatedAt.getTime()) inserted++;
     else updated++;

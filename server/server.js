@@ -3,6 +3,7 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
+const cookieParser = require('cookie-parser');
 const connectDB = require('./config/db');
 const { setupSocket } = require('./socket');
 const auth = require('./middleware/auth');
@@ -34,6 +35,7 @@ const {
 } = require('./middleware/security');
 const { errorHandler, notFoundHandler, asyncHandler } = require('./middleware/errorHandler');
 const { isPathSafe } = require('./utils/security');
+const { csrfProtection, issueCsrfToken } = require('./middleware/csrf');
 
 const app = express();
 
@@ -46,6 +48,7 @@ app.use(compressionMiddleware);
 
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: false, limit: '100kb' }));
+app.use(cookieParser());
 
 app.use(sanitizeMiddleware);
 app.use(hppMiddleware);
@@ -111,6 +114,8 @@ app.get(
 
 app.get('/api/health', (req, res) => res.json({ ok: true, env: env.NODE_ENV }));
 
+app.get('/api/csrf-token', issueCsrfToken);
+
 app.get('/api/profile', profileCtrl.getAll);
 app.get('/api/skills', skillsCtrl.getAll);
 app.get('/api/experiences', experiencesCtrl.getAll);
@@ -134,42 +139,42 @@ app.use('/api/auth', authLimiter, require('./routes/auth'));
 
 app.get('/api/activity', auth, require('./routes/activity').getRecent);
 
-app.use('/api/upload', auth, require('./routes/upload'));
-app.use('/api/resume-files', auth, require('./routes/upload-resume'));
+app.use('/api/upload', auth, csrfProtection, require('./routes/upload'));
+app.use('/api/resume-files', auth, csrfProtection, require('./routes/upload-resume'));
 app.get('/api/admin/articles', auth, articlesCtrl.getAllAdmin);
-app.post('/api/articles', auth, articlesCtrl.create);
-app.put('/api/articles/:id', auth, articlesCtrl.update);
-app.delete('/api/articles/:id', auth, articlesCtrl.remove);
+app.post('/api/articles', auth, csrfProtection, articlesCtrl.create);
+app.put('/api/articles/:id', auth, csrfProtection, articlesCtrl.update);
+app.delete('/api/articles/:id', auth, csrfProtection, articlesCtrl.remove);
 
 app.get('/api/admin/postmortems', auth, postmortemsCtrl.getAllAdmin);
-app.post('/api/postmortems', auth, postmortemsCtrl.create);
-app.put('/api/postmortems/:id', auth, postmortemsCtrl.update);
-app.delete('/api/postmortems/:id', auth, postmortemsCtrl.remove);
+app.post('/api/postmortems', auth, csrfProtection, postmortemsCtrl.create);
+app.put('/api/postmortems/:id', auth, csrfProtection, postmortemsCtrl.update);
+app.delete('/api/postmortems/:id', auth, csrfProtection, postmortemsCtrl.remove);
 
-app.put('/api/profile', auth, profileCtrl.update);
-app.post('/api/skills', auth, skillsCtrl.create);
-app.put('/api/skills/:id', auth, skillsCtrl.update);
-app.delete('/api/skills/:id', auth, skillsCtrl.remove);
-app.post('/api/experiences', auth, experiencesCtrl.create);
-app.put('/api/experiences/:id', auth, experiencesCtrl.update);
-app.delete('/api/experiences/:id', auth, experiencesCtrl.remove);
-app.post('/api/education', auth, educationCtrl.create);
-app.put('/api/education/:id', auth, educationCtrl.update);
-app.delete('/api/education/:id', auth, educationCtrl.remove);
-app.post('/api/certifications', auth, certificationsCtrl.create);
-app.put('/api/certifications/:id', auth, certificationsCtrl.update);
-app.delete('/api/certifications/:id', auth, certificationsCtrl.remove);
-app.post('/api/projects', auth, projectsCtrl.create);
-app.put('/api/projects/:id', auth, projectsCtrl.update);
-app.delete('/api/projects/:id', auth, projectsCtrl.remove);
+app.put('/api/profile', auth, csrfProtection, profileCtrl.update);
+app.post('/api/skills', auth, csrfProtection, skillsCtrl.create);
+app.put('/api/skills/:id', auth, csrfProtection, skillsCtrl.update);
+app.delete('/api/skills/:id', auth, csrfProtection, skillsCtrl.remove);
+app.post('/api/experiences', auth, csrfProtection, experiencesCtrl.create);
+app.put('/api/experiences/:id', auth, csrfProtection, experiencesCtrl.update);
+app.delete('/api/experiences/:id', auth, csrfProtection, experiencesCtrl.remove);
+app.post('/api/education', auth, csrfProtection, educationCtrl.create);
+app.put('/api/education/:id', auth, csrfProtection, educationCtrl.update);
+app.delete('/api/education/:id', auth, csrfProtection, educationCtrl.remove);
+app.post('/api/certifications', auth, csrfProtection, certificationsCtrl.create);
+app.put('/api/certifications/:id', auth, csrfProtection, certificationsCtrl.update);
+app.delete('/api/certifications/:id', auth, csrfProtection, certificationsCtrl.remove);
+app.post('/api/projects', auth, csrfProtection, projectsCtrl.create);
+app.put('/api/projects/:id', auth, csrfProtection, projectsCtrl.update);
+app.delete('/api/projects/:id', auth, csrfProtection, projectsCtrl.remove);
 app.get('/api/analytics/stats', auth, analyticsCtrl.stats);
 app.get('/api/messages', auth, messagesCtrl.getAll);
-app.put('/api/messages/:id/read', auth, messagesCtrl.markRead);
-app.delete('/api/messages/:id', auth, messagesCtrl.remove);
+app.put('/api/messages/:id/read', auth, csrfProtection, messagesCtrl.markRead);
+app.delete('/api/messages/:id', auth, csrfProtection, messagesCtrl.remove);
 
 app.get('/api/leads', auth, leadsCtrl.getAll);
-app.put('/api/leads/:id/status', auth, leadsCtrl.markStatus);
-app.delete('/api/leads/:id', auth, leadsCtrl.remove);
+app.put('/api/leads/:id/status', auth, csrfProtection, leadsCtrl.markStatus);
+app.delete('/api/leads/:id', auth, csrfProtection, leadsCtrl.remove);
 app.get('/api/livechat/:id/messages', auth, leadsCtrl.getChatMessages);
 
 app.use(notFoundHandler);

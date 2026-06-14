@@ -8,10 +8,16 @@ const { envInt } = require('../utils/security');
 const MAX_NAME = 100;
 const MAX_SUBJECT = 200;
 const MAX_MESSAGE = 5000;
+const MIN_RESPONSE_MS = 500;
 
 exports.send = asyncHandler(async (req, res) => {
+  const startTime = Date.now();
+
   const honeypot = str(req.body, 'company', { max: 200, optional: true });
   if (honeypot) {
+    const elapsed = Date.now() - startTime;
+    const delay = Math.max(0, MIN_RESPONSE_MS - elapsed);
+    await new Promise((r) => setTimeout(r, delay));
     return res.json({ success: true, message: 'Message sent successfully' });
   }
 
@@ -26,6 +32,9 @@ exports.send = asyncHandler(async (req, res) => {
   if (minIntervalMs > 0) {
     const lastMessage = await Message.findOne({ email: senderEmail }).sort({ createdAt: -1 });
     if (lastMessage && Date.now() - new Date(lastMessage.createdAt).getTime() < minIntervalMs) {
+      const elapsed = Date.now() - startTime;
+      const delay = Math.max(0, MIN_RESPONSE_MS - elapsed);
+      await new Promise((r) => setTimeout(r, delay));
       throw new AppError('Please wait a moment before sending another message', 429, 'RATE_LIMIT');
     }
   }
@@ -39,6 +48,10 @@ exports.send = asyncHandler(async (req, res) => {
   })
     .then(() => Activity.prune())
     .catch(() => {});
+
+  const elapsed = Date.now() - startTime;
+  const delay = Math.max(0, MIN_RESPONSE_MS - elapsed);
+  await new Promise((r) => setTimeout(r, delay));
 
   res.json({ success: true, message: 'Message sent successfully' });
 });

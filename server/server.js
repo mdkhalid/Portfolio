@@ -2,7 +2,6 @@ const env = require('./config/env');
 const express = require('express');
 const http = require('http');
 const path = require('path');
-const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
 const connectDB = require('./config/db');
 const { setupSocket } = require('./socket');
@@ -23,7 +22,7 @@ const postmortemsCtrl = require('./routes/postmortems');
 const leadsCtrl = require('./routes/leads');
 const Activity = require('./models/Activity');
 const Resume = require('./models/Resume');
-const { authLimiter, contactLimiter, resumeLimiter, chatLimiter, atsLimiter } = require('./middleware/rateLimiter');
+const { authLimiter, contactLimiter, resumeLimiter, chatLimiter, atsLimiter, globalLimiter } = require('./middleware/rateLimiter');
 const atsRouter = require('./routes/ats');
 const {
   helmetMiddleware,
@@ -53,13 +52,6 @@ app.use(cookieParser());
 app.use(sanitizeMiddleware);
 app.use(hppMiddleware);
 
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: isProd ? 300 : 1000,
-  message: { error: 'Too many requests. Please slow down.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 app.use('/api', globalLimiter);
 
 connectDB();

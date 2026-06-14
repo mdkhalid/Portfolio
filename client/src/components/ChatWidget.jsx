@@ -1,19 +1,21 @@
 import { useState, useEffect, useRef } from 'react'
 import { io } from 'socket.io-client'
 import { motion, AnimatePresence } from 'framer-motion'
-import { MessageCircle, X, Send, Bot, User, Loader2, Clock } from 'lucide-react'
+import { MessageCircle, X, Send, Bot, User, Loader2, Clock, AlertCircle, RefreshCw } from 'lucide-react'
 
 export default function ChatWidget() {
   const [open, setOpen] = useState(false)
-  const [step, setStep] = useState('name') // name | joined
+  const [step, setStep] = useState('name') // name | joined | unavailable
   const [name, setName] = useState('')
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [connected, setConnected] = useState(false)
   const [status, setStatus] = useState(null)
+  const [adminAvailable, setAdminAvailable] = useState(true)
   const socketRef = useRef(null)
   const messagesEndRef = useRef(null)
   const joined = step === 'joined'
+  const unavailable = step === 'unavailable'
 
   useEffect(() => {
     if (!open) return
@@ -30,7 +32,16 @@ export default function ChatWidget() {
 
     socket.on('connect', () => setConnected(true))
     socket.on('disconnect', () => setConnected(false))
-    socket.on('chat:status', (data) => { setStatus(data); setStep('joined') })
+    socket.on('chat:status', (data) => { 
+      setStatus(data); 
+      if (data.status === 'unavailable') {
+        setStep('unavailable');
+        setAdminAvailable(false);
+      } else {
+        setStep('joined');
+        setAdminAvailable(true);
+      }
+    })
     socket.on('chat:history', (history) => setMessages(history || []))
     socket.on('chat:message', (msg) => setMessages((p) => [...p, msg]))
     socket.on('chat:closed', (data) => {
@@ -39,6 +50,9 @@ export default function ChatWidget() {
     })
     socket.on('chat:error', (data) => {
       setMessages((p) => [...p, { role: 'system', content: data.message, timestamp: new Date() }])
+    })
+    socket.on('admin:availability', (data) => {
+      setAdminAvailable(data.available);
     })
 
     return () => {
@@ -92,7 +106,11 @@ export default function ChatWidget() {
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-sm">Live Chat</p>
                   <p className="text-xs text-white/70 truncate">
-                    {!connected ? 'Connecting...' : status?.status === 'active' ? 'Connected' : status?.status === 'waiting' ? 'In queue' : status?.status === 'closed' ? 'Ended' : 'Start a conversation'}
+                    {!connected ? 'Connecting...' : 
+                     status?.status === 'unavailable' ? 'Admin Unavailable' :
+                     status?.status === 'active' ? 'Connected' : 
+                     status?.status === 'waiting' ? 'In queue' : 
+                     status?.status === 'closed' ? 'Ended' : 'Start a conversation'}
                   </p>
                 </div>
                 <button onClick={minimize} className="p-1 rounded-lg hover:bg-white/20 transition-colors cursor-pointer">
@@ -109,7 +127,24 @@ export default function ChatWidget() {
                   </div>
                 )}
 
-                {!joined ? (
+                {unavailable && (
+                  <div className="flex flex-col items-center justify-center h-full text-center px-4">
+                    <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mb-4">
+                      <AlertCircle size={32} className="text-red-500" />
+                    </div>
+                    <p className="font-bold text-base mb-1 text-gray-900 dark:text-white">Admin Unavailable</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 text-center max-w-xs">
+                      {status?.message || 'No support agents are currently available. Please try again later.'}
+                    </p>
+                    <button onClick={() => { setStep('name'); setStatus(null); }}
+                      className="w-full max-w-xs flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 dark:bg-emerald-500/20 hover:bg-emerald-500/20 dark:hover:bg-emerald-500/30 transition-all cursor-pointer">
+                      <RefreshCw size={16} />
+                      Try Again
+                    </button>
+                  </div>
+                )}
+
+                {!joined && !unavailable ? (
                   <div className="flex flex-col items-center justify-center h-full text-center px-2">
                     <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center mb-4 shadow-lg shadow-emerald-500/20">
                       <MessageCircle size={24} className="text-white" />

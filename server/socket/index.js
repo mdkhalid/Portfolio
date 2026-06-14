@@ -19,6 +19,9 @@ function setupSocket(server) {
     cors: { origin: origins, methods: ['GET', 'POST'], credentials: true },
   });
 
+  let adminConnected = false;
+  let adminCount = 0;
+
   io.on('connection', (socket) => {
     const role = socket.handshake.query.role || 'visitor';
     const visitorId = socket.handshake.query.visitorId || socket.id;
@@ -26,6 +29,11 @@ function setupSocket(server) {
     if (role === 'admin') {
       socket.data.role = 'admin';
       socket.join('admin-room');
+      adminCount++;
+      if (!adminConnected) {
+        adminConnected = true;
+        io.emit('admin:availability', { available: true });
+      }
       broadcastState(io);
       setupAdminHandlers(io, socket);
       return;
@@ -35,6 +43,17 @@ function setupSocket(server) {
     socket.data.role = 'visitor';
     socket.data.visitorId = visitorId;
     setupVisitorHandlers(io, socket);
+  });
+
+  // Track admin disconnect
+  io.of('/').adapter.on('leave-room', (room, id) => {
+    if (room === 'admin-room') {
+      adminCount = Math.max(0, adminCount - 1);
+      if (adminCount === 0 && adminConnected) {
+        adminConnected = false;
+        io.emit('admin:availability', { available: false });
+      }
+    }
   });
 }
 
@@ -49,9 +68,16 @@ function setupVisitorHandlers(io, socket) {
       existing.socketId = socket.id;
       existing.visitorName = name;
       await existing.save();
-      socket.emit('chat:status', { status: existing.status, queuePosition: existing.queuePosition, sessionId: existing._id });
+      socket.emit('chat:status', { status: existing.status, queuePosition: existing.queuePosition, sessionId: existing._id, adminAvailable: true });
       if (existing.messages?.length) socket.emit('chat:history', existing.messages);
       broadcastState(io);
+      return;
+    }
+
+    // Check if admin is available
+    const adminSockets = await io.in('admin-room').fetchSockets();
+    if (adminSockets.length === 0) {
+      socket.emit('chat:status', { status: 'unavailable', message: 'Admin is not available to chat right now. Please try again later.' });
       return;
     }
 
@@ -67,7 +93,7 @@ function setupVisitorHandlers(io, socket) {
       startedAt: isActive ? new Date() : undefined,
     });
 
-    socket.emit('chat:status', { status: session.status, queuePosition: session.queuePosition, sessionId: session._id });
+    socket.emit('chat:status', { status: session.status, queuePosition: session.queuePosition, sessionId: session._id, adminAvailable: true });
 
     if (isActive) {
       io.to('admin-room').emit('chat:new', formatSession(session));

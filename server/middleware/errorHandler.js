@@ -17,7 +17,10 @@ const errorHandler = (err, req, res, next) => {
   }
 
   if (err.name === 'ValidationError') {
-    return res.status(400).json({ error: 'Validation failed', details: err.message });
+    return res.status(400).json({
+      error: 'Validation failed',
+      details: isProd ? undefined : err.message,
+    });
   }
   if (err.name === 'CastError') {
     return res.status(400).json({ error: 'Invalid identifier format' });
@@ -26,7 +29,7 @@ const errorHandler = (err, req, res, next) => {
     return res.status(409).json({ error: 'Duplicate value', field: Object.keys(err.keyPattern || {})[0] });
   }
   if (err.name === 'MulterError') {
-    return res.status(400).json({ error: err.message });
+    return res.status(400).json({ error: isProd ? 'Upload failed' : err.message });
   }
   if (err.type === 'entity.too.large' || err.status === 413) {
     return res.status(413).json({ error: 'Payload too large' });

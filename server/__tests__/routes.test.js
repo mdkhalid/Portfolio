@@ -34,7 +34,7 @@ describe('GET /api/health', () => {
     const res = await request(app).get('/api/health');
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('ok', true);
-    expect(res.body).toHaveProperty('env', 'test');
+    expect(res.body).not.toHaveProperty('env');
   });
 });
 

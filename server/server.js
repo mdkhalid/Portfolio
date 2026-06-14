@@ -104,7 +104,7 @@ app.get(
   })
 );
 
-app.get('/api/health', (req, res) => res.json({ ok: true, env: env.NODE_ENV }));
+app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 app.get('/api/csrf-token', issueCsrfToken);
 

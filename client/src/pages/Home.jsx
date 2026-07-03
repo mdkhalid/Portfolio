@@ -70,12 +70,12 @@ export default function Home() {
         description={data.profile?.summary || 'Software Developer Portfolio showcasing projects, skills, and experience'}
         image={data.profile?.avatar}
       />
-      <Navbar resumes={data.resumes} currentLayout={currentLayout} onToggleLayout={() => setLayoutOverride(useBento ? 'classic' : 'bento')} />
+      <Navbar resumes={data.resumes} currentLayout={currentLayout} onToggleLayout={() => setLayoutOverride(useBento ? 'classic' : 'bento')} resumeVisible={show('resume')} />
       {useBento ? (
         <BentoHome onToggleLayout={() => setLayoutOverride('classic')} />
       ) : (
         <>
-          {show('hero') && <Hero profile={data.profile} resumes={data.resumes} />}
+          {show('hero') && <Hero profile={data.profile} resumes={data.resumes} resumeVisible={show('resume')} />}
           {show('summary') && <Summary profile={data.profile} />}
           {show('skills') && <Skills skills={data.skills} />}
           {(show('experience') || show('education')) && <Timeline

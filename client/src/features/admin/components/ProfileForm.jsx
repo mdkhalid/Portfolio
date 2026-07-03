@@ -10,6 +10,7 @@ const sections = [
   { key: 'education', label: 'Education' },
   { key: 'projects', label: 'Projects' },
   { key: 'certifications', label: 'Certifications' },
+  { key: 'resume', label: 'Resume' },
   { key: 'blog', label: 'Blog' },
   { key: 'contact', label: 'Contact' },
 ]

@@ -207,11 +207,11 @@ export default function BentoHome({ onToggleLayout }) {
                   }`}>
                     <Bot size={13} /> AI Assistant
                   </button>
-                  <button onClick={() => navigate('/resume')} className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4.5 py-2.5 rounded-xl text-xs font-semibold border border-emerald-500/30 text-emerald-500 hover:bg-emerald-500 hover:text-white transition-all cursor-pointer text-center ${
+                  {show('resume') && <button onClick={() => navigate('/resume')} className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4.5 py-2.5 rounded-xl text-xs font-semibold border border-emerald-500/30 text-emerald-500 hover:bg-emerald-500 hover:text-white transition-all cursor-pointer text-center ${
                     dark ? 'bg-emerald-500/5' : 'bg-emerald-50'
                   }`}>
                     <FileText size={13} /> Resume PDF
-                  </button>
+                  </button>}
                 </div>
               </motion.div>
             )}

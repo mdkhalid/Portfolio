@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, useCallback } from 'react'
-import api from '../lib/api'
+import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import api, { setAuthToken, fetchCsrfToken } from '../lib/api'
 
 const AuthContext = createContext()
 
@@ -37,12 +37,21 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(initial.token)
   const [user, setUser] = useState(initial.user)
 
+  // Sync token to api module on mount/login
+  useEffect(() => {
+    setAuthToken(token)
+    if (token) {
+      fetchCsrfToken()
+    }
+  }, [token])
+
   const login = useCallback(async (username, password) => {
     const { data } = await api.post('/api/auth/login', { username, password })
     const next = { token: data.token, user: { username: data.username } }
     saveAuth(next)
     setToken(next.token)
     setUser(next.user)
+    await fetchCsrfToken()
   }, [])
 
   const logout = useCallback(() => {

@@ -3,7 +3,7 @@ import { ArrowDown, Globe, Link2, Mail, FileText } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
 import { useNavigate } from 'react-router-dom'
 
-export default function Hero({ profile }) {
+export default function Hero({ profile, resumeVisible }) {
   const { dark } = useTheme()
   const navigate = useNavigate()
 
@@ -59,10 +59,12 @@ export default function Hero({ profile }) {
             className={`px-6 py-3 rounded-xl font-medium border-2 transition-all cursor-pointer ${dark ? 'border-gray-700 text-gray-300 hover:border-gray-500' : 'border-gray-300 text-gray-600 hover:border-gray-400'}`}>
             View Projects
           </button>
-          <button onClick={() => navigate('/resume')}
-            className="px-6 py-3 rounded-xl font-medium border-2 border-emerald-500 text-emerald-500 hover:bg-emerald-500 hover:text-white transition-all flex items-center gap-2 cursor-pointer">
-            <FileText size={18} /> View Resume
-          </button>
+          {resumeVisible !== false && (
+            <button onClick={() => navigate('/resume')}
+              className="px-6 py-3 rounded-xl font-medium border-2 border-emerald-500 text-emerald-500 hover:bg-emerald-500 hover:text-white transition-all flex items-center gap-2 cursor-pointer">
+              <FileText size={18} /> View Resume
+            </button>
+          )}
         </motion.div>
 
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}

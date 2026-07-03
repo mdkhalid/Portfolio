@@ -5,8 +5,8 @@ const { cleanPlain } = require('../middleware/sanitize');
 
 const ALLOWED_FIELDS = [
   'name', 'title', 'email', 'phone', 'location', 'linkedIn', 'github',
-  'summary', 'avatarUrl', 'experienceYears', 'aiProvider', 'calendlyUrl',
-  'availabilityStatus',
+  'summary', 'avatar', 'avatarUrl', 'experienceYears', 'aiProvider', 'calendlyUrl',
+  'availabilityStatus', 'visibleSections', 'useBentoTheme',
 ];
 
 exports.getAll = asyncHandler(async (req, res) => {
@@ -31,6 +31,17 @@ exports.update = asyncHandler(async (req, res) => {
     const v = cleanPlain(str({ aiProvider: updates.aiProvider }, 'aiProvider', { min: 1, max: 32, optional: true }) || '');
     if (!['openai', 'groq'].includes(v)) throw new AppError('Invalid aiProvider', 400, 'INVALID_VALUE');
     sanitized.aiProvider = v;
+  }
+  if (updates.visibleSections !== undefined) {
+    if (typeof updates.visibleSections === 'object' && !Array.isArray(updates.visibleSections)) {
+      sanitized.visibleSections = updates.visibleSections;
+    }
+  }
+  if (updates.useBentoTheme !== undefined) {
+    sanitized.useBentoTheme = Boolean(updates.useBentoTheme);
+  }
+  if (updates.avatar !== undefined) {
+    sanitized.avatar = cleanPlain(str({ avatar: updates.avatar }, 'avatar', { min: 0, max: 2000, optional: true }) || '');
   }
 
   let profile = await Profile.findOne();

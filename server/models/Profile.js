@@ -22,6 +22,7 @@ const profileSchema = new mongoose.Schema({
       education: true,
       projects: true,
       certifications: true,
+      resume: true,
       contact: true,
       blog: true,
     },

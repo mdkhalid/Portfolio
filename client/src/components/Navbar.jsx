@@ -15,7 +15,7 @@ const links = [
 
 
 
-export default function Navbar({ resumes, currentLayout, onToggleLayout }) {
+export default function Navbar({ resumes, currentLayout, onToggleLayout, resumeVisible }) {
   const { dark, toggle } = useTheme()
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
@@ -86,12 +86,14 @@ export default function Navbar({ resumes, currentLayout, onToggleLayout }) {
             >
               <MessageSquare size={14} /> AI Chat
             </button>
-            <button
-              onClick={() => navigate('/resume')}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all bg-gradient-to-r from-blue-600 to-cyan-500 text-white hover:from-blue-700 hover:to-cyan-600 shadow-sm cursor-pointer"
-            >
-              <FileText size={14} /> Resume
-            </button>
+            {resumeVisible !== false && (
+              <button
+                onClick={() => navigate('/resume')}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all bg-gradient-to-r from-blue-600 to-cyan-500 text-white hover:from-blue-700 hover:to-cyan-600 shadow-sm cursor-pointer"
+              >
+                <FileText size={14} /> Resume
+              </button>
+            )}
             {onToggleLayout && (
               <button
                 onClick={() => { onToggleLayout(); setOpen(false) }}
@@ -194,14 +196,16 @@ export default function Navbar({ resumes, currentLayout, onToggleLayout }) {
                   <MessageSquare size={16} /> AI Chat
                 </motion.button>
 
-                <motion.button
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: (links.length + 3) * 0.05 }}
-                  onClick={() => { setOpen(false); navigate('/resume'); }}
-                  className="w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all bg-gradient-to-r from-blue-600 to-cyan-500 text-white hover:from-blue-700 hover:to-cyan-600 cursor-pointer">
-                  <FileText size={16} /> View Resume
-                </motion.button>
+                {resumeVisible !== false && (
+                  <motion.button
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: (links.length + 3) * 0.05 }}
+                    onClick={() => { setOpen(false); navigate('/resume'); }}
+                    className="w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all bg-gradient-to-r from-blue-600 to-cyan-500 text-white hover:from-blue-700 hover:to-cyan-600 cursor-pointer">
+                    <FileText size={16} /> View Resume
+                  </motion.button>
+                )}
 
                 {onToggleLayout && (
                   <motion.button

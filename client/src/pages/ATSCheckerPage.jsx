@@ -332,7 +332,7 @@ export default function ATSCheckerPage() {
                         <BarChart3 size={16} className="text-gray-400" /> Score Breakdown
                       </h3>
                       <div className="space-y-4">
-                        {breakdownKeys.map(({ key, icon: Icon, label }, i) => {
+                        {breakdownKeys.map(({ key, label }, i) => {
                           const item = result.breakdown?.[key]
                           if (!item) return null
                           return (

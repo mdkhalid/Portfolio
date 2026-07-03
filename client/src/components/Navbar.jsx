@@ -15,7 +15,7 @@ const links = [
 
 
 
-export default function Navbar({ resumes, currentLayout, onToggleLayout, resumeVisible }) {
+export default function Navbar({ currentLayout, onToggleLayout, resumeVisible }) {
   const { dark, toggle } = useTheme()
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
@@ -37,7 +37,7 @@ export default function Navbar({ resumes, currentLayout, onToggleLayout, resumeV
 
   const scrollTo = (href) => {
     setOpen(false)
-    if (!isHome) { window.location.href = '/' + href; return }
+    if (!isHome) { window.location.assign('/' + href); return }
     const el = document.querySelector(href)
     el?.scrollIntoView({ behavior: 'smooth' })
   }

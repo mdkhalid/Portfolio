@@ -169,6 +169,15 @@ app.put('/api/leads/:id/status', auth, csrfProtection, leadsCtrl.markStatus);
 app.delete('/api/leads/:id', auth, csrfProtection, leadsCtrl.remove);
 app.get('/api/livechat/:id/messages', auth, leadsCtrl.getChatMessages);
 
+// In production, serve the built client SPA
+if (env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../client/dist')));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/') || req.path.startsWith('/socket.io/')) return next()
+    res.sendFile(path.join(__dirname, '../client/dist/index.html'))
+  })
+}
+
 app.use(notFoundHandler);
 app.use(errorHandler);
 

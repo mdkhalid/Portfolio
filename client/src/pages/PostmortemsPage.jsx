@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useEffect } from 'react'
+import { motion } from 'framer-motion'
 import { useTheme } from '../context/ThemeContext'
 import { useNavigate } from 'react-router-dom'
 import api from '../lib/api'
-import { ArrowLeft, Sun, Moon, Calendar, Tag, AlertTriangle, CheckCircle2, Activity, FileText, ChevronRight, Sparkles, Search, X, Clock } from 'lucide-react'
+import { ArrowLeft, Sun, Moon, Calendar, AlertTriangle, ChevronRight, Search, X, Clock } from 'lucide-react'
 import SEO from '../components/SEO'
 
 const SEVERITY_STYLES = {
@@ -64,13 +64,6 @@ export default function PostmortemsPage() {
     fetch()
   }, [page, activeSeverity, activeStatus, search])
 
-  const stats = useMemo(() => {
-    const all = items.reduce((acc, it) => {
-      acc[it.severity] = (acc[it.severity] || 0) + 1
-      return acc
-    }, {})
-    return all
-  }, [items])
 
   const glassClass = dark
     ? 'bg-gray-900/60 backdrop-blur-xl border border-gray-800/80 shadow-2xl hover:border-gray-700/60 transition-all duration-300'

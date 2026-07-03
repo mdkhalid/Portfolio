@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import { useTheme } from '../context/ThemeContext'
-import { Award, ExternalLink } from 'lucide-react'
+import { Award } from 'lucide-react'
 
 export default function Certifications({ certifications }) {
   const { dark } = useTheme()

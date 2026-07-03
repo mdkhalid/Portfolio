@@ -11,7 +11,7 @@ export default function ChatWidget() {
   const [input, setInput] = useState('')
   const [connected, setConnected] = useState(false)
   const [status, setStatus] = useState(null)
-  const [adminAvailable, setAdminAvailable] = useState(true)
+  const [, setAdminAvailable] = useState(true)
   const socketRef = useRef(null)
   const messagesEndRef = useRef(null)
   const joined = step === 'joined'

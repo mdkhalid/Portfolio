@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useTheme } from '../context/ThemeContext'
 import { ArrowUp } from 'lucide-react'
 
 export default function ScrollToTop() {
-  const { dark } = useTheme()
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {

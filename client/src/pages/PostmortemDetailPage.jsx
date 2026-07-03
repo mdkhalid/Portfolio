@@ -5,7 +5,7 @@ import { useTheme } from '../context/ThemeContext'
 import api from '../lib/api'
 import ReactMarkdown from 'react-markdown'
 import MermaidDiagram from '../components/MermaidDiagram'
-import { ArrowLeft, Sun, Moon, Calendar, Tag, Clock, AlertTriangle, CheckCircle2, XCircle, AlertCircle, Activity, Server, FileText, Share2, Link2, Check } from 'lucide-react'
+import { ArrowLeft, Sun, Moon, Calendar, Tag, Clock, CheckCircle2, XCircle, AlertCircle, Activity, FileText, Link2, Check } from 'lucide-react'
 import SEO from '../components/SEO'
 
 const SEVERITY_STYLES = {
@@ -57,7 +57,7 @@ const ActionStatusBadge = ({ status, dark }) => {
   )
 }
 
-const PriorityBadge = ({ priority, dark }) => {
+const PriorityBadge = ({ priority }) => {
   const colors = {
     P0: 'text-red-500',
     P1: 'text-orange-500',
@@ -99,7 +99,7 @@ export default function PostmortemDetailPage() {
       await navigator.clipboard.writeText(url)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
-    } catch {}
+    } catch { /* clipboard write may fail */ }
   }
 
   if (loading) {

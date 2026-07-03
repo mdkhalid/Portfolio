@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTheme } from '../context/ThemeContext'
-import { ExternalLink, X, ChevronRight, Filter } from 'lucide-react'
+import { X, ChevronRight } from 'lucide-react'
 
 export default function Projects({ projects }) {
   const { dark } = useTheme()

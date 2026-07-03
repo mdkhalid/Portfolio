@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
-export default function SpecialtyCarousel({ dark }) {
+export default function SpecialtyCarousel() {
   const specialties = [
     'Senior Solution Architect',
     'Enterprise .NET Core Expert',

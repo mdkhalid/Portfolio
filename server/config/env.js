@@ -25,6 +25,7 @@ const env = {
   OPENAI_API_KEY: optional('OPENAI_API_KEY', ''),
   GROQ_API_KEY: optional('GROQ_API_KEY', ''),
   TRUST_PROXY: optional('TRUST_PROXY', '1'),
+  ANALYTICS_SALT: optional('ANALYTICS_SALT', ''),
 };
 
 if (env.JWT_SECRET === 'your_jwt_secret_here' || env.JWT_SECRET.length < 32) {

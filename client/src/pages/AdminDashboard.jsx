@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
@@ -96,9 +96,19 @@ export default function AdminDashboard() {
     return () => { socket.disconnect() }
   }, [activeTab])
 
+  const refreshActivities = useCallback(async () => {
+    setActivitiesLoading(true)
+    try {
+      const { data } = await API.get('/api/activity')
+      setActivities(data)
+    } catch (err) { console.error(err) }
+    finally { setActivitiesLoading(false) }
+  }, [])
+
   useEffect(() => {
     if (activeTab === 'analytics') {
       if (!analytics) API.get('/api/analytics/stats').then(r => setAnalytics(r.data)).catch(() => {})
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       refreshActivities()
     }
     if (activeTab === 'messages') {
@@ -107,16 +117,7 @@ export default function AdminDashboard() {
     if (activeTab === 'leads') {
       API.get('/api/leads').then(r => setLeads(r.data.items)).catch(() => {})
     }
-  }, [activeTab])
-
-  const refreshActivities = async () => {
-    setActivitiesLoading(true)
-    try {
-      const { data } = await API.get('/api/activity')
-      setActivities(data)
-    } catch (err) { console.error(err) }
-    finally { setActivitiesLoading(false) }
-  }
+  }, [activeTab, refreshActivities])
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -429,8 +430,14 @@ export default function AdminDashboard() {
     } catch (err) { console.error(err) }
   }
 
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30000)
+    return () => clearInterval(id)
+  }, [])
+
   const formatTimeAgo = (date) => {
-    const diff = Date.now() - new Date(date).getTime()
+    const diff = now - new Date(date).getTime()
     const mins = Math.floor(diff / 60000)
     if (mins < 1) return 'Just now'
     if (mins < 60) return mins + 'm ago'
@@ -553,7 +560,7 @@ export default function AdminDashboard() {
             const { data } = await API.get('/api/livechat/' + session._id + '/messages')
             chatMessagesRef.current[session._id] = data || []
             setChatMessages(data || [])
-          } catch {}
+          } catch { /* ignore */ }
         }
         fetchHistory()
       }

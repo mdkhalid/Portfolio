@@ -4,7 +4,7 @@ import { useTheme } from '../context/ThemeContext'
 import { useNavigate } from 'react-router-dom'
 import api from '../lib/api'
 import { 
-  Bot, User, Sparkles, ArrowLeft, Sun, Moon,
+  Bot, Sparkles, ArrowLeft, Sun, Moon,
   MapPin, Clock, Briefcase, GraduationCap, Award,
   FolderGit2, FileText, Mail, Globe, Link2, ExternalLink,
   ChevronRight, Quote, Grid,
@@ -83,7 +83,7 @@ export default function BentoHome({ onToggleLayout }) {
     )
   }
 
-  const { visibleSections = {}, name, title, summary, avatar, location, email, phone, linkedIn, github, experienceYears } = data.profile || {}
+  const { visibleSections = {}, name, summary, avatar, location, linkedIn, github, experienceYears } = data.profile || {}
   const show = (key) => visibleSections[key] !== false
 
   const glassClass = dark 
@@ -402,7 +402,7 @@ export default function BentoHome({ onToggleLayout }) {
                     <Briefcase size={13} className="text-yellow-500" /> Recent Work Experience
                   </div>
                   <div className="space-y-4 mt-3">
-                    {data.experiences?.slice(0, 2).map((exp, index) => (
+                    {data.experiences?.slice(0, 2).map((exp) => (
                       <div key={exp._id} className="relative pl-5 border-l-2 border-blue-500/20">
                         <div className="absolute left-[-5px] top-[5px] w-2 h-2 rounded-full bg-blue-500 shadow-md shadow-blue-500/50" />
                         <span className={`text-xs font-semibold font-mono uppercase ${dark ? 'text-blue-400' : 'text-blue-600'}`}>
@@ -606,7 +606,7 @@ export default function BentoHome({ onToggleLayout }) {
                       <Briefcase size={16} className="text-yellow-500" /> Work History
                     </h3>
                     <div className="space-y-6 relative border-l-2 border-gray-800/10 dark:border-gray-100/5 pl-6 ml-2">
-                      {data.experiences.map((exp, idx) => (
+                      {data.experiences.map((exp) => (
                         <div key={exp._id} className="relative">
                           <div className="absolute left-[-31px] top-[4px] w-4 h-4 rounded-full bg-yellow-500 border-4 border-gray-950 flex items-center justify-center" />
                           <span className="text-xs font-bold uppercase tracking-wider text-yellow-500 font-mono bg-yellow-500/5 px-2 py-0.5 rounded border border-yellow-500/10">
@@ -635,7 +635,7 @@ export default function BentoHome({ onToggleLayout }) {
                       <GraduationCap size={16} className="text-blue-500" /> Education
                     </h3>
                     <div className="space-y-6 relative border-l-2 border-gray-800/10 dark:border-gray-100/5 pl-6 ml-2">
-                      {data.education.map((edu, idx) => (
+                      {data.education.map((edu) => (
                         <div key={edu._id} className="relative">
                           <div className="absolute left-[-31px] top-[4px] w-4 h-4 rounded-full bg-blue-500 border-4 border-gray-950" />
                           <span className="text-xs font-bold uppercase tracking-wider text-blue-400 font-mono bg-blue-500/5 px-2 py-0.5 rounded border border-blue-500/10">

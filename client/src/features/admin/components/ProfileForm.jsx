@@ -34,6 +34,7 @@ export default function ProfileForm({ API, dark, profile, saving, setSaving, set
   const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setForm({
       name: profile.name || '',
       email: profile.email || '',

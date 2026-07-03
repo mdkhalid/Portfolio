@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { useTheme } from '../context/ThemeContext'
 import { useNavigate } from 'react-router-dom'
 import { io } from 'socket.io-client'
-import { Bot, User, Loader2, ArrowLeft, Sun, Moon, Send, Users, Clock, MessageCircle } from 'lucide-react'
+import { Bot, User, Loader2, ArrowLeft, Sun, Moon, Send, Clock, MessageCircle } from 'lucide-react'
 import SEO from '../components/SEO'
 
 let socket = null
@@ -17,16 +17,15 @@ export default function LiveChatPage() {
   const [status, setStatus] = useState(null)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
   const messagesEndRef = useRef(null)
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages])
 
   useEffect(() => {
     socket = io(window.location.origin, {

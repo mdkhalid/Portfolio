@@ -7,6 +7,7 @@ export default function EditModal({ API, dark, editing, saveItem, saving, setDat
   const [form, setForm] = useState(editData || {})
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setForm(editData || {})
   }, [editData])
 

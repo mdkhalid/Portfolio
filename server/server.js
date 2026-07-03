@@ -59,7 +59,6 @@ connectDB();
 app.use(
   '/uploads',
   express.static(path.join(__dirname, 'uploads'), {
-    fallthrough: false,
     maxAge: '7d',
     setHeaders: (res) => {
       res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -67,6 +66,7 @@ app.use(
     },
   })
 );
+app.use('/uploads', (req, res) => res.sendStatus(404));
 
 app.get(
   '/api/download-resume/:filename',
@@ -172,7 +172,7 @@ app.get('/api/livechat/:id/messages', auth, leadsCtrl.getChatMessages);
 // In production, serve the built client SPA
 if (env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/dist')));
-  app.get('*', (req, res, next) => {
+  app.get('/{*path}', (req, res, next) => {
     if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/') || req.path.startsWith('/socket.io/')) return next()
     res.sendFile(path.join(__dirname, '../client/dist/index.html'))
   })

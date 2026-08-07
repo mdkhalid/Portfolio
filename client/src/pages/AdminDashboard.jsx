@@ -26,7 +26,7 @@ const tabs = [
 
 export default function AdminDashboard() {
   const API = useApiAuth()
-  const { logout } = useAuth()
+  const { logout, token } = useAuth()
   const { dark, toggle } = useTheme()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('profile')
@@ -40,6 +40,11 @@ export default function AdminDashboard() {
   const [selectedMessage, setSelectedMessage] = useState(null)
   const [leads, setLeads] = useState([])
   const [toast, setToast] = useState(null)
+
+  const showToast = useCallback((message, type = 'success') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }, [])
 
   // Live Chat state
   const [chatActive, setChatActive] = useState([])
@@ -61,9 +66,15 @@ export default function AdminDashboard() {
   }, [chatMessages])
 
   useEffect(() => {
-    if (activeTab !== 'livechat') return
-    const socket = io(window.location.origin, { query: { role: 'admin' } })
+    if (activeTab !== 'livechat' || !token) return
+    const socket = io(window.location.origin, { auth: { token, role: 'admin' } })
     chatSocketRef.current = socket
+
+    socket.on('auth_error', () => {
+      showToast('Session expired. Please log in again.', 'error')
+      logout()
+      navigate('/admin')
+    })
 
     socket.on('chat:state', (data) => {
       setChatActive(data.active || [])
@@ -94,7 +105,7 @@ export default function AdminDashboard() {
     })
 
     return () => { socket.disconnect() }
-  }, [activeTab])
+  }, [activeTab, token, logout, navigate, showToast])
 
   const refreshActivities = useCallback(async () => {
     setActivitiesLoading(true)
@@ -414,11 +425,6 @@ export default function AdminDashboard() {
       await API.delete('/api/leads/' + id)
       setLeads(prev => prev.filter(l => l._id !== id))
     } catch (err) { console.error(err) }
-  }
-
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type })
-    setTimeout(() => setToast(null), 3000)
   }
 
   const deleteMessage = async (id) => {

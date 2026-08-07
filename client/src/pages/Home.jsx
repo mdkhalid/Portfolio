@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import api from '../lib/api'
+import { useAuth } from '../context/AuthContext'
 import Navbar from '../components/Navbar'
 import Hero from '../components/Hero'
 import Summary from '../components/Summary'
@@ -13,23 +14,24 @@ import SEO from '../components/SEO'
 import BentoHome from './BentoHome'
 
 export default function Home() {
-  const [data, setData] = useState({ profile: {}, skills: [], experiences: [], education: [], certifications: [], projects: [], resumes: [] })
+  const { isAdmin } = useAuth()
+  const [data, setData] = useState({ profile: {}, skills: [], experiences: [], education: [], certifications: [], projects: [], resumes: [], articles: [] })
   const [loading, setLoading] = useState(true)
   const [layoutOverride, setLayoutOverride] = useState(null) // null = db default, 'classic', 'bento'
   const tracked = useRef(false)
 
   useEffect(() => {
-    if (!tracked.current && !localStorage.getItem('token')) {
+    if (!tracked.current && !isAdmin) {
       tracked.current = true
       api.post('/api/analytics/track').catch(() => {})
     }
     const fetchData = async () => {
       try {
-        const [profile, skills, experiences, education, certifications, projects, resumes] = await Promise.all([
+        const [profile, skills, experiences, education, certifications, projects, resumes, articles] = await Promise.all([
           api.get('/api/profile'), api.get('/api/skills'),
           api.get('/api/experiences'), api.get('/api/education'),
           api.get('/api/certifications'), api.get('/api/projects'),
-          api.get('/api/resumes'),
+          api.get('/api/resumes'), api.get('/api/articles', { params: { limit: 3, skip: 0 } }),
         ])
         setData({
           profile: profile.data,
@@ -39,6 +41,7 @@ export default function Home() {
           certifications: certifications.data,
           projects: projects.data,
           resumes: resumes.data,
+          articles: articles.data.items,
         })
       } catch (err) {
         console.error('Failed to fetch:', err)
@@ -47,7 +50,7 @@ export default function Home() {
       }
     }
     fetchData()
-  }, [])
+  }, [isAdmin])
 
   if (loading) {
     return (
@@ -72,7 +75,7 @@ export default function Home() {
       />
       <Navbar resumes={data.resumes} currentLayout={currentLayout} onToggleLayout={() => setLayoutOverride(useBento ? 'classic' : 'bento')} resumeVisible={show('resume')} />
       {useBento ? (
-        <BentoHome onToggleLayout={() => setLayoutOverride('classic')} />
+        <BentoHome data={data} onToggleLayout={() => setLayoutOverride('classic')} />
       ) : (
         <>
           {show('hero') && <Hero profile={data.profile} resumes={data.resumes} resumeVisible={show('resume')} />}
@@ -84,7 +87,7 @@ export default function Home() {
           />}
           {show('projects') && <Projects projects={data.projects} />}
           {show('certifications') && <Certifications certifications={data.certifications} />}
-          {show('blog') && <BlogSection />}
+          {show('blog') && <BlogSection articles={data.articles} />}
           {show('contact') && <Contact profile={data.profile} />}
         </>
       )}

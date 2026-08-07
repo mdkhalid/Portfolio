@@ -196,6 +196,47 @@ async function captureLead(message, source = 'chat') {
   return lead;
 }
 
+async function ruleBasedReply(message) {
+  const context = await buildResumeContext();
+  const lower = message.toLowerCase();
+  const nameMatch = context.match(/Name: ([^\n]+)/);
+  const name = nameMatch ? nameMatch[1].trim() : 'Mohammad Khalid';
+  const titleMatch = context.match(/Title: ([^\n]+)/);
+  const title = titleMatch ? titleMatch[1].trim() : 'Senior Solution Architect';
+
+  let reply = '';
+  if (lower.includes('hello') || lower.includes('hi ') || lower === 'hi' || lower.includes('hey')) {
+    reply = `Hello! I'm an AI resume assistant for ${name}. Ask me anything about his professional experience, skills, projects, or background — I have his full resume right here!`;
+  } else if ((lower.includes('who') || lower.includes('tell me about')) && (lower.includes('mohammad') || lower.includes('you') || lower.includes('him') || lower.includes('his'))) {
+    reply = `${name} is a ${title} with 18+ years of experience based in Delhi, India. He has deep expertise in .NET Core, Angular, React, Node.js, Azure cloud platforms, and AI integration. His resume shows a proven track record of leading teams, architecting enterprise solutions, and delivering measurable results — like improving operational efficiency by 30% at LanceSoft and boosting course completion rates by 40% at Infinity Quest.`;
+  } else if (lower.includes('skill') || lower.includes('technolog') || lower.includes('tech stack') || lower.includes('proficient') || lower.includes('expertise') || lower.includes('know')) {
+    const skillsMatch = context.match(/=== TECHNICAL SKILLS ===\n([\s\S]*?)(?:\n\n===|\n$)/);
+    const skillsText = skillsMatch ? skillsMatch[1].trim() : 'Not available in resume data.';
+    reply = `Here's what Mohammad's resume shows for his technical skills:\n\n${skillsText}\n\nHe's particularly strong in C# (95%), .NET Core (95%), and REST API design (95%), with strong proficiency across the full stack from frontend (Angular, React) to cloud (Azure, AWS).`;
+  } else if (lower.includes('experience') || lower.includes('work') || lower.includes('job') || lower.includes('career') || lower.includes('employment') || lower.includes('company')) {
+    const expMatch = context.match(/=== WORK EXPERIENCE ===\n([\s\S]*?)(?:\n\n===|\n$)/);
+    const expText = expMatch ? expMatch[1].trim() : 'Not available in resume data.';
+    reply = `Here's Mohammad's work experience from his resume:\n\n${expText}`;
+  } else if (lower.includes('project') || lower.includes('built') || lower.includes('developed') || lower.includes('create')) {
+    const projMatch = context.match(/=== FEATURED PROJECTS ===\n([\s\S]*?)(?:\n\n===|\n$)/);
+    const projText = projMatch ? projMatch[1].trim() : 'Not available in resume data.';
+    reply = `Here are Mohammad's featured projects from his resume:\n\n${projText}`;
+  } else if (lower.includes('education') || lower.includes('study') || lower.includes('degree') || lower.includes('college') || lower.includes('university')) {
+    const eduMatch = context.match(/=== EDUCATION ===\n([\s\S]*?)(?:\n\n===|\n$)/);
+    const eduText = eduMatch ? eduMatch[1].trim() : 'Not available in resume data.';
+    reply = `Here's Mohammad's education background from his resume:\n\n${eduText}`;
+  } else if (lower.includes('certification') || lower.includes('certificate') || lower.includes('credential')) {
+    const certMatch = context.match(/=== CERTIFICATIONS ===\n([\s\S]*?)(?:\n\n===|\n$)/);
+    const certText = certMatch ? certMatch[1].trim() : 'Not available in resume data.';
+    reply = `Here are Mohammad's professional certifications from his resume:\n\n${certText}`;
+  } else {
+    reply = FALLBACK_RESPONSES[Math.floor(Math.random() * FALLBACK_RESPONSES.length)];
+  }
+
+  const lead = await captureLead(message, 'chat');
+  return { reply, lead: lead ? { id: lead._id, name: lead.name, phone: lead.phone } : null };
+}
+
 exports.chat = asyncHandler(async (req, res) => {
   const raw = str(req.body, 'message', { min: 1, max: 1000 });
   const message = sanitizeForAI(raw);
@@ -203,44 +244,7 @@ exports.chat = asyncHandler(async (req, res) => {
   const { client, model } = await getAIClient('chat');
 
   if (!client) {
-    const context = await buildResumeContext();
-    const lower = message.toLowerCase();
-    const nameMatch = context.match(/Name: ([^\n]+)/);
-    const name = nameMatch ? nameMatch[1].trim() : 'Mohammad Khalid';
-    const titleMatch = context.match(/Title: ([^\n]+)/);
-    const title = titleMatch ? titleMatch[1].trim() : 'Senior Solution Architect';
-
-    let reply = '';
-    if (lower.includes('hello') || lower.includes('hi ') || lower === 'hi' || lower.includes('hey')) {
-      reply = `Hello! I'm an AI resume assistant for ${name}. Ask me anything about his professional experience, skills, projects, or background — I have his full resume right here!`;
-    } else if ((lower.includes('who') || lower.includes('tell me about')) && (lower.includes('mohammad') || lower.includes('you') || lower.includes('him') || lower.includes('his'))) {
-      reply = `${name} is a ${title} with 18+ years of experience based in Delhi, India. He has deep expertise in .NET Core, Angular, React, Node.js, Azure cloud platforms, and AI integration. His resume shows a proven track record of leading teams, architecting enterprise solutions, and delivering measurable results — like improving operational efficiency by 30% at LanceSoft and boosting course completion rates by 40% at Infinity Quest.`;
-    } else if (lower.includes('skill') || lower.includes('technolog') || lower.includes('tech stack') || lower.includes('proficient') || lower.includes('expertise') || lower.includes('know')) {
-      const skillsMatch = context.match(/=== TECHNICAL SKILLS ===\n([\s\S]*?)(?:\n\n===|\n$)/);
-      const skillsText = skillsMatch ? skillsMatch[1].trim() : 'Not available in resume data.';
-      reply = `Here's what Mohammad's resume shows for his technical skills:\n\n${skillsText}\n\nHe's particularly strong in C# (95%), .NET Core (95%), and REST API design (95%), with strong proficiency across the full stack from frontend (Angular, React) to cloud (Azure, AWS).`;
-    } else if (lower.includes('experience') || lower.includes('work') || lower.includes('job') || lower.includes('career') || lower.includes('employment') || lower.includes('company')) {
-      const expMatch = context.match(/=== WORK EXPERIENCE ===\n([\s\S]*?)(?:\n\n===|\n$)/);
-      const expText = expMatch ? expMatch[1].trim() : 'Not available in resume data.';
-      reply = `Here's Mohammad's work experience from his resume:\n\n${expText}`;
-    } else if (lower.includes('project') || lower.includes('built') || lower.includes('developed') || lower.includes('create')) {
-      const projMatch = context.match(/=== FEATURED PROJECTS ===\n([\s\S]*?)(?:\n\n===|\n$)/);
-      const projText = projMatch ? projMatch[1].trim() : 'Not available in resume data.';
-      reply = `Here are Mohammad's featured projects from his resume:\n\n${projText}`;
-    } else if (lower.includes('education') || lower.includes('study') || lower.includes('degree') || lower.includes('college') || lower.includes('university')) {
-      const eduMatch = context.match(/=== EDUCATION ===\n([\s\S]*?)(?:\n\n===|\n$)/);
-      const eduText = eduMatch ? eduMatch[1].trim() : 'Not available in resume data.';
-      reply = `Here's Mohammad's education background from his resume:\n\n${eduText}`;
-    } else if (lower.includes('certification') || lower.includes('certificate') || lower.includes('credential')) {
-      const certMatch = context.match(/=== CERTIFICATIONS ===\n([\s\S]*?)(?:\n\n===|\n$)/);
-      const certText = certMatch ? certMatch[1].trim() : 'Not available in resume data.';
-      reply = `Here are Mohammad's professional certifications from his resume:\n\n${certText}`;
-    } else {
-      reply = FALLBACK_RESPONSES[Math.floor(Math.random() * FALLBACK_RESPONSES.length)];
-    }
-
-    const lead = await captureLead(message, 'chat');
-    return res.json({ reply, lead: lead ? { id: lead._id, name: lead.name, phone: lead.phone } : null });
+    return res.json(await ruleBasedReply(message));
   }
 
   try {
@@ -259,7 +263,7 @@ exports.chat = asyncHandler(async (req, res) => {
     const lead = await captureLead(message, 'chat');
     res.json({ reply, lead: lead ? { id: lead._id, name: lead.name, phone: lead.phone } : null });
   } catch (err) {
-    console.error('Chat error:', err);
-    res.status(503).json({ error: 'Service unavailable. Please try again later.' });
+    console.error('Chat error — falling back to rule-based responder:', err);
+    res.json(await ruleBasedReply(message));
   }
 });

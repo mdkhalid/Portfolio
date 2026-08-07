@@ -1,5 +1,6 @@
 const { Server } = require('socket.io');
 const ChatSession = require('../models/ChatSession');
+const { verifyJwt } = require('../middleware/auth');
 
 const MAX_ACTIVE = 3;
 
@@ -27,7 +28,15 @@ function setupSocket(server) {
     const visitorId = socket.handshake.query.visitorId || socket.id;
 
     if (role === 'admin') {
-      socket.data.role = 'admin';
+      // Admin connections must present a valid JWT (same token used for the REST admin API)
+      const token = socket.handshake.auth?.token;
+      const decoded = verifyJwt(token);
+      if (!decoded) {
+        socket.emit('auth_error', { error: 'Unauthorized' });
+        socket.disconnect(true);
+        return;
+      }
+      socket.data.adminId = decoded.id;
       socket.join('admin-room');
       adminCount++;
       if (!adminConnected) {

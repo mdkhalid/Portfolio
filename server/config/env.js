@@ -29,7 +29,11 @@ const env = {
   ANALYTICS_SALT: optional('ANALYTICS_SALT', ''),
 };
 
-if (env.JWT_SECRET === 'your_jwt_secret_here' || env.JWT_SECRET.length < 32) {
+const isKnownPlaceholder =
+  env.JWT_SECRET === 'your_jwt_secret_here' ||
+  env.JWT_SECRET === 'generate_a_random_secret_that_is_at_least_32_chars_long' ||
+  env.JWT_SECRET.includes('generate_a_random_secret');
+if (isKnownPlaceholder || env.JWT_SECRET.length < 32) {
   console.error('[startup] FATAL: JWT_SECRET must be set to a strong value (>= 32 chars) and not the placeholder.');
   process.exit(1);
 }

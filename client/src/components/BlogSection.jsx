@@ -5,17 +5,21 @@ import { useTheme } from '../context/ThemeContext'
 import api from '../lib/api'
 import { Calendar, Tag, Clock, ChevronRight, BookOpen } from 'lucide-react'
 
-export default function BlogSection() {
+export default function BlogSection({ articles: propArticles }) {
   const { dark } = useTheme()
   const navigate = useNavigate()
-  const [articles, setArticles] = useState([])
-  const [loading, setLoading] = useState(true)
+  // When given articles as a prop (from Home's shared fetch), render them directly.
+  // Standalone, fetch the latest articles ourselves.
+  const isControlled = propArticles !== undefined
+  const [localArticles, setLocalArticles] = useState([])
+  const [loading, setLoading] = useState(!isControlled)
 
   useEffect(() => {
+    if (isControlled) return
     const fetch = async () => {
       try {
         const { data } = await api.get('/api/articles', { params: { limit: 3, skip: 0 } })
-        setArticles(data.items)
+        setLocalArticles(data.items)
       } catch (err) {
         console.error('Failed to fetch articles:', err)
       } finally {
@@ -23,7 +27,9 @@ export default function BlogSection() {
       }
     }
     fetch()
-  }, [])
+  }, [isControlled])
+
+  const articles = isControlled ? propArticles : localArticles
 
   const formatDate = (date) => {
     return new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })

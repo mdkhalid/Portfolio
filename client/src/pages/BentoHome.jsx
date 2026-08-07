@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { useTheme } from '../context/ThemeContext'
+import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import api from '../lib/api'
 import { 
@@ -17,17 +18,22 @@ import ProjectCard from '../components/bento/ProjectCard'
 import ProjectDetailModal from '../components/bento/ProjectDetailModal'
 import BentoContactSection from '../components/bento/BentoContactSection'
 
-export default function BentoHome({ onToggleLayout }) {
+export default function BentoHome({ data: propData, onToggleLayout }) {
   const { dark, toggle } = useTheme()
+  const { isAdmin } = useAuth()
   const navigate = useNavigate()
-  const [data, setData] = useState({ profile: {}, skills: [], experiences: [], education: [], certifications: [], projects: [], resumes: [] })
-  const [loading, setLoading] = useState(true)
+  // When embedded in Home, receive already-fetched data as a prop and reuse it.
+  // When rendered standalone (the /bento route), fetch everything ourselves.
+  const isEmbedded = propData !== undefined
+  const [data, setData] = useState(propData || { profile: {}, skills: [], experiences: [], education: [], certifications: [], projects: [], resumes: [], articles: [] })
+  const [loading, setLoading] = useState(!isEmbedded)
   const [selectedProject, setSelectedProject] = useState(null)
   const [activeTag, setActiveTag] = useState(null)
   const tracked = useRef(false)
 
   useEffect(() => {
-    if (!tracked.current && !localStorage.getItem('token')) {
+    if (isEmbedded) return
+    if (!tracked.current && !isAdmin) {
       tracked.current = true
       api.post('/api/analytics/track').catch(() => {})
     }
@@ -56,7 +62,7 @@ export default function BentoHome({ onToggleLayout }) {
       }
     }
     fetchData()
-  }, [])
+  }, [isAdmin, isEmbedded])
 
   const allTags = useMemo(() => {
     if (!data.projects?.length) return []

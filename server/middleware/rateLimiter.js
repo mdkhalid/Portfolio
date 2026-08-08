@@ -74,4 +74,22 @@ const globalLimiter = createLimiter({
   legacyHeaders: false,
 });
 
-module.exports = { authLimiter, contactLimiter, resumeLimiter, chatLimiter, atsLimiter, globalLimiter };
+// Job fetch: 10 fetches per 15 minutes per IP (Puppeteer is heavy + rate-limit-safe)
+const jobFetchLimiter = createLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many job fetch requests. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Job site credential save/test: 20 per 15 minutes per IP
+const jobSiteLimiter = createLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: 'Too many requests. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+module.exports = { authLimiter, contactLimiter, resumeLimiter, chatLimiter, atsLimiter, globalLimiter, jobFetchLimiter, jobSiteLimiter };

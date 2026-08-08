@@ -79,14 +79,20 @@ async function startWorker() {
   if (mongoose.connection.readyState !== 1) {
     await new Promise((resolve) => {
       if (mongoose.connection.readyState === 1) return resolve();
-      const onConnected = () => resolve();
-      const onErr = (err) => {
-        console.error('[worker] DB connection error:', err.message);
+      const done = () => {
+        clearTimeout(fallback);
         resolve();
+      };
+      const onConnected = () => done();
+      const onErr = (err) => {
+        console.error('[worker] DB connection error:', err?.message || err);
+        done();
       };
       mongoose.connection.once('connected', onConnected);
       mongoose.connection.once('error', onErr);
-      setTimeout(onErr, 12000); // fallback timeout
+      // Fallback timeout (unref'd so it never keeps the process alive).
+      const fallback = setTimeout(() => onErr(new Error('DB connection timeout')), 12000);
+      fallback.unref();
     });
   }
   if (mongoose.connection.readyState !== 1) {

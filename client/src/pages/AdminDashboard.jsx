@@ -5,7 +5,7 @@ import { useTheme } from '../context/ThemeContext'
 import { useApiAuth } from '../lib/api'
 import { motion } from 'framer-motion'
 import { io } from 'socket.io-client'
-import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, BookOpen, Phone, PhoneCall, MessagesSquare, Send, MessageCircle, Users } from 'lucide-react'
+import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, BookOpen, Phone, PhoneCall, MessagesSquare, Send, MessageCircle, Users, Globe, RefreshCw, Loader2 } from 'lucide-react'
 import EditModal from '../features/admin/components/EditModal'
 import ProfileForm from '../features/admin/components/ProfileForm'
 
@@ -22,6 +22,7 @@ const tabs = [
   { key: 'leads', label: 'Leads', icon: Phone },
   { key: 'livechat', label: 'Live Chat', icon: MessagesSquare },
   { key: 'analytics', label: 'Analytics', icon: BarChart3 },
+  { key: 'jobs', label: 'Job Sites', icon: Globe },
 ]
 
 export default function AdminDashboard() {
@@ -40,6 +41,16 @@ export default function AdminDashboard() {
   const [selectedMessage, setSelectedMessage] = useState(null)
   const [leads, setLeads] = useState([])
   const [toast, setToast] = useState(null)
+
+  // Job Sites state
+  const [jobSites, setJobSites] = useState([])
+  const [jobSitesLoading, setJobSitesLoading] = useState(false)
+  const [credsModal, setCredsModal] = useState(null) // { name, label }
+  const [credsForm, setCredsForm] = useState({ email: '', password: '' })
+  const [credsSaving, setCredsSaving] = useState(false)
+  const [testingSite, setTestingSite] = useState(null)
+  const [fetching, setFetching] = useState(false)
+  const [fetchResult, setFetchResult] = useState(null)
 
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type })
@@ -128,7 +139,84 @@ export default function AdminDashboard() {
     if (activeTab === 'leads') {
       API.get('/api/leads').then(r => setLeads(r.data.items)).catch(() => {})
     }
+    if (activeTab === 'jobs') {
+      refreshJobSites()
+    }
   }, [activeTab, refreshActivities])
+
+  const refreshJobSites = useCallback(async () => {
+    setJobSitesLoading(true)
+    try {
+      const { data } = await API.get('/api/job-sites')
+      setJobSites(data)
+    } catch (err) { console.error(err) }
+    finally { setJobSitesLoading(false) }
+  }, [])
+
+  const saveJobSite = async (name, creds) => {
+    setCredsSaving(true)
+    try {
+      const { data } = await API.put('/api/job-sites/' + name, creds)
+      setJobSites(prev => {
+        const idx = prev.findIndex(s => s.name === name)
+        if (idx >= 0) {
+          const next = [...prev]
+          next[idx] = data
+          return next
+        }
+        return [...prev, data]
+      })
+      showToast('Saved ' + data.label, 'success')
+      return true
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Save failed', 'error')
+      return false
+    } finally { setCredsSaving(false) }
+  }
+
+  const testJobSite = async (name) => {
+    setTestingSite(name)
+    try {
+      const { data } = await API.post('/api/job-sites/' + name + '/test')
+      showToast(data.message || 'Connected', 'success')
+      await refreshJobSites()
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Connection failed', 'error')
+      await refreshJobSites()
+    } finally { setTestingSite(null) }
+  }
+
+  const removeJobSite = async (name) => {
+    if (!confirm('Remove this site?')) return
+    try {
+      await API.delete('/api/job-sites/' + name)
+      setJobSites(prev => prev.filter(s => s.name !== name))
+      showToast('Removed', 'success')
+    } catch (err) { showToast('Remove failed', 'error') }
+  }
+
+  const toggleSite = async (name, enabled) => {
+    const site = jobSites.find(s => s.name === name)
+    const ok = await saveJobSite(name, { email: site?.credentials?.email || '', enabled })
+    if (!ok) await refreshJobSites()
+  }
+
+  const fetchJobs = async () => {
+    setFetching(true)
+    setFetchResult(null)
+    try {
+      const { data } = await API.post('/api/jobs/fetch')
+      setFetchResult(data)
+      const total = data.created + data.updated
+      if (data.errors?.length) {
+        showToast(`Fetched with ${data.errors.length} error(s). ${total} jobs added/updated.`, 'error')
+      } else {
+        showToast(`Fetched ${data.total} jobs. ${data.created} new, ${data.updated} refreshed.`, 'success')
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Fetch failed', 'error')
+    } finally { setFetching(false) }
+  }
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -553,6 +641,188 @@ export default function AdminDashboard() {
     )
   }
 
+  const renderJobs = () => {
+    const connectedCount = jobSites.filter(s => s.status === 'connected').length
+    const enabledCount = jobSites.filter(s => s.enabled).length
+
+    return (
+      <div className="space-y-6">
+        {/* Summary */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className={'flex items-center gap-2 px-3 py-2 rounded-xl border ' + (dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200')}>
+            <Globe size={16} className="text-blue-500" />
+            <span className="text-sm font-medium">{enabledCount}/{jobSites.length} enabled</span>
+          </div>
+          <div className={'flex items-center gap-2 px-3 py-2 rounded-xl border ' + (dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200')}>
+            <CheckCircle2 size={16} className="text-emerald-500" />
+            <span className="text-sm font-medium">{connectedCount} connected</span>
+          </div>
+          <div className="flex-1" />
+          <button onClick={refreshJobSites} disabled={jobSitesLoading}
+            className={'flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer ' + (dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
+            <RefreshCw size={14} className={jobSitesLoading ? 'animate-spin' : ''} /> Refresh
+          </button>
+          <button onClick={fetchJobs} disabled={fetching || enabledCount === 0}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">
+            {fetching ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+            {fetching ? 'Fetching...' : 'Fetch Jobs'}
+          </button>
+        </div>
+
+        {/* Fetch result */}
+        {fetchResult && (
+          <div className={'p-4 rounded-xl border ' + (dark ? 'bg-gray-900 border-gray-700' : 'bg-blue-50 border-blue-200')}>
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle2 size={16} className="text-blue-500" />
+              <span className="text-sm font-semibold">Last Fetch Result</span>
+            </div>
+            <div className="grid grid-cols-4 gap-3 text-center">
+              <div>
+                <div className="text-lg font-bold">{fetchResult.total}</div>
+                <div className={'text-xs ' + (dark ? 'text-gray-400' : 'text-gray-500')}>Found</div>
+              </div>
+              <div>
+                <div className="text-lg font-bold text-emerald-500">{fetchResult.created}</div>
+                <div className={'text-xs ' + (dark ? 'text-gray-400' : 'text-gray-500')}>New</div>
+              </div>
+              <div>
+                <div className="text-lg font-bold text-blue-500">{fetchResult.updated}</div>
+                <div className={'text-xs ' + (dark ? 'text-gray-400' : 'text-gray-500')}>Updated</div>
+              </div>
+              <div>
+                <div className="text-lg font-bold text-red-500">{fetchResult.errors?.length || 0}</div>
+                <div className={'text-xs ' + (dark ? 'text-gray-400' : 'text-gray-500')}>Errors</div>
+              </div>
+            </div>
+            {fetchResult.errors?.length > 0 && (
+              <div className={'mt-3 pt-3 border-t ' + (dark ? 'border-gray-700' : 'border-blue-200')}>
+                {fetchResult.errors.map((e, i) => (
+                  <p key={i} className="text-xs text-red-400">{e.site}: {e.error}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Site cards */}
+        {jobSitesLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 size={24} className="animate-spin text-blue-500" />
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {jobSites.map(site => (
+              <div key={site.name} className={'p-4 rounded-xl border transition-all ' + (site.enabled
+                ? (dark ? 'bg-gray-800 border-blue-500/40' : 'bg-white border-blue-300')
+                : (dark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'))}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={'w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ' + (site.enabled
+                      ? (dark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-600')
+                      : (dark ? 'bg-gray-700 text-gray-400' : 'bg-gray-200 text-gray-500'))}>
+                      <Globe size={20} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold">{site.label}</p>
+                        <span className={'text-xs px-2 py-0.5 rounded-full font-medium ' + (
+                          site.status === 'connected' ? (dark ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-50 text-emerald-700')
+                            : site.status === 'error' ? (dark ? 'bg-red-500/10 text-red-400' : 'bg-red-50 text-red-700')
+                            : (dark ? 'bg-gray-700 text-gray-400' : 'bg-gray-200 text-gray-500')
+                        )}>
+                          {site.status}
+                        </span>
+                      </div>
+                      <p className={'text-sm ' + (dark ? 'text-gray-400' : 'text-gray-500')}>
+                        {site.credentials?.email ? 'Configured: ' + site.credentials.email : 'No credentials'}
+                        {site.lastFetched ? ' | Last: ' + formatTimeAgo(site.lastFetched) : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {/* Toggle */}
+                    <button onClick={() => toggleSite(site.name, !site.enabled)}
+                      className={'relative w-11 h-6 rounded-full transition-colors cursor-pointer ' + (site.enabled ? 'bg-blue-500' : (dark ? 'bg-gray-600' : 'bg-gray-300'))}>
+                      <span className={'absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ' + (site.enabled ? 'translate-x-5' : '')} />
+                    </button>
+                    {/* Edit */}
+                    <button onClick={() => { setCredsModal({ name: site.name, label: site.label }); setCredsForm({ email: '', password: '' }) }}
+                      className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-200 text-blue-600')}>
+                      <Edit3 size={16} />
+                    </button>
+                    {/* Test */}
+                    {(() => {
+                      const TestIcon = testingSite === site.name ? Loader2 : CheckCircle2
+                      return (
+                        <button onClick={() => testJobSite(site.name)} disabled={testingSite === site.name || !site.credentials?.email}
+                          className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-emerald-400' : 'hover:bg-gray-200 text-emerald-600') + ' disabled:opacity-40'}>
+                          <TestIcon size={16} className={testingSite === site.name ? 'animate-spin' : ''} />
+                        </button>
+                      )
+                    })()}
+                    {/* Remove */}
+                    <button onClick={() => removeJobSite(site.name)}
+                      className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}>
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Credentials Modal */}
+        {credsModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setCredsModal(null)}>
+            <div className={'w-full max-w-md p-6 rounded-2xl border shadow-2xl ' + (dark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold">{credsModal.label} Credentials</h3>
+                <button onClick={() => setCredsModal(null)} className={'p-1.5 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700' : 'hover:bg-gray-200')}>
+                  <X size={18} />
+                </button>
+              </div>
+              <p className={'text-sm mb-4 ' + (dark ? 'text-gray-400' : 'text-gray-500')}>
+                Credentials are encrypted before storage. Password is never shown back.
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className={'text-sm font-medium ' + (dark ? 'text-gray-300' : 'text-gray-700')}>Email</label>
+                  <input type="email" value={credsForm.email}
+                    onChange={e => setCredsForm(f => ({ ...f, email: e.target.value }))}
+                    placeholder="your@email.com"
+                    className={'w-full mt-1 px-3 py-2 rounded-xl border outline-none text-sm ' + (dark ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400')} />
+                </div>
+                <div>
+                  <label className={'text-sm font-medium ' + (dark ? 'text-gray-300' : 'text-gray-700')}>Password</label>
+                  <input type="password" value={credsForm.password}
+                    onChange={e => setCredsForm(f => ({ ...f, password: e.target.value }))}
+                    placeholder="Leave blank to keep existing"
+                    className={'w-full mt-1 px-3 py-2 rounded-xl border outline-none text-sm ' + (dark ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400')} />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-5">
+                <button onClick={() => setCredsModal(null)}
+                  className={'px-4 py-2 rounded-xl text-sm font-medium cursor-pointer ' + (dark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
+                  Cancel
+                </button>
+                <button onClick={async () => {
+                  const ok = await saveJobSite(credsModal.name, { email: credsForm.email, password: credsForm.password, enabled: true })
+                  if (ok) setCredsModal(null)
+                }} disabled={credsSaving}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">
+                  {credsSaving ? <Loader2 size={14} className="animate-spin" /> : null}
+                  Save & Enable
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   const renderLiveChat = () => {
     const selectChat = (session) => {
       setSelectedChat(session)
@@ -729,6 +999,7 @@ export default function AdminDashboard() {
       case 'leads': return renderLeads()
       case 'livechat': return renderLiveChat()
       case 'analytics': return renderAnalytics()
+      case 'jobs': return renderJobs()
       default: return null
     }
   }

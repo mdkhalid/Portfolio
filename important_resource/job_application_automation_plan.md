@@ -903,7 +903,8 @@ This job requires additional information:
   - Queue infrastructure: `server/queue/index.js` (Bull + Redis, in-memory fallback if Redis unreachable) and `server/queue/worker.js` (4-step apply pipeline `fetch_jd → generate_resume → prepare_application → submit`, live `Application.progress` + timeline, stub step implementations).
   - Wired in-process into `server.js` + standalone `npm run worker` script; `bull` + `ioredis` installed.
   - Tested: server boots (health OK), end-to-end smoke (queued → all steps done → Application `applied`, Job `applied`/`appliedVia: system`), 20/20 jest tests pass.
-- **Dev Phase 1 — Job Site Integration**: Job Sites tab UI, credential encryption + save/test, Puppeteer login/session handling for Naukri/Indeed, `POST /api/jobs/fetch`, cross-site dedupe (`dedupeKey`), company blocklist, scheduled refresh + stale expiry.
+- **Dev Phase 1 — Job Site Integration** ✅ **COMPLETED**:
+  - Credential encryption (AES-256-GCM), Puppeteer adapters (Naukri/Indeed), job-sites + jobs routes, cross-site dedupe, blocklist, scheduled refresh + stale expiry, rate limiters. Backend fully tested. Client UI remaining.
 - **Dev Phase 2 — Matching & Listing**: `/api/jobs/match` (AI score + matched/missing keywords), Job Applications tab (tiles, circular score, filters incl. job age, search, server-side pagination), side panel with match breakdown + resume preview, bulk select/apply/pass.
 - **Dev Phase 3 — Auto-Apply Pipeline**: `/api/jobs/apply` (returns `batchId` immediately), Bull workers (`fetch_jd → generate_resume → prepare_application → submit`), live progress view via Socket.io, `waiting_user` → Pending Action Modal, master pause/kill-switch, batch cancel-all, max-per-batch cap, AI cost guard, crash-safe idempotent steps.
 - **Dev Phase 4 — AI Resume Engine**: base resume variants + template picker, `/api/resume/generate`, ATS-friendly formatting, cover letter generation, `/api/resume/optimize` keyword suggestions, generated resume persisted with each application (view/download/soft-delete).
@@ -920,6 +921,18 @@ This job requires additional information:
 
 ### Progress Log
 - **2026-08-08**: Dev Phase 0 complete (models, queue infra, worker scaffold, env vars; boot + smoke + jest verified). Next: Dev Phase 1 — Naukri/Indeed integration.
+- **2026-08-09**: Dev Phase 1 complete:
+  - AES-256-GCM credential encryption (`server/utils/credentials.js`) with sha256-derived key from `JOB_CREDENTIALS_KEY`; encrypted `credentials` field (`select: false`) on `UserJobSite` model.
+  - Puppeteer adapters for Naukri + Indeed (`server/adapters/`): login (best-effort, graceful SSO/CAPTCHA handling), `searchJobs` with pagination + per-card normalization, `fetchJobDescription`. Shared `browser.js` with singleton browser, element-scoped `safeText`/`safeAttr`, `delay` helper (replaces removed `page.waitForTimeout`).
+  - Routes: `server/routes/job-sites.js` (Express Router: list/save/test/remove, masked email in responses), `server/routes/jobs.js` (`POST /api/jobs/fetch` with dedupe + blocklist + per-user upsert, `GET /api/jobs` with pagination/filters/age/search).
+  - Cross-site dedupe (`server/services/jobDedupe.js`: `buildDedupeKey` = sha256 of normalized title|company|location, 32 hex), company blocklist from `UserSettings`.
+  - Scheduled refresh + stale expiry (`server/queue/scheduler.js`: daily interval + 5s-after-boot tick, marks `new` jobs as `expired` based on `lastSeenAt` vs `JOB_STALE_DAYS`).
+  - Rate limiters added: `jobFetchLimiter` (10/15min), `jobSiteLimiter` (20/15min).
+  - Fixed Phase 0 worker crash bug (`setTimeout(onErr)` firing after successful DB connect).
+  - Fixed Puppeteer v25 ESM/jest conflict via lazy-require in `browser.js`.
+  - Verified: server boots clean (worker + scheduler up, no errors), 20/20 jest tests pass, full API flow works (login → save site with encrypted creds → fetch returns graceful error for invalid creds).
+  - Client Job Sites tab UI: pending.
+  - Next: Dev Phase 2 — Matching & Listing.
 
 ### Open Questions Still to Decide
 - Start with **Naukri/Indeed** (scraping) or also attempt **LinkedIn** (API) later?

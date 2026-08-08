@@ -22,7 +22,7 @@ const postmortemsCtrl = require('./routes/postmortems');
 const leadsCtrl = require('./routes/leads');
 const Activity = require('./models/Activity');
 const Resume = require('./models/Resume');
-const { authLimiter, contactLimiter, resumeLimiter, chatLimiter, atsLimiter, globalLimiter } = require('./middleware/rateLimiter');
+const { authLimiter, contactLimiter, resumeLimiter, chatLimiter, atsLimiter, globalLimiter, jobFetchLimiter, jobSiteLimiter } = require('./middleware/rateLimiter');
 const atsRouter = require('./routes/ats');
 const {
   helmetMiddleware,
@@ -131,6 +131,10 @@ app.use('/api/auth', authLimiter, require('./routes/auth'));
 
 app.get('/api/activity', auth, require('./routes/activity').getRecent);
 
+app.use('/api/job-sites', auth, csrfProtection, jobSiteLimiter, require('./routes/job-sites'));
+app.get('/api/jobs', auth, require('./routes/jobs').list);
+app.post('/api/jobs/fetch', auth, csrfProtection, jobFetchLimiter, require('./routes/jobs').fetch);
+
 app.use('/api/upload', auth, csrfProtection, require('./routes/upload'));
 app.use('/api/resume-files', auth, csrfProtection, require('./routes/upload-resume'));
 app.get('/api/admin/articles', auth, articlesCtrl.getAllAdmin);
@@ -192,6 +196,8 @@ if (require.main === module) {
   if (env.NODE_ENV !== 'test') {
     const { startWorker } = require('./queue/worker');
     startWorker().catch((err) => console.error('[worker] failed to start:', err.message));
+    const { startScheduler } = require('./queue/scheduler');
+    startScheduler();
   }
 
   server.listen(PORT, () =>

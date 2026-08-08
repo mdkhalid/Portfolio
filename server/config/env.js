@@ -27,6 +27,14 @@ const env = {
   GROQ_API_KEY: optional('GROQ_API_KEY', ''),
   TRUST_PROXY: optional('TRUST_PROXY', '1'),
   ANALYTICS_SALT: optional('ANALYTICS_SALT', ''),
+  // ─── Job Automation (Phase 0 foundations) ───────────────────────────────
+  REDIS_URL: optional('REDIS_URL', ''),
+  JOB_CREDENTIALS_KEY: optional('JOB_CREDENTIALS_KEY', ''),
+  JOB_FETCH_SCHEDULE: optional('JOB_FETCH_SCHEDULE', '0 9 * * *'),
+  JOB_STALE_DAYS: optional('JOB_STALE_DAYS', '7'),
+  JOB_AI_DAILY_BUDGET: optional('JOB_AI_DAILY_BUDGET', '100'),
+  JOB_AI_WEEKLY_BUDGET: optional('JOB_AI_WEEKLY_BUDGET', '500'),
+  JOB_NOTIFY_FROM: optional('JOB_NOTIFY_FROM', ''),
 };
 
 const isKnownPlaceholder =

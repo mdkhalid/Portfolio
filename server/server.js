@@ -187,6 +187,13 @@ if (require.main === module) {
   const PORT = env.PORT;
   const server = http.createServer(app);
   setupSocket(server);
+
+  // Start the async apply-pipeline worker (Bull/Redis queue) in-process.
+  if (env.NODE_ENV !== 'test') {
+    const { startWorker } = require('./queue/worker');
+    startWorker().catch((err) => console.error('[worker] failed to start:', err.message));
+  }
+
   server.listen(PORT, () =>
     console.log(`Server running on port ${PORT} (${env.NODE_ENV})`)
   );

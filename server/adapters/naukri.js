@@ -4,6 +4,19 @@ const BASE = 'https://www.naukri.com';
 
 const normalize = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 
+/** Sanitize a query string for safe use in a Naukri URL path. */
+function urlSafeQuery(query) {
+  return normalize(query)
+    .toLowerCase()
+    .replace(/[.#+]/g, ' ')   // C# -> C, .NET -> NET, React.js -> React js
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 8)              // Naukri URLs work best with a few keywords
+    .join('-');
+}
+
 /**
  * Log in to Naukri with email/password. Returns the page with an active
  * authenticated session (cookies kept in the shared browser context).
@@ -11,18 +24,27 @@ const normalize = (s) => String(s || '').replace(/\s+/g, ' ').trim();
  */
 async function login({ email, password }) {
   return withPage(async (page) => {
-    await page.goto(`${BASE}/member/login`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.goto(`${BASE}/nlogin/login`, { waitUntil: 'networkidle2', timeout: 30000 });
+    await delay(2000);
+
+    await page.waitForSelector('#usernameField', { timeout: 10000 });
     await page.type('#usernameField', email, { delay: 20 });
     await page.type('#passwordField', password, { delay: 20 });
+
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
-      page.click('button[type="submit"]').catch(() => page.click('.login-btn')),
+      page.click('button[type="submit"]').catch(async () => {
+        const btn = await page.$('.loginBtn, [type="submit"]');
+        if (btn) await btn.click();
+      }),
     ]);
-    // If we landed on a page with the user's name or profile link, login worked.
+    await delay(2000);
+
     const url = page.url();
-    const loggedIn = !url.includes('/login') || !!(await page.$('.ni-gnb-icn-name, .user-name, [data-qa="userName"]'));
-    if (!loggedIn) {
-      throw new Error('Naukri login failed — check credentials or complete CAPTCHA on the site.');
+    const hasError = await page.$('.error, .alert, [class*=error], [class*=Error]');
+    if (url.includes('/login') || hasError) {
+      const errText = await page.$eval('.error, .alert, [class*=error], [class*=Error]', el => el.innerText).catch(() => '');
+      throw new Error(errText || 'Naukri login failed — check credentials or complete CAPTCHA on the site.');
     }
     return { ok: true };
   });
@@ -33,33 +55,38 @@ async function login({ email, password }) {
  * Login session (if stored) is reused from the shared browser context.
  */
 async function searchJobs({ query, location = '', pageCount = 1, maxJobs = 50 }) {
-  const q = normalize(query).split(/\s+/).join('-');
+  const q = urlSafeQuery(query);
   const url = `${BASE}/${q}-jobs${location ? '?location=' + encodeURIComponent(location) : ''}`;
   return withPage(async (page) => {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await delay(2500);
+    await delay(3000);
 
     const jobs = [];
     for (let p = 0; p < pageCount && jobs.length < maxJobs; p++) {
       if (p > 0) {
-        const next = await page.$('.nextPage, [data-qa="pagination-next"]');
+        const next = await page.$('.nextPage, [data-qa="pagination-next"], .pagination a:last-child, a[class*=next]');
         if (!next) break;
-        await next.click();
+        await Promise.all([
+          page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
+          next.click(),
+        ]);
         await delay(2000);
       }
-      const items = await page.$$('.jobTuple, .job-list .job');
-      for (const item of items) {
+
+      const cards = await page.$$('.srp-jobtuple-wrapper');
+      for (const card of cards) {
         if (jobs.length >= maxJobs) break;
         try {
-          const title = await item.$eval('.title a, .job-title', (el) => el.textContent.trim());
-          const urlHref = await item.$eval('.title a, .job-title', (el) => el.getAttribute('href') || '');
-          const company = await safeText(item, '.subTitle, .company-name');
-          const locationEl = await item.$eval('.location, [data-qa="jobSearchClientLocation"]', (el) => el.textContent.trim());
-          const posted = await safeText(item, '.job-posted, [data-qa="job-posted-date"]');
+          const title = await card.$eval('h2 a.title, a.title', (el) => el.textContent.trim());
+          const urlHref = await card.$eval('h2 a.title, a.title', (el) => el.getAttribute('href') || '');
+          const company = await card.$eval('a.comp-name', (el) => el.textContent.trim());
+          const loc = await card.$eval('span.loc-wrap', (el) => el.textContent.trim());
+          const posted = await card.$eval('span.job-post-day', (el) => el.textContent.trim());
+
           jobs.push({
             title: normalize(title),
             company: normalize(company),
-            location: normalize(locationEl),
+            location: normalize(loc),
             url: urlHref.startsWith('http') ? urlHref : `${BASE}${urlHref}`,
             postedText: normalize(posted),
             site: 'naukri',
@@ -77,8 +104,8 @@ async function searchJobs({ query, location = '', pageCount = 1, maxJobs = 50 })
 async function fetchJobDescription(url) {
   return withPage(async (page) => {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await delay(1500);
-    return await safeText(page, '.job-desc, [data-qa="jobDescription"]');
+    await delay(2000);
+    return await page.$eval('.job-desc, [data-qa="jobDescription"], [class*=jobDesc], [class*=job-desc]', (el) => el.textContent.trim()).catch(() => '');
   });
 }
 

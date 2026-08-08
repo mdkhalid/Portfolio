@@ -931,10 +931,61 @@ This job requires additional information:
   - Fixed Phase 0 worker crash bug (`setTimeout(onErr)` firing after successful DB connect).
   - Fixed Puppeteer v25 ESM/jest conflict via lazy-require in `browser.js`.
   - Verified: server boots clean (worker + scheduler up, no errors), 20/20 jest tests pass, full API flow works (login → save site with encrypted creds → fetch returns graceful error for invalid creds).
-  - Client Job Sites tab UI: pending.
+  - Client Job Sites tab UI: complete (site cards, toggle, credentials modal, test, fetch).
   - Next: Dev Phase 2 — Matching & Listing.
 
 ### Open Questions Still to Decide
 - Start with **Naukri/Indeed** (scraping) or also attempt **LinkedIn** (API) later?
 - Build **UI-first** or **backend-first**? (Recommendation: backend-first for Phases 1-2, then UI.)
 - AI budget defaults and max-per-batch default (proposed: 20).
+
+---
+
+## Phase 1 Follow-ups (Plan — implement later)
+
+### Issue 1: Naukri/Indeed Login Not Working
+**Problem**: Naukri and Indeed detect headless browsers and show a JS challenge or blank page instead of the login form, so Puppeteer login fails.
+
+**User Request**: When the browser launches a site, provide a login option so scraping works.
+
+**Proposed Solution — Login on Launch**:
+1. When Puppeteer opens a site (on first fetch or when creds are saved), navigate to the site.
+2. **Auto-login**: Detect login forms using common selectors (`input[type=email]`, `input[name=email]`, `input[type=password]`, `button[type=submit]`). Fill saved credentials and submit.
+3. **Cookie import fallback**: If auto-login fails (CAPTCHA/JS challenge), let the user paste cookies from their browser. Store and inject via `page.setCookie(...)`.
+4. **Stealth**: Add `puppeteer-extra-plugin-stealth` + `--disable-blink-features=AutomationControlled` to reduce detection.
+5. **Result**: On success, store session cookies. On failure, return a clear error: "Login blocked — import cookies from your browser instead."
+
+**Note**: This is part of the generic custom-site flow (Issue 2) — the same login-on-launch logic applies to any site the user adds.
+
+### Issue 2: Add Custom Job Sites (Simplified)
+**Problem**: Sites are hardcoded in `server/adapters/index.js`. No way to add a custom site without code changes.
+
+**User Request**: Provide a name + link for any job site. When the browser launches, handle login automatically so scraping works.
+
+**Proposed Solution — Generic Site Flow**:
+1. **User adds a custom site**: name + base URL via the UI ("Add Site" button → enter name + URL).
+2. **Saved credentials** (email/password or cookies) are auto-injected when Puppeteer navigates to the site.
+3. **Login on launch**: When the browser opens a site for the first time (or when creds are saved), it:
+   - Navigates to the site's login URL (or the base URL if a login form is detected)
+   - Fills in saved credentials (email/password fields — auto-detected by common selectors)
+   - Submits the form
+   - On success, stores session cookies for future runs
+   - On failure (CAPTCHA/JS challenge), returns a clear error: "Login blocked — try importing cookies from your browser"
+4. **Generic scraping**: After login, navigate to a search URL (constructed from base URL + keywords) and extract job cards using generic selectors (`[data-job-id]`, `.job-card`, `.job-listing`, `[itemtype*=JobPosting]`, schema.org `JobPosting` microdata). If generic selectors fail, return a friendly "No jobs found — try a different search URL".
+5. **Future enhancement**: Let the user optionally configure custom CSS selectors per site (stored in the `UserJobSite` doc), but ship with generic selectors first.
+
+**Data model changes**:
+- `UserJobSite.name`: keep as string (already supports custom names)
+- `UserJobSite`: add `baseUrl` field (required for custom sites)
+- `UserJobSite.credentials`: keep as `Mixed` (email/password or `{ cookies: [...] }`)
+
+**UI changes**:
+- "Add Site" card → modal with: Name input, Base URL input, Credentials section (email/password + cookie textarea)
+- Credentials modal: when user clicks "Login" or "Save", launch Puppeteer → navigate → auto-login → store cookies → report success/failure
+
+**Files to change**:
+- `server/adapters/index.js` → remove hardcoded SITES, add generic adapter
+- `server/adapters/browser.js` → add `loginAndScrape({ url, credentials, keywords })` generic flow
+- `server/routes/job-sites.js` → add site accepts `baseUrl`, update save/login/test
+- `server/models/UserJobSite.js` → add `baseUrl` field, relax `SITE_ENUM`
+- `client/src/pages/AdminDashboard.jsx` → Add Site modal with name/URL/creds fields

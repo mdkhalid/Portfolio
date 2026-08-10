@@ -124,4 +124,43 @@ async function fetchJobDescription(url) {
   });
 }
 
-module.exports = { login, searchJobs, fetchJobDescription };
+/**
+ * Submit an application for a Naukri job.
+ * Best-effort: opens the job page and clicks the primary Apply button.
+ * Returns { ok: true } on success or throws a structured error so the worker
+ * can mark the application as failed (not_applied) with a real reason.
+ */
+async function submitApplication({ url, credentials, resume, resumeFilename }) {
+  if (!url) throw new Error('Missing job URL');
+  return withPage(async (page) => {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await delay(2500);
+
+    const applyBtn = await page.$('.apply-button, button[class*="apply"], a[class*="apply"], [type="button"]:not([data-qa])');
+    if (!applyBtn) {
+      const hasLogin = await page.$('a[href*="/login"], input[name="email"]');
+      if (hasLogin) throw new Error('Login required — save credentials or paste a session cookie for Naukri.');
+      throw new Error('No apply button found on this Naukri job.');
+    }
+
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
+      applyBtn.click(),
+    ]);
+    await delay(3000);
+
+    const confirmBtn = await page.$('button[class*="submit"], button[class*="apply"], [type="submit"]');
+    if (confirmBtn) {
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
+        confirmBtn.click(),
+      ]);
+      await delay(1500);
+    }
+
+    const applied = await page.$('p[class*="applied"], [class*="application"]:not([data-qa]), [class*="success"]').catch(() => null);
+    return { ok: true, applied: Boolean(applied), via: 'submitApplication' };
+  });
+}
+
+module.exports = { login, searchJobs, fetchJobDescription, submitApplication };

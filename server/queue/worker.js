@@ -244,6 +244,8 @@ async function runStep(applicationId, key) {
             resumeFilename: resume?.pdfFilename || '',
           });
           if (result?.error) throw new Error(result.error);
+        } else {
+          throw new Error(`No submit support for ${site} yet — application not submitted.`);
         }
         lastSubmitAt.set(site, Date.now());
       } finally {
@@ -309,7 +311,7 @@ async function startWorker() {
         if (a) {
           await Application.updateOne(
             { _id: applicationId },
-            { $set: { status: 'not_applied', notAppliedReason: 'site_error' } }
+            { $set: { status: 'not_applied', notAppliedReason: String(err?.message || 'site_error').slice(0, 300) } }
           );
         }
         throw err;

@@ -62,6 +62,7 @@ async function searchJobs({ query, location = '', pageCount = 1, maxJobs = 50 })
     await delay(3000);
 
     const jobs = [];
+    const seen = new Set();
     for (let p = 0; p < pageCount && jobs.length < maxJobs; p++) {
       if (p > 0) {
         const next = await page.$('[data-testid="pagination-page-next"] a, a[aria-label="Next Page"], a[aria-label="Next"]');
@@ -69,22 +70,29 @@ async function searchJobs({ query, location = '', pageCount = 1, maxJobs = 50 })
         await next.click();
         await delay(2500);
       }
-      const items = await page.$$('.result, .job_seen_beacon, [data-testid="job-listing"], .slider_item, td.resultContent');
+      const items = await page.$$('.job_seen_beacon, td.resultContent, .slider_item');
       for (const item of items) {
         if (jobs.length >= maxJobs) break;
         try {
-          const title = await item.$eval('h2 a, .jobTitle a, [data-jk], a[id^="job_"], a[class*="jスカ"]', (el) => el.textContent.trim()).catch(() => '');
-          const urlHref = await item.$eval('h2 a, .jobTitle a, [data-jk], a[id^="job_"]', (el) => el.getAttribute('href') || '').catch(() => '');
-          const company = await safeText(item, '[data-testid="company-name"], .companyName, .company, [class*="company"]');
-          const locationEl = await safeText(item, '[data-testid="text-location"], .location, .companyLocation, [class*="location"]');
-          const posted = await safeText(item, '[data-testid="myJobsStateDate"], .date, [class*="date"]');
+          // The same card is matched by several nested selectors; dedupe on jk.
+          const jk = await item.$eval('a[data-jk]', (el) => el.getAttribute('data-jk') || '').catch(() => '');
+          if (jk && seen.has(jk)) continue;
+          if (jk) seen.add(jk);
+
+          const title = await item.$eval('h2 a, .jcs-JobTitle, a[data-jk], a[id^="job_"]', (el) => el.textContent.trim()).catch(() => '');
+          const urlHref = await item.$eval('h2 a, .jcs-JobTitle, a[data-jk], a[id^="job_"]', (el) => el.getAttribute('href') || '').catch(() => '');
+          const company = await safeText(item, '[data-testid="company-name"], .companyName, .company, [data-company-name], [class*="company"]');
+          const locationEl = await safeText(item, '[data-testid="text-location"], .location, .companyLocation, [data-testid="job-location"], [class*="location"]');
+          const posted = await safeText(item, '[data-testid="myJobsStateDate"], .date, [class*="date"], .jobsearch-JobMetadataFooter');
           if (title) {
+            const rawUrl = urlHref ? (urlHref.startsWith('http') ? urlHref : `${BASE}${urlHref}`) : '';
             jobs.push({
               title: normalize(title),
               company: normalize(company) || 'Confidential',
               location: normalize(locationEl),
-              url: urlHref ? (urlHref.startsWith('http') ? urlHref : `${BASE}${urlHref}`) : '',
+              url: jk ? `${BASE}/viewjob?jk=${encodeURIComponent(jk)}` : rawUrl,
               postedText: normalize(posted),
+              siteJobId: jk || '',
               site: 'indeed',
             });
           }
@@ -106,4 +114,50 @@ async function fetchJobDescription(url) {
   });
 }
 
-module.exports = { login, searchJobs, fetchJobDescription };
+/**
+ * Submit an application for an Indeed job.
+ * Best-effort: opens the job page and clicks the primary Apply button.
+ * Indeed apply often routes through employer sites / SSO; when that happens we
+ * throw a structured error so the worker marks the application not_applied
+ * instead of silently pretending success.
+ */
+async function submitApplication({ url, credentials, resume, resumeFilename }) {
+  if (!url) throw new Error('Missing job URL');
+  return withPage(async (page) => {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await delay(2500);
+
+    const applyBtn = await page.$('button[data-testid="applyButton"], #indeedApplyButton, button[class*="apply"], a[class*="apply"]');
+    if (!applyBtn) {
+      const hasLogin = await page.$('a[href*="/account/login"], input[name="email"]');
+      if (hasLogin) throw new Error('Login required — save credentials or paste a session cookie for Indeed.');
+      throw new Error('No apply button found on this Indeed job (may redirect to employer site).');
+    }
+
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
+      applyBtn.click(),
+    ]);
+    await delay(3500);
+
+    // External employer application — can't be automated beyond the click.
+    const urlNow = page.url();
+    if (!urlNow.includes('indeed.com')) {
+      throw new Error('Indeed redirected to an employer site — complete the application manually.');
+    }
+
+    const confirmBtn = await page.$('button[data-testid="form-submit"], button[type="submit"], button[class*="submit"]');
+    if (confirmBtn) {
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
+        confirmBtn.click(),
+      ]);
+      await delay(1500);
+    }
+
+    const applied = await page.$('[class*="success"], [data-testid="post-apply"]').catch(() => null);
+    return { ok: true, applied: Boolean(applied), via: 'submitApplication' };
+  });
+}
+
+module.exports = { login, searchJobs, fetchJobDescription, submitApplication };

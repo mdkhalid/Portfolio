@@ -12,7 +12,7 @@ const Activity = require('../models/Activity');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const { strArray, str, int } = require('../middleware/validate');
 const { decrypt } = require('../utils/credentials');
-const { getAdapter } = require('../adapters');
+const { getAdapter, SITE_META } = require('../adapters');
 const { buildDedupeKey, parsePostedDate } = require('../services/jobDedupe');
 const { getAIClient } = require('../ai/client');
 const { sanitizeForAI } = require('../utils/security');
@@ -49,21 +49,34 @@ function applyBlocklist(jobs, blocklist) {
  * Shared by the HTTP handler and the scheduled refresh worker.
  */
 async function fetchFromSite({ userId, site, location = '', pageCount = 1, maxJobs = 50 }) {
-  const doc = await UserJobSite.findOne({ userId, name: site }).select('+credentials').lean();
+  const doc = await UserJobSite.findOne({ userId, name: site }).select('+credentials +cookies').lean();
   if (!doc || !doc.enabled) return { site, count: 0, created: 0, updated: 0, skipped: 0 };
-  const creds = decrypt(doc.credentials);
+  const creds = doc.credentials ? decrypt(doc.credentials) : null;
+  const cookieHeader = doc.cookies ? decrypt(doc.cookies)?.value : null;
   const settings = await UserSettings.findOne({ userId }).lean();
   const adapter = getAdapter(site);
 
-  let raw;
-  if (creds?.email && creds?.password) {
-    // Timeout login attempt to max 10 seconds so it never hangs the fetch request
-    await Promise.race([
-      adapter.login({ email: creds.email, password: creds.password }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Login timeout')), 10000))
-    ]).catch(() => {});
+  const doSearch = async () => adapter.searchJobs({ query: await getSearchKeywords(), location, pageCount, maxJobs });
+
+  let raw = await doSearch();
+
+  // Search-first: public listings work without a session. Only attempt login
+  // (credentials/cookies) as a fallback if the initial search returned nothing
+  // — logging in first poisons the shared browser session (Indeed CAPTCHA)
+  // and makes the subsequent search return 0 results.
+  if (!raw.length && (creds?.email || cookieHeader)) {
+    try {
+      await adapter.login(
+        cookieHeader
+          ? { cookies: cookieHeader, cookieOrigin: SITE_META[site]?.homeUrl || null }
+          : { email: creds.email, password: creds.password }
+      );
+    } catch (e) {
+      // Login is best-effort for search; searchJobs still runs unauth'd.
+      console.error(`[fetch] ${site} login fallback failed:`, e?.message || e);
+    }
+    raw = await doSearch();
   }
-  raw = await adapter.searchJobs({ query: await getSearchKeywords(), location, pageCount, maxJobs });
 
   const jobs = applyBlocklist(raw, settings?.blocklist || []);
   let created = 0;

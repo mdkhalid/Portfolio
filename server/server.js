@@ -134,6 +134,8 @@ app.get('/api/activity', auth, require('./routes/activity').getRecent);
 app.use('/api/job-sites', auth, csrfProtection, jobSiteLimiter, require('./routes/job-sites'));
 app.get('/api/jobs', auth, require('./routes/jobs').list);
 app.post('/api/jobs/fetch', auth, csrfProtection, jobFetchLimiter, require('./routes/jobs').fetch);
+app.post('/api/jobs/match', auth, csrfProtection, jobFetchLimiter, require('./routes/jobs').match);
+app.put('/api/jobs/:id', auth, csrfProtection, require('./routes/jobs').update);
 
 app.use('/api/upload', auth, csrfProtection, require('./routes/upload'));
 app.use('/api/resume-files', auth, csrfProtection, require('./routes/upload-resume'));

@@ -37,39 +37,45 @@ async function login({ email, password }) {
  * Public search works without login for the listing (details/apply may need it).
  */
 async function searchJobs({ query, location = '', pageCount = 1, maxJobs = 50 }) {
-  const q = normalize(query).split(/\s+/).join('+');
+  const q = normalize(query).split(/\s+/).slice(0, 4).join('+');
   const params = new URLSearchParams({ q });
   if (location) params.set('l', location);
   const url = `${BASE}/jobs?${params.toString()}`;
   return withPage(async (page) => {
+    // Set extra headers to bypass automated browser detection
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+    });
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await delay(2500);
+    await delay(3000);
 
     const jobs = [];
     for (let p = 0; p < pageCount && jobs.length < maxJobs; p++) {
       if (p > 0) {
-        const next = await page.$('[data-testid="pagination-page-next"] a, a[aria-label="Next Page"]');
+        const next = await page.$('[data-testid="pagination-page-next"] a, a[aria-label="Next Page"], a[aria-label="Next"]');
         if (!next) break;
         await next.click();
-        await delay(2000);
+        await delay(2500);
       }
-      const items = await page.$$('.result, .job_seen_beacon, [data-testid="job-listing"]');
+      const items = await page.$$('.result, .job_seen_beacon, [data-testid="job-listing"], .slider_item, td.resultContent');
       for (const item of items) {
         if (jobs.length >= maxJobs) break;
         try {
-          const title = await item.$eval('h2 a, .jobTitle a, [data-jk]', (el) => el.textContent.trim());
-          const urlHref = await item.$eval('h2 a, .jobTitle a, [data-jk]', (el) => el.getAttribute('href') || '');
-          const company = await safeText(item, '[data-testid="company-name"], .companyName, .company');
-          const locationEl = await safeText(item, '[data-testid="text-location"], .location, .companyLocation');
-          const posted = await safeText(item, '[data-testid="myJobsStateDate"], .date');
-          jobs.push({
-            title: normalize(title),
-            company: normalize(company),
-            location: normalize(locationEl),
-            url: urlHref.startsWith('http') ? urlHref : `${BASE}${urlHref}`,
-            postedText: normalize(posted),
-            site: 'indeed',
-          });
+          const title = await item.$eval('h2 a, .jobTitle a, [data-jk], a[id^="job_"], a[class*="jスカ"]', (el) => el.textContent.trim()).catch(() => '');
+          const urlHref = await item.$eval('h2 a, .jobTitle a, [data-jk], a[id^="job_"]', (el) => el.getAttribute('href') || '').catch(() => '');
+          const company = await safeText(item, '[data-testid="company-name"], .companyName, .company, [class*="company"]');
+          const locationEl = await safeText(item, '[data-testid="text-location"], .location, .companyLocation, [class*="location"]');
+          const posted = await safeText(item, '[data-testid="myJobsStateDate"], .date, [class*="date"]');
+          if (title) {
+            jobs.push({
+              title: normalize(title),
+              company: normalize(company) || 'Confidential',
+              location: normalize(locationEl),
+              url: urlHref ? (urlHref.startsWith('http') ? urlHref : `${BASE}${urlHref}`) : '',
+              postedText: normalize(posted),
+              site: 'indeed',
+            });
+          }
         } catch {
           // skip malformed card
         }

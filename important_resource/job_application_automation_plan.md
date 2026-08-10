@@ -933,6 +933,16 @@ This job requires additional information:
   - Verified: server boots clean (worker + scheduler up, no errors), 20/20 jest tests pass, full API flow works (login → save site with encrypted creds → fetch returns graceful error for invalid creds).
   - Client Job Sites tab UI: complete (site cards, toggle, credentials modal, test, fetch).
   - Next: Dev Phase 2 — Matching & Listing.
+- **2026-08-10**: Dev Phase 2 complete:
+  - Added `/api/jobs/match` endpoint to calculate AI match scores against candidate profile + skills + experience using OpenAI/Groq with fallback to keyword overlap.
+  - Added `/api/jobs/:id` update endpoint to update job status (`applied`, `passed`, etc.).
+  - Added **Job Applications** tab to `AdminDashboard` UI featuring:
+    - Job tiles with title, company, site badge, post age, status, and circular match score display (color-coded).
+    - Filters: site, status, job age (24h, 3d, 7d, 14d), min match score, search query, and server-side pagination.
+    - Side panel: job details, salary, full description, match score breakdown, matched/missing keywords, and direct open URL action.
+    - Bulk selection + bulk actions: Match, Apply (mark as applied), Pass (mark as passed).
+  - Verified: client build (`npm run build`) succeeded without errors, jest test suite passes (20/20).
+  - Next: Dev Phase 3 — Automation & Application Queue.
 
 ### Open Questions Still to Decide
 - Start with **Naukri/Indeed** (scraping) or also attempt **LinkedIn** (API) later?

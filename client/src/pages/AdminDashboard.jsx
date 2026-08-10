@@ -5,7 +5,7 @@ import { useTheme } from '../context/ThemeContext'
 import { useApiAuth } from '../lib/api'
 import { motion } from 'framer-motion'
 import { io } from 'socket.io-client'
-import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, BookOpen, Phone, PhoneCall, MessagesSquare, Send, MessageCircle, Users, Globe, RefreshCw, Loader2 } from 'lucide-react'
+import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, BookOpen, Phone, PhoneCall, MessagesSquare, Send, MessageCircle, Users, Globe, RefreshCw, Loader2, Filter, Search, ChevronLeft, ChevronRight, CheckSquare, Square, Target, Zap, Briefcase as BriefcaseIcon, ExternalLink, EyeOff } from 'lucide-react'
 import EditModal from '../features/admin/components/EditModal'
 import ProfileForm from '../features/admin/components/ProfileForm'
 
@@ -23,6 +23,7 @@ const tabs = [
   { key: 'livechat', label: 'Live Chat', icon: MessagesSquare },
   { key: 'analytics', label: 'Analytics', icon: BarChart3 },
   { key: 'jobs', label: 'Job Sites', icon: Globe },
+  { key: 'job-apps', label: 'Job Applications', icon: BriefcaseIcon },
 ]
 
 export default function AdminDashboard() {
@@ -47,10 +48,22 @@ export default function AdminDashboard() {
   const [jobSitesLoading, setJobSitesLoading] = useState(false)
   const [credsModal, setCredsModal] = useState(null) // { name, label }
   const [credsForm, setCredsForm] = useState({ email: '', password: '' })
+  const [showCredsPassword, setShowCredsPassword] = useState(false)
   const [credsSaving, setCredsSaving] = useState(false)
   const [testingSite, setTestingSite] = useState(null)
   const [fetching, setFetching] = useState(false)
   const [fetchResult, setFetchResult] = useState(null)
+
+  // Job Applications state
+  const [jobApps, setJobApps] = useState({ items: [], total: 0, page: 1, pages: 1 })
+  const [jobAppsLoading, setJobAppsLoading] = useState(false)
+  const [jobAppsFilters, setJobAppsFilters] = useState({
+    site: '', status: '', age: '', minScore: '', q: ''
+  })
+  const [selectedJobs, setSelectedJobs] = useState(new Set())
+  const [jobDetailPanel, setJobDetailPanel] = useState(null) // { job, matchDetails }
+  const [matchingJobs, setMatchingJobs] = useState(false)
+  const [bulkAction, setBulkAction] = useState(null) // 'apply' | 'pass'
 
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type })
@@ -142,7 +155,17 @@ export default function AdminDashboard() {
     if (activeTab === 'jobs') {
       refreshJobSites()
     }
+    if (activeTab === 'job-apps') {
+      refreshJobApps()
+    }
   }, [activeTab, refreshActivities])
+
+  // Refresh job apps when page or filters change
+  useEffect(() => {
+    if (activeTab === 'job-apps') {
+      refreshJobApps()
+    }
+  }, [activeTab, jobApps.page, jobAppsFilters])
 
   const refreshJobSites = useCallback(async () => {
     setJobSitesLoading(true)
@@ -216,6 +239,146 @@ export default function AdminDashboard() {
     } catch (err) {
       showToast(err.response?.data?.error || 'Fetch failed', 'error')
     } finally { setFetching(false) }
+  }
+
+  // Job Applications functions
+  const refreshJobApps = useCallback(async () => {
+    setJobAppsLoading(true)
+    try {
+      const params = new URLSearchParams()
+      if (jobAppsFilters.site) params.set('site', jobAppsFilters.site)
+      if (jobAppsFilters.status) params.set('status', jobAppsFilters.status)
+      if (jobAppsFilters.age) params.set('age', jobAppsFilters.age)
+      if (jobAppsFilters.minScore) params.set('minScore', jobAppsFilters.minScore)
+      if (jobAppsFilters.q) params.set('q', jobAppsFilters.q)
+      params.set('page', jobApps.page)
+      params.set('limit', 20)
+      const { data } = await API.get('/api/jobs?' + params.toString())
+      setJobApps(data)
+    } catch (err) {
+      console.error(err)
+      showToast('Failed to load jobs', 'error')
+    } finally { setJobAppsLoading(false) }
+  }, [jobAppsFilters, jobApps.page, showToast])
+
+  const handleFilterChange = (key, value) => {
+    setJobAppsFilters(prev => ({ ...prev, [key]: value }))
+    setJobApps(prev => ({ ...prev, page: 1 }))
+  }
+
+  const handlePageChange = (page) => {
+    setJobApps(prev => ({ ...prev, page }))
+  }
+
+  const handleSelectJob = (jobId) => {
+    setSelectedJobs(prev => {
+      const next = new Set(prev)
+      if (next.has(jobId)) next.delete(jobId)
+      else next.add(jobId)
+      return next
+    })
+  }
+
+  const handleSelectAll = () => {
+    if (selectedJobs.size === jobApps.items.length) {
+      setSelectedJobs(new Set())
+    } else {
+      setSelectedJobs(new Set(jobApps.items.map(j => j._id)))
+    }
+  }
+
+  const openJobDetail = async (job) => {
+    // Fetch match details if not already present
+    if (job.matchScore === null || job.matchScore === undefined) {
+      setMatchingJobs(true)
+      try {
+        const { data } = await API.post('/api/jobs/match', { jobIds: [job._id] })
+        if (data.jobs?.[0]) {
+          const matched = data.jobs[0]
+          setJobDetailPanel({ ...job, matchScore: matched.score, matchedKeywords: matched.matched, missingKeywords: matched.missing, reasoning: matched.reasoning })
+        } else {
+          setJobDetailPanel(job)
+        }
+      } catch (err) {
+        console.error(err)
+        setJobDetailPanel(job)
+      } finally { setMatchingJobs(false) }
+    } else {
+      setJobDetailPanel(job)
+    }
+  }
+
+  const closeJobDetail = () => setJobDetailPanel(null)
+
+  const matchSelectedJobs = async () => {
+    const ids = Array.from(selectedJobs)
+    if (!ids.length) return
+    setMatchingJobs(true)
+    try {
+      const { data } = await API.post('/api/jobs/match', { jobIds: ids })
+      if (data.jobs) {
+        // Update local state with match results
+        setJobApps(prev => ({
+          ...prev,
+          items: prev.items.map(item => {
+            const match = data.jobs.find(m => m.jobId === item._id)
+            if (match) return { ...item, matchScore: match.score, matchedKeywords: match.matched, missingKeywords: match.missing }
+            return item
+          })
+        }))
+      }
+      showToast(`Matched ${ids.length} jobs`, 'success')
+    } catch (err) {
+      showToast('Matching failed', 'error')
+    } finally { setMatchingJobs(false) }
+  }
+
+  const handleBulkAction = async (action) => {
+    const ids = Array.from(selectedJobs)
+    if (!ids.length) return
+    try {
+      const newStatus = action === 'apply' ? 'applied' : 'passed'
+      await Promise.all(ids.map(id => API.put('/api/jobs/' + id, { status: newStatus })))
+      setJobApps(prev => ({
+        ...prev,
+        items: prev.items.map(item => ids.includes(item._id) ? { ...item, status: newStatus, applied: action === 'apply' } : item)
+      }))
+      setSelectedJobs(new Set())
+      if (action === 'apply') {
+        showToast(`${ids.length} jobs marked as applied (Automated queue in Phase 3)`, 'success')
+      } else {
+        showToast(`${ids.length} jobs marked as passed`, 'success')
+      }
+    } catch (err) {
+      showToast('Action failed', 'error')
+    }
+  }
+
+  const getScoreColor = (score) => {
+    if (score === null || score === undefined) return 'text-gray-400'
+    if (score >= 80) return 'text-emerald-500'
+    if (score >= 60) return 'text-blue-500'
+    if (score >= 40) return 'text-amber-500'
+    return 'text-red-500'
+  }
+
+  const getScoreBg = (score) => {
+    if (score === null || score === undefined) return 'bg-gray-200 dark:bg-gray-700'
+    if (score >= 80) return 'bg-emerald-500'
+    if (score >= 60) return 'bg-blue-500'
+    if (score >= 40) return 'bg-amber-500'
+    return 'bg-red-500'
+  }
+
+  const formatDate = (date) => {
+    if (!date) return 'Unknown'
+    const d = new Date(date)
+    const diff = Date.now() - d.getTime()
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+    if (days < 1) return 'Today'
+    if (days === 1) return '1 day ago'
+    if (days < 7) return `${days} days ago`
+    return d.toLocaleDateString()
   }
 
   useEffect(() => {
@@ -796,10 +959,16 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <label className={'text-sm font-medium ' + (dark ? 'text-gray-300' : 'text-gray-700')}>Password</label>
-                  <input type="password" value={credsForm.password}
-                    onChange={e => setCredsForm(f => ({ ...f, password: e.target.value }))}
-                    placeholder="Leave blank to keep existing"
-                    className={'w-full mt-1 px-3 py-2 rounded-xl border outline-none text-sm ' + (dark ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400')} />
+                  <div className="relative mt-1">
+                    <input type={showCredsPassword ? 'text' : 'password'} value={credsForm.password}
+                      onChange={e => setCredsForm(f => ({ ...f, password: e.target.value }))}
+                      placeholder="Leave blank to keep existing"
+                      className={'w-full pr-10 px-3 py-2 rounded-xl border outline-none text-sm ' + (dark ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400')} />
+                    <button type="button" onClick={() => setShowCredsPassword(v => !v)}
+                      className={'absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer ' + (dark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')}>
+                      {showCredsPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
                 </div>
               </div>
               <div className="flex justify-end gap-2 mt-5">
@@ -815,6 +984,255 @@ export default function AdminDashboard() {
                   {credsSaving ? <Loader2 size={14} className="animate-spin" /> : null}
                   Save & Enable
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const renderJobApps = () => {
+    const { items, total, page, pages } = jobApps
+    const hasSelection = selectedJobs.size > 0
+
+    return (
+      <div className="space-y-4">
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={handleSelectAll} disabled={!items.length}
+            className={'flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer ' + (dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
+            {hasSelection && selectedJobs.size === items.length ? <CheckSquare size={16} /> : <Square size={16} />}
+            {hasSelection && selectedJobs.size === items.length ? 'Deselect All' : 'Select All'}
+          </button>
+          {hasSelection && (
+            <>
+              <button onClick={() => handleBulkAction('apply')} disabled={matchingJobs}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white bg-emerald-500 hover:bg-emerald-600 transition-all disabled:opacity-50 cursor-pointer">
+                <Zap size={16} /> Apply ({selectedJobs.size})
+              </button>
+              <button onClick={() => handleBulkAction('pass')} disabled={matchingJobs}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-all disabled:opacity-50 cursor-pointer">
+                Pass ({selectedJobs.size})
+              </button>
+              <button onClick={matchSelectedJobs} disabled={matchingJobs}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">
+                {matchingJobs ? <Loader2 size={16} className="animate-spin" /> : <Target size={16} />}
+                {matchingJobs ? 'Matching...' : 'Match'}
+              </button>
+            </>
+          )}
+          <div className="flex-1" />
+          <button onClick={refreshJobApps} disabled={jobAppsLoading}
+            className={'flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer ' + (dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
+            <RefreshCw size={14} className={jobAppsLoading ? 'animate-spin' : ''} /> Refresh
+          </button>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search size={16} className={'absolute left-3 top-1/2 -translate-y-1/2 ' + (dark ? 'text-gray-500' : 'text-gray-400')} />
+            <input type="text" value={jobAppsFilters.q} onChange={e => handleFilterChange('q', e.target.value)}
+              placeholder="Search title or company..."
+              className={'w-full pl-9 pr-3 py-2 rounded-xl border outline-none text-sm ' + (dark ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500' : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400')} />
+          </div>
+          <select value={jobAppsFilters.site} onChange={e => handleFilterChange('site', e.target.value)}
+            className={'px-3 py-2 rounded-xl border outline-none text-sm cursor-pointer ' + (dark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-700')}>
+            <option value="">All Sites</option>
+            <option value="naukri">Naukri</option>
+            <option value="indeed">Indeed</option>
+            <option value="linkedin">LinkedIn</option>
+          </select>
+          <select value={jobAppsFilters.status} onChange={e => handleFilterChange('status', e.target.value)}
+            className={'px-3 py-2 rounded-xl border outline-none text-sm cursor-pointer ' + (dark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-700')}>
+            <option value="">All Status</option>
+            <option value="new">New</option>
+            <option value="pending">Pending</option>
+            <option value="applied">Applied</option>
+            <option value="passed">Passed</option>
+            <option value="not_applied">Not Applied</option>
+            <option value="expired">Expired</option>
+          </select>
+          <select value={jobAppsFilters.age} onChange={e => handleFilterChange('age', e.target.value)}
+            className={'px-3 py-2 rounded-xl border outline-none text-sm cursor-pointer ' + (dark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-700')}>
+            <option value="">Any Time</option>
+            <option value="24h">Last 24h</option>
+            <option value="3d">Last 3 days</option>
+            <option value="7d">Last week</option>
+            <option value="14d">Last 2 weeks</option>
+          </select>
+          <select value={jobAppsFilters.minScore} onChange={e => handleFilterChange('minScore', e.target.value)}
+            className={'px-3 py-2 rounded-xl border outline-none text-sm cursor-pointer ' + (dark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-700')}>
+            <option value="">Any Score</option>
+            <option value="80">≥ 80%</option>
+            <option value="60">≥ 60%</option>
+            <option value="40">≥ 40%</option>
+          </select>
+        </div>
+
+        {/* Job tiles */}
+        {jobAppsLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 size={24} className="animate-spin text-blue-500" />
+          </div>
+        ) : items.length === 0 ? (
+          <div className="text-center py-12">
+            <p className={'text-sm ' + (dark ? 'text-gray-500' : 'text-gray-400')}>No jobs found. Fetch jobs from the Job Sites tab first.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {items.map(job => (
+              <div key={job._id}
+                className={'p-4 rounded-xl border transition-all cursor-pointer ' + (
+                  selectedJobs.has(job._id)
+                    ? (dark ? 'bg-blue-500/10 border-blue-500/40' : 'bg-blue-50 border-blue-300')
+                    : (dark ? 'bg-gray-800 border-gray-700 hover:border-gray-600' : 'bg-white border-gray-200 hover:border-gray-300')
+                )}
+                onClick={() => openJobDetail(job)}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <button onClick={e => { e.stopPropagation(); handleSelectJob(job._id) }}
+                        className={'p-1 rounded cursor-pointer ' + (dark ? 'text-gray-400 hover:text-blue-400' : 'text-gray-400 hover:text-blue-600')}>
+                        {selectedJobs.has(job._id) ? <CheckSquare size={16} className="text-blue-500" /> : <Square size={16} />}
+                      </button>
+                      <p className="font-semibold truncate">{job.title}</p>
+                    </div>
+                    <p className={'text-sm mt-1 ' + (dark ? 'text-gray-400' : 'text-gray-500')}>{job.company} {job.location ? '· ' + job.location : ''}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className={'text-xs px-2 py-0.5 rounded-full font-medium ' + (
+                        job.site === 'naukri' ? (dark ? 'bg-orange-500/10 text-orange-400' : 'bg-orange-50 text-orange-700')
+                          : job.site === 'indeed' ? (dark ? 'bg-blue-500/10 text-blue-400' : 'bg-blue-50 text-blue-700')
+                          : (dark ? 'bg-purple-500/10 text-purple-400' : 'bg-purple-50 text-purple-700')
+                      )}>{job.site}</span>
+                      <span className={'text-xs ' + (dark ? 'text-gray-500' : 'text-gray-400')}>{formatDate(job.postedDate)}</span>
+                      {job.status === 'applied' && <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 font-medium">Applied</span>}
+                      {job.status === 'passed' && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-500/10 text-gray-500 font-medium">Passed</span>}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-center gap-1">
+                    <div className={'w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold ' + getScoreBg(job.matchScore) + ' text-white'}>
+                      {job.matchScore !== null && job.matchScore !== undefined ? job.matchScore : '?'}
+                    </div>
+                    <span className={'text-xs ' + getScoreColor(job.matchScore)}>
+                      {job.matchScore !== null && job.matchScore !== undefined ? '% match' : 'unmatched'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {pages > 1 && (
+          <div className="flex items-center justify-center gap-2">
+            <button onClick={() => handlePageChange(page - 1)} disabled={page <= 1}
+              className={'p-2 rounded-xl cursor-pointer disabled:opacity-40 ' + (dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
+              <ChevronLeft size={18} />
+            </button>
+            <span className={'text-sm ' + (dark ? 'text-gray-400' : 'text-gray-500')}>Page {page} of {pages}</span>
+            <button onClick={() => handlePageChange(page + 1)} disabled={page >= pages}
+              className={'p-2 rounded-xl cursor-pointer disabled:opacity-40 ' + (dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
+              <ChevronRight size={18} />
+            </button>
+          </div>
+        )}
+
+        {/* Job Detail Side Panel */}
+        {jobDetailPanel && (
+          <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/50" onClick={closeJobDetail}>
+            <div className={'w-full max-w-lg h-full overflow-y-auto p-6 border-l ' + (dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200')}
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold">Job Details</h3>
+                <button onClick={closeJobDetail} className={'p-1.5 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700' : 'hover:bg-gray-200')}>
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <p className="font-semibold text-lg">{jobDetailPanel.title}</p>
+                  <p className={'text-sm ' + (dark ? 'text-gray-400' : 'text-gray-500')}>
+                    {jobDetailPanel.company} {jobDetailPanel.location ? '· ' + jobDetailPanel.location : ''}
+                  </p>
+                  <p className={'text-sm ' + (dark ? 'text-gray-400' : 'text-gray-500')}>
+                    {jobDetailPanel.salary && 'Salary: ' + jobDetailPanel.salary + ' · '}
+                    Posted: {formatDate(jobDetailPanel.postedDate)} · {jobDetailPanel.site}
+                  </p>
+                </div>
+
+                {/* Match Score */}
+                <div className={'p-4 rounded-xl border ' + (dark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200')}>
+                  <div className="flex items-center gap-3">
+                    <div className={'w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold ' + getScoreBg(jobDetailPanel.matchScore) + ' text-white'}>
+                      {jobDetailPanel.matchScore !== null && jobDetailPanel.matchScore !== undefined ? jobDetailPanel.matchScore : '?'}
+                    </div>
+                    <div>
+                      <p className="font-semibold">Match Score</p>
+                      <p className={'text-sm ' + (dark ? 'text-gray-400' : 'text-gray-500')}>
+                        {jobDetailPanel.reasoning || (jobDetailPanel.matchScore ? `${jobDetailPanel.matchScore}% match with your profile` : 'Not matched yet')}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Matched Keywords */}
+                {jobDetailPanel.matchedKeywords?.length > 0 && (
+                  <div>
+                    <p className="text-sm font-semibold mb-2 text-emerald-500">✓ Matched Keywords</p>
+                    <div className="flex flex-wrap gap-1">
+                      {jobDetailPanel.matchedKeywords.map((kw, i) => (
+                        <span key={i} className="text-xs px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-500">{kw}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Missing Keywords */}
+                {jobDetailPanel.missingKeywords?.length > 0 && (
+                  <div>
+                    <p className="text-sm font-semibold mb-2 text-red-500">✗ Missing Keywords</p>
+                    <div className="flex flex-wrap gap-1">
+                      {jobDetailPanel.missingKeywords.map((kw, i) => (
+                        <span key={i} className="text-xs px-2 py-1 rounded-full bg-red-500/10 text-red-500">{kw}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Job Description */}
+                {jobDetailPanel.description && (
+                  <div>
+                    <p className="text-sm font-semibold mb-2">Job Description</p>
+                    <div className={'text-sm whitespace-pre-wrap max-h-64 overflow-y-auto p-3 rounded-xl border ' + (dark ? 'bg-gray-800 border-gray-700 text-gray-300' : 'bg-gray-50 border-gray-200 text-gray-700')}>
+                      {jobDetailPanel.description}
+                    </div>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  {jobDetailPanel.status !== 'applied' && (
+                    <button onClick={() => { handleBulkAction('apply'); closeJobDetail() }}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-emerald-500 hover:bg-emerald-600 transition-all cursor-pointer">
+                      <Zap size={16} /> Mark Applied
+                    </button>
+                  )}
+                  {jobDetailPanel.status !== 'passed' && (
+                    <button onClick={() => { handleBulkAction('pass'); closeJobDetail() }}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-all cursor-pointer">
+                      Pass
+                    </button>
+                  )}
+                  {jobDetailPanel.url && (
+                    <a href={jobDetailPanel.url} target="_blank" rel="noopener noreferrer"
+                      className={'flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border cursor-pointer transition-all ' + (dark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-gray-200 text-gray-600 hover:bg-gray-50')}>
+                      <ExternalLink size={16} /> Open & Apply
+                    </a>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -1000,6 +1418,7 @@ export default function AdminDashboard() {
       case 'livechat': return renderLiveChat()
       case 'analytics': return renderAnalytics()
       case 'jobs': return renderJobs()
+      case 'job-apps': return renderJobApps()
       default: return null
     }
   }

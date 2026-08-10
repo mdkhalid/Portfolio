@@ -190,3 +190,26 @@ describe('POST /api/contact', () => {
     expect(res.status).toBe(400);
   });
 });
+
+// ─── Jobs & Matching Endpoints Tests (Phase 2) ──────────────────────────────
+
+describe('Jobs Endpoints (Phase 2)', () => {
+  beforeAll(() => {
+    getApp();
+  });
+
+  it('GET /api/jobs should return 401 without auth token', async () => {
+    const res = await request(app).get('/api/jobs');
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/jobs/match should return 401 without auth token', async () => {
+    const res = await request(app).post('/api/jobs/match').send({});
+    expect(res.status).toBe(401);
+  });
+
+  it('PUT /api/jobs/123456789012345678901234 should return 401 without auth token', async () => {
+    const res = await request(app).put('/api/jobs/123456789012345678901234').send({ status: 'applied' });
+    expect(res.status).toBe(401);
+  });
+});

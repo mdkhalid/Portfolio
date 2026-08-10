@@ -73,24 +73,26 @@ async function searchJobs({ query, location = '', pageCount = 1, maxJobs = 50 })
         await delay(2000);
       }
 
-      const cards = await page.$$('.srp-jobtuple-wrapper');
+      const cards = await page.$$('.srp-jobtuple-wrapper, .cust-job-tuple, .jobTuple, [data-job-id]');
       for (const card of cards) {
         if (jobs.length >= maxJobs) break;
         try {
-          const title = await card.$eval('h2 a.title, a.title', (el) => el.textContent.trim());
-          const urlHref = await card.$eval('h2 a.title, a.title', (el) => el.getAttribute('href') || '');
-          const company = await card.$eval('a.comp-name', (el) => el.textContent.trim());
-          const loc = await card.$eval('span.loc-wrap', (el) => el.textContent.trim());
-          const posted = await card.$eval('span.job-post-day', (el) => el.textContent.trim());
+          const title = await card.$eval('h2 a.title, a.title, .title', (el) => el.textContent.trim()).catch(() => '');
+          const urlHref = await card.$eval('h2 a.title, a.title, .title', (el) => el.getAttribute('href') || '').catch(() => '');
+          const company = await card.$eval('a.comp-name, .comp-name, [class*="comp-name"]', (el) => el.textContent.trim()).catch(() => '');
+          const loc = await card.$eval('span.loc-wrap, .loc-wrap, [class*="loc-wrap"], .location', (el) => el.textContent.trim()).catch(() => '');
+          const posted = await card.$eval('span.job-post-day, .job-post-day, [class*="job-post-day"], .type', (el) => el.textContent.trim()).catch(() => '');
 
-          jobs.push({
-            title: normalize(title),
-            company: normalize(company),
-            location: normalize(loc),
-            url: urlHref.startsWith('http') ? urlHref : `${BASE}${urlHref}`,
-            postedText: normalize(posted),
-            site: 'naukri',
-          });
+          if (title && company) {
+            jobs.push({
+              title: normalize(title),
+              company: normalize(company),
+              location: normalize(loc),
+              url: urlHref ? (urlHref.startsWith('http') ? urlHref : `${BASE}${urlHref}`) : '',
+              postedText: normalize(posted),
+              site: 'naukri',
+            });
+          }
         } catch {
           // skip malformed card
         }

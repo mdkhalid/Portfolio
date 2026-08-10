@@ -2,7 +2,7 @@ import axios from 'axios'
 import { useAuth } from '../context/AuthContext'
 
 const api = axios.create({
-  timeout: 30000,
+  timeout: 120000,
 })
 
 let logoutHandler = null

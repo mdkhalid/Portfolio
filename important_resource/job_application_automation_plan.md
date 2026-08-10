@@ -905,18 +905,18 @@ This job requires additional information:
   - Tested: server boots (health OK), end-to-end smoke (queued → all steps done → Application `applied`, Job `applied`/`appliedVia: system`), 20/20 jest tests pass.
 - **Dev Phase 1 — Job Site Integration** ✅ **COMPLETED**:
   - Credential encryption (AES-256-GCM), Puppeteer adapters (Naukri/Indeed), job-sites + jobs routes, cross-site dedupe, blocklist, scheduled refresh + stale expiry, rate limiters. Backend fully tested. Client UI remaining.
-- **Dev Phase 2 — Matching & Listing**: `/api/jobs/match` (AI score + matched/missing keywords), Job Applications tab (tiles, circular score, filters incl. job age, search, server-side pagination), side panel with match breakdown + resume preview, bulk select/apply/pass.
-- **Dev Phase 3 — Auto-Apply Pipeline**: `/api/jobs/apply` (returns `batchId` immediately), Bull workers (`fetch_jd → generate_resume → prepare_application → submit`), live progress view via Socket.io, `waiting_user` → Pending Action Modal, master pause/kill-switch, batch cancel-all, max-per-batch cap, AI cost guard, crash-safe idempotent steps.
-- **Dev Phase 4 — AI Resume Engine**: base resume variants + template picker, `/api/resume/generate`, ATS-friendly formatting, cover letter generation, `/api/resume/optimize` keyword suggestions, generated resume persisted with each application (view/download/soft-delete).
-- **Dev Phase 5 — Tracking & Records**: Tracking tab (status badges, filters, timeline, already-applied import/manual-mark/auto-detect), retry failed/not-applied, saved-resumes section + endpoints, `not_applied` reasons.
+- **Dev Phase 2 — Matching & Listing** ✅ **COMPLETED**: `/api/jobs/match` (AI score + matched/missing keywords), Job Applications tab (tiles, circular score, filters incl. job age, search, server-side pagination), side panel with match breakdown + resume preview, bulk select/apply/pass.
+- **Dev Phase 3 — Auto-Apply Pipeline** ✅ **COMPLETED**: `/api/jobs/apply` (returns `batchId` immediately), Bull workers (`fetch_jd → generate_resume → prepare_application → submit`), live progress view via Socket.io, `waiting_user` → Pending Action Modal, master pause/kill-switch, batch cancel-all, max-per-batch cap, AI cost guard, crash-safe idempotent steps.
+- **Dev Phase 4 — AI Resume Engine** ✅ **COMPLETED**: base resume variants + template picker, `/api/resume/generate`, ATS-friendly formatting, cover letter generation, `/api/resume/optimize` keyword suggestions, generated resume persisted with each application (view/download/soft-delete).
+- **Dev Phase 5 — Tracking & Records** (next): Tracking tab (status badges, filters, timeline, already-applied import/manual-mark/auto-detect), retry failed/not-applied, saved-resumes section + endpoints, `not_applied` reasons.
 - **Dev Phase 6 — Notifications**: toast/badge notifications, optional email notifications (batch summary, pending input, failures), digest mode.
 - **Dev Phase 7 — Multi-User Hardening**: roles, ownership scoping everywhere, per-user isolation of credentials/sessions, admin-vs-user gating.
 
 ### Sprint Plan (initial build)
-1. **Sprint 1** = Dev Phase 0 ✅ done + Dev Phase 1 (job sites + fetch/dedupe/blocklist/expiry).
-2. **Sprint 2** = Dev Phase 2 (matching, tiles, filters, search, pagination, side panel).
-3. **Sprint 3** = Dev Phase 3 + 4 (async pipeline + AI resume engine).
-4. **Sprint 4** = Dev Phase 5 + 6 (tracking, records, notifications).
+1. **Sprint 1** = Dev Phase 0 ✅ done + Dev Phase 1 (job sites + fetch/dedupe/blocklist/expiry) ✅ done.
+2. **Sprint 2** = Dev Phase 2 (matching, tiles, filters, search, pagination, side panel) ✅ done.
+3. **Sprint 3** = Dev Phase 3 + 4 (async pipeline + AI resume engine) ✅ done.
+4. **Sprint 4** = Dev Phase 5 + 6 (tracking, records, notifications) — **next**.
 5. **Sprint 5** = Dev Phase 7 (multi-user hardening).
 
 ### Progress Log

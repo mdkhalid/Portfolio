@@ -260,22 +260,35 @@ exports.match = asyncHandler(async (req, res) => {
     try {
       const jd = job.description || '';
       if (!jd || jd.trim().length < 20) {
-        // Try to fetch full JD if missing
-        const settings = await UserSettings.findOne({ userId: req.adminId }).lean();
-        const siteDoc = await UserJobSite.findOne({ userId: req.adminId, name: job.site }).select('+credentials').lean();
-        if (siteDoc?.credentials && job.url) {
-          const creds = decrypt(siteDoc.credentials);
-          const adapter = getAdapter(job.site);
-          if (creds?.email && creds?.password) {
-            await adapter.login({ email: creds.email, password: creds.password }).catch(() => {});
-          }
+        // Try to fetch full JD if missing (fetch-first; login only as fallback)
+        const siteDoc = await UserJobSite.findOne({ userId: req.adminId, name: job.site }).select('+credentials +cookies').lean();
+        const adapter = job.site ? getAdapter(job.site) : null;
+        const tryFetch = async () => {
+          const full = await adapter.fetchJobDescription({ url: job.url });
+          return full?.description || full || '';
+        };
+        if (adapter && job.url) {
+          let fetched = '';
           try {
-            const full = await adapter.fetchJobDescription({ url: job.url });
-            if (full?.description) {
-              job.description = full.description;
-              await Job.updateOne({ _id: job._id }, { $set: { description: full.description } });
+            fetched = await tryFetch();
+          } catch (e) {
+            console.error(`[match] JD fetch (unauth) failed for ${job.site}:`, e?.message || e);
+          }
+          if (fetched.length < 20) {
+            const creds = siteDoc?.credentials ? decrypt(siteDoc.credentials) : null;
+            const cookieHeader = siteDoc?.cookies ? decrypt(siteDoc.cookies)?.value : null;
+            try {
+              if (cookieHeader) await adapter.login({ cookies: cookieHeader, cookieOrigin: job.url });
+              else if (creds?.email && creds?.password) await adapter.login({ email: creds.email, password: creds.password });
+              fetched = await tryFetch();
+            } catch (e) {
+              console.error(`[match] JD fetch (login fallback) failed for ${job.site}:`, e?.message || e);
             }
-          } catch {}
+          }
+          if (fetched && fetched.length >= 20) {
+            job.description = fetched;
+            await Job.updateOne({ _id: job._id }, { $set: { description: fetched } });
+          }
         }
       }
 

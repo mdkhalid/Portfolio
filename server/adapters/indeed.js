@@ -105,8 +105,10 @@ async function searchJobs({ query, location = '', pageCount = 1, maxJobs = 50 })
   });
 }
 
-/** Fetch the full job description for an Indeed job URL. */
-async function fetchJobDescription(url) {
+/** Fetch the full job description for an Indeed job URL. Accepts a URL string or { url }. */
+async function fetchJobDescription(input) {
+  const url = typeof input === 'string' ? input : input?.url;
+  if (!url) throw new Error('Missing job URL');
   return withPage(async (page) => {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await delay(1500);

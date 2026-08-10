@@ -117,24 +117,37 @@ async function runStep(applicationId, key) {
       let jd = job.description || '';
       if (!jd || jd.length < 30) {
         const siteDoc = await UserJobSite.findOne({ userId: app.userId, name: job.site }).select('+credentials +cookies').lean();
-        if ((siteDoc?.credentials || siteDoc?.cookies) && job.url) {
-          const creds = siteDoc?.credentials ? decrypt(siteDoc.credentials) : null;
-          const cookieHeader = siteDoc?.cookies ? decrypt(siteDoc.cookies)?.value : null;
-          const adapter = getAdapter(job.site);
-          if (creds?.email && creds?.password) {
-            await adapter.login({ email: creds.email, password: creds.password }).catch(() => {});
-          } else if (cookieHeader) {
-            await adapter.login({ cookies: cookieHeader, cookieOrigin: job.url }).catch(() => {});
-          }
+        const adapter = getAdapter(job.site);
+        const tryFetch = async () => {
+          const full = await adapter.fetchJobDescription({ url: job.url });
+          return full?.description || full || '';
+        };
+
+        // JD pages are usually public — try to fetch before any login so the
+        // shared browser session isn't poisoned by a CAPTCHA login attempt.
+        if (job.url) {
           try {
-            const full = await adapter.fetchJobDescription({ url: job.url });
-            if (full?.description) {
-              jd = full.description;
-              await Job.updateOne({ _id: job._id }, { $set: { description: jd } });
-            }
+            jd = await tryFetch();
           } catch (e) {
-            console.error('[worker] fetch_jd failed:', e.message);
+            console.error('[worker] fetch_jd (unauth) failed:', e?.message || e);
           }
+          if (!jd || jd.length < 30) {
+            const creds = siteDoc?.credentials ? decrypt(siteDoc.credentials) : null;
+            const cookieHeader = siteDoc?.cookies ? decrypt(siteDoc.cookies)?.value : null;
+            try {
+              if (cookieHeader) {
+                await adapter.login({ cookies: cookieHeader, cookieOrigin: job.url });
+              } else if (creds?.email && creds?.password) {
+                await adapter.login({ email: creds.email, password: creds.password });
+              }
+              jd = await tryFetch();
+            } catch (e) {
+              console.error('[worker] fetch_jd (login fallback) failed:', e?.message || e);
+            }
+          }
+        }
+        if (jd && jd.length >= 30) {
+          await Job.updateOne({ _id: job._id }, { $set: { description: jd } });
         }
       }
       await markStep(application, key, { status: 'done', finishedAt: new Date() });

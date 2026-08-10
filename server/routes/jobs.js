@@ -211,6 +211,10 @@ exports.match = asyncHandler(async (req, res) => {
     return res.json({ matched: 0, jobs: [] });
   }
 
+  // AI cost guard: don't run the expensive AI matcher over the budget.
+  const costCheck = await checkAICost(req.adminId, { purpose: 'match' });
+  const useAI = costCheck.allowed;
+
   // Try parsing the candidate's actual uploaded PDF resume first
   let profileText = await getUploadedResumeText();
 
@@ -229,7 +233,7 @@ exports.match = asyncHandler(async (req, res) => {
   }
 
   const { client, model } = await getAIClient('chat');
-  if (!client) {
+  if (!client || !useAI) {
     // Fallback: simple keyword overlap
     const results = await Promise.all(jobs.map(j => fallbackMatch(j, profileText)));
     for (const r of results) {
@@ -309,6 +313,7 @@ ${(job.description || jd).slice(0, 4000)}`;
         { $set: { matchScore: score, matchedKeywords: matched, missingKeywords: missing } }
       );
 
+      recordAICost({ userId: req.adminId, purpose: 'match', jobId: job._id }).catch(() => {});
       results.push({ jobId: job._id, score, matched, missing, reasoning: parsed.reasoning });
     } catch (err) {
       console.error(`Match failed for job ${job._id}:`, err.message || err);
@@ -441,4 +446,111 @@ exports.update = asyncHandler(async (req, res) => {
 
   const updated = await Job.findByIdAndUpdate(id, { $set: updates }, { new: true }).lean();
   res.json(updated);
+});
+
+// ─── Phase 3: Apply Pipeline ─────────────────────────────────────────────────
+
+const Application = require('../models/Application');
+const crypto = require('crypto');
+const { getQueue } = require('../queue');
+const { checkAICost, recordAICost } = require('../services/aiCost');
+
+/**
+ * POST /api/jobs/apply
+ * Body: { jobIds: string[], batchSize?: number }
+ * Enqueues selected jobs into the apply queue and returns a batchId immediately.
+ * Respects the master pause/kill-switch and max-per-batch cap from UserSettings.
+ */
+exports.apply = asyncHandler(async (req, res) => {
+  const jobIds = Array.isArray(req.body?.jobIds) ? req.body.jobIds : null;
+  if (!jobIds || !jobIds.length) throw new AppError('jobIds required', 400, 'MISSING_JOB_IDS');
+
+  // Master pause/kill-switch
+  const settings = await UserSettings.findOne({ userId: req.adminId }).lean();
+  if (settings?.pipelinePaused) {
+    throw new AppError('Pipeline is paused. Resume it in settings before applying.', 409, 'PIPELINE_PAUSED');
+  }
+
+  const configuredBatch = Number(settings?.maxApplyPerBatch) || 20;
+  const requested = parseInt(req.body?.batchSize, 10) || configuredBatch;
+  const maxBatch = Math.min(50, Math.max(1, requested));
+
+  const jobs = await Job.find({ userId: req.adminId, _id: { $in: jobIds } }).lean();
+  if (!jobs.length) throw new AppError('No jobs found', 404, 'NOT_FOUND');
+
+  const batchId = crypto.randomUUID();
+  const queue = await getQueue();
+  const enqueued = [];
+
+  for (const job of jobs.slice(0, maxBatch)) {
+    const existing = await Application.findOne({
+      userId: req.adminId,
+      jobId: job._id,
+      status: { $in: ['queued', 'running', 'pending'] },
+    }).lean();
+    if (existing) continue; // idempotency guard
+
+    const app = await Application.create({
+      userId: req.adminId,
+      jobId: job._id,
+      site: job.site,
+      batchId,
+      status: 'queued',
+      timeline: [{ event: 'Application queued', details: `Batch ${batchId}` }],
+    });
+
+    await queue.add('apply', { applicationId: app._id, batchId }, {
+      jobId: String(app._id),
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 5000 },
+      removeOnComplete: true,
+      removeOnFail: false,
+    });
+    enqueued.push(app._id);
+  }
+
+  res.json({
+    batchId,
+    queued: enqueued.length,
+    skipped: jobIds.length - enqueued.length,
+    note: enqueued.length ? 'Applications queued. Watch the Progress panel for live updates.' : 'All selected jobs were already queued/running/pending.',
+  });
+});
+
+/** GET /api/jobs/apply/batch/:batchId — aggregate progress of a batch. */
+exports.getBatchProgress = asyncHandler(async (req, res) => {
+  const apps = await Application.find({ userId: req.adminId, batchId: req.params.batchId })
+    .populate('jobId', 'title company site')
+    .lean();
+  res.json({ batchId: req.params.batchId, total: apps.length, applications: apps });
+});
+
+/** POST /api/jobs/apply/batch/:batchId/cancel — cancel entire batch. */
+exports.cancelBatch = asyncHandler(async (req, res) => {
+  const { batchId } = req.params;
+  await Application.updateMany(
+    { userId: req.adminId, batchId, status: { $in: ['queued', 'running'] } },
+    { $set: { status: 'canceled' } }
+  );
+  res.json({ message: 'Batch canceled', canceled: true });
+});
+
+/** POST /api/applications/:id/cancel — cancel a single application. */
+exports.cancelApplication = asyncHandler(async (req, res) => {
+  const app = await Application.findOneAndUpdate(
+    { _id: req.params.id, userId: req.adminId, status: { $in: ['queued', 'running'] } },
+    { $set: { status: 'canceled' } },
+    { new: true }
+  );
+  if (!app) throw new AppError('Application not found or not cancellable', 404, 'NOT_FOUND');
+  res.json({ message: 'Application canceled', application: app });
+});
+
+/** GET /api/applications/:id/progress — per-application progress. */
+exports.getApplicationProgress = asyncHandler(async (req, res) => {
+  const app = await Application.findOne({ _id: req.params.id, userId: req.adminId })
+    .populate('jobId', 'title company site')
+    .lean();
+  if (!app) throw new AppError('Application not found', 404, 'NOT_FOUND');
+  res.json(app);
 });

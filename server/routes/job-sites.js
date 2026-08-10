@@ -21,12 +21,14 @@ const toSafeSite = (doc) => {
       email: plain?.email ? maskValue(plain.email) : '',
       // never expose password/secret
     },
+    hasCookies: Boolean(doc.cookies),
+    cookieUpdatedAt: doc.cookieUpdatedAt || null,
     createdAt: doc.createdAt,
   };
 };
 
 router.get('/', asyncHandler(async (req, res) => {
-  const docs = await UserJobSite.find({ userId: req.adminId }).select('+credentials').lean();
+  const docs = await UserJobSite.find({ userId: req.adminId }).select('+credentials +cookies').lean();
   const byName = Object.fromEntries(docs.map((d) => [d.name, d]));
   const merged = SITE_NAMES.map((name) =>
     byName[name]
@@ -44,7 +46,7 @@ router.put('/:name', asyncHandler(async (req, res) => {
   const password = str(req.body, 'password', { min: 6, max: 200, optional: true });
   const enabled = bool(req.body, 'enabled', { optional: true });
 
-  const existing = await UserJobSite.findOne({ userId: req.adminId, name }).select('+credentials');
+  const existing = await UserJobSite.findOne({ userId: req.adminId, name }).select('+credentials +cookies');
   const prev = existing ? decrypt(existing.credentials) || {} : {};
   const creds = {
     email: email !== undefined ? email : prev.email || '',
@@ -69,23 +71,62 @@ router.put('/:name', asyncHandler(async (req, res) => {
   res.json(toSafeSite(doc));
 }));
 
+router.put('/:name/cookies', asyncHandler(async (req, res) => {
+  const name = str(req.params, 'name', { min: 1, max: 30 }).toLowerCase();
+  if (!SITE_NAMES.includes(name)) throw new AppError('Unsupported job site', 400, 'INVALID_SITE');
+
+  const cookies = str(req.body, 'cookies', { min: 10, max: 20000, optional: true });
+  const existing = await UserJobSite.findOne({ userId: req.adminId, name }).select('+cookies');
+
+  if (cookies === undefined || cookies === '') {
+    if (existing) {
+      existing.cookies = null;
+      existing.cookieUpdatedAt = null;
+      await existing.save();
+    }
+    return res.json(toSafeSite(existing));
+  }
+
+  const encrypted = encrypt({ value: cookies });
+  let doc;
+  if (existing) {
+    existing.cookies = encrypted;
+    existing.cookieUpdatedAt = new Date();
+    doc = await existing.save();
+  } else {
+    doc = await UserJobSite.create({
+      userId: req.adminId,
+      name,
+      cookies: encrypted,
+      cookieUpdatedAt: new Date(),
+      status: 'disconnected',
+    });
+  }
+  res.json(toSafeSite(doc));
+}));
+
 router.post('/:name/test', asyncHandler(async (req, res) => {
   const name = str(req.params, 'name', { min: 1, max: 30 }).toLowerCase();
   if (!SITE_NAMES.includes(name)) throw new AppError('Unsupported job site', 400, 'INVALID_SITE');
 
-  const doc = await UserJobSite.findOne({ userId: req.adminId, name }).select('+credentials');
+  const doc = await UserJobSite.findOne({ userId: req.adminId, name }).select('+credentials +cookies');
   if (!doc) throw new AppError('Site not configured yet', 404, 'NOT_FOUND');
   const creds = decrypt(doc.credentials);
-  if (!creds?.email || !creds?.password) {
-    throw new AppError('Credentials missing — save them first', 400, 'MISSING_CREDENTIALS');
+  const cookieHeader = doc.cookies ? decrypt(doc.cookies)?.value : null;
+  if (!cookieHeader && (!creds?.email || !creds?.password)) {
+    throw new AppError('Credentials or a session cookie are missing — save them first', 400, 'MISSING_CREDENTIALS');
   }
 
   try {
     const adapter = getAdapter(name);
-    await adapter.login({ email: creds.email, password: creds.password });
+    await adapter.login(
+      cookieHeader
+        ? { cookies: cookieHeader, cookieOrigin: SITE_META[name].homeUrl }
+        : { email: creds.email, password: creds.password }
+    );
     doc.status = 'connected';
     await doc.save();
-    res.json({ ok: true, status: 'connected', message: 'Connected successfully' });
+    res.json({ ok: true, status: 'connected', message: 'Connected successfully', via: cookieHeader ? 'cookies' : 'password' });
   } catch (err) {
     doc.status = 'error';
     await doc.save();

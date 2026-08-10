@@ -48,6 +48,7 @@ export default function AdminDashboard() {
   const [jobSitesLoading, setJobSitesLoading] = useState(false)
   const [credsModal, setCredsModal] = useState(null) // { name, label }
   const [credsForm, setCredsForm] = useState({ email: '', password: '' })
+  const [cookiesForm, setCookiesForm] = useState('')
   const [showCredsPassword, setShowCredsPassword] = useState(false)
   const [credsSaving, setCredsSaving] = useState(false)
   const [testingSite, setTestingSite] = useState(null)
@@ -57,6 +58,9 @@ export default function AdminDashboard() {
   // Job Applications state
   const [jobApps, setJobApps] = useState({ items: [], total: 0, page: 1, pages: 1 })
   const [jobAppsLoading, setJobAppsLoading] = useState(false)
+  const [pipeline, setPipeline] = useState(null)
+  const [pipelineBudget, setPipelineBudget] = useState({ aiDailyBudget: '', aiWeeklyBudget: '', maxApplyPerBatch: '', applyRateDelayMs: '', siteConcurrency: '' })
+  const [budgetSaving, setBudgetSaving] = useState(false)
   const [jobAppsFilters, setJobAppsFilters] = useState({
     site: '', status: '', age: '', minScore: '', q: ''
   })
@@ -64,6 +68,14 @@ export default function AdminDashboard() {
   const [jobDetailPanel, setJobDetailPanel] = useState(null) // { job, matchDetails }
   const [matchingJobs, setMatchingJobs] = useState(false)
   const [bulkAction, setBulkAction] = useState(null) // 'apply' | 'pass'
+  const [applying, setApplying] = useState(false)
+  const [lastBatchId, setLastBatchId] = useState(null)
+  const [applyProgress, setApplyProgress] = useState([])
+  const applySocketRef = useRef(null)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiResult, setAiResult] = useState('')
+  const [generatedResumes, setGeneratedResumes] = useState([])
+  const [generatedResumesLoading, setGeneratedResumesLoading] = useState(false)
 
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type })
@@ -131,6 +143,27 @@ export default function AdminDashboard() {
     return () => { socket.disconnect() }
   }, [activeTab, token, logout, navigate, showToast])
 
+  // Live apply progress via socket
+  useEffect(() => {
+    if (!token) return
+    const socket = io(window.location.origin, { auth: { token, role: 'admin' } })
+    applySocketRef.current = socket
+
+    socket.on('apply:progress', (data) => {
+      setApplyProgress(prev => {
+        const idx = prev.findIndex(p => p.applicationId === data.applicationId)
+        if (idx >= 0) {
+          const next = [...prev]
+          next[idx] = data
+          return next
+        }
+        return [...prev, data]
+      })
+    })
+
+    return () => { socket.disconnect() }
+  }, [token])
+
   const refreshActivities = useCallback(async () => {
     setActivitiesLoading(true)
     try {
@@ -157,6 +190,10 @@ export default function AdminDashboard() {
     }
     if (activeTab === 'job-apps') {
       refreshJobApps()
+      refreshPipeline()
+    }
+    if (activeTab === 'resumes') {
+      loadGeneratedResumes()
     }
   }, [activeTab, refreshActivities])
 
@@ -242,8 +279,21 @@ export default function AdminDashboard() {
   }
 
   // Job Applications functions
-  const refreshJobApps = useCallback(async () => {
-    setJobAppsLoading(true)
+  const refreshPipeline = useCallback(async () => {
+    try {
+      const { data } = await API.get('/api/pipeline/status')
+      setPipeline(data)
+      setPipelineBudget({
+        aiDailyBudget: data.aiDailyBudget ?? '',
+        aiWeeklyBudget: data.aiWeeklyBudget ?? '',
+        maxApplyPerBatch: data.maxApplyPerBatch ?? '',
+        applyRateDelayMs: data.applyRateDelayMs ?? '',
+        siteConcurrency: data.siteConcurrency ?? '',
+      })
+    } catch (err) { console.error(err) }
+  }, [])
+
+  const refreshJobApps = useCallback(async () => {    setJobAppsLoading(true)
     try {
       const params = new URLSearchParams()
       if (jobAppsFilters.site) params.set('site', jobAppsFilters.site)
@@ -288,6 +338,7 @@ export default function AdminDashboard() {
   }
 
   const openJobDetail = async (job) => {
+    setAiResult('')
     // Fetch match details if not already present
     if (job.matchScore === null || job.matchScore === undefined) {
       setMatchingJobs(true)
@@ -351,6 +402,71 @@ export default function AdminDashboard() {
       }
     } catch (err) {
       showToast('Action failed', 'error')
+    }
+  }
+
+  const startAutomatedApply = async () => {
+    const ids = Array.from(selectedJobs)
+    if (!ids.length) return
+    try {
+      setApplying(true)
+      const { data } = await API.post('/api/jobs/apply', { jobIds: ids })
+      setLastBatchId(data.batchId)
+      setApplyProgress([])
+      setSelectedJobs(new Set())
+      showToast(`${data.queued} jobs queued for automated apply`, 'success')
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Failed to queue jobs', 'error')
+    } finally { setApplying(false) }
+  }
+
+  const generateCoverLetter = async (job) => {
+    setAiLoading(true)
+    setAiResult('')
+    try {
+      const { data } = await API.post('/api/resume/cover-letter', { jobId: job._id })
+      setAiResult(data.coverLetter)
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Cover letter generation failed', 'error')
+    } finally { setAiLoading(false) }
+  }
+
+  const optimizeResume = async (job) => {
+    setAiLoading(true)
+    setAiResult('')
+    try {
+      const { data } = await API.post('/api/resume/optimize', { jobId: job._id })
+      if (data.suggestions?.length) {
+        setAiResult(data.suggestions.map(s => `• ${s.keyword} — ${s.reason}`).join('\n'))
+      } else {
+        setAiResult(data.note || 'No suggestions available')
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Resume optimization failed', 'error')
+    } finally { setAiLoading(false) }
+  }
+
+  const loadGeneratedResumes = async () => {
+    setGeneratedResumesLoading(true)
+    try {
+      const { data } = await API.get('/api/resume/generated')
+      setGeneratedResumes(data)
+    } catch (err) {
+      console.error(err)
+    } finally { setGeneratedResumesLoading(false) }
+  }
+
+  const downloadGeneratedResume = (id, filename) => {
+    window.open(`/api/resume/generated/${id}/pdf`, '_blank')
+  }
+
+  const deleteGeneratedResume = async (id) => {
+    try {
+      await API.delete('/api/resume/generated/' + id)
+      setGeneratedResumes(prev => prev.filter(r => r._id !== id))
+      showToast('Generated resume deleted', 'success')
+    } catch (err) {
+      showToast('Failed to delete resume', 'error')
     }
   }
 
@@ -487,27 +603,83 @@ export default function AdminDashboard() {
   const renderResumes = () => {
     const items = data.resumes || []
     return (
-      <div className="space-y-3">
-        {items.map(item => (
-          <div key={item._id} className={'p-4 rounded-xl border ' + (dark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200')}>
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold">{item.label}</p>
-                <p className={'text-sm ' + (dark ? 'text-gray-400' : 'text-gray-500')}>{item.fileUrl?.split('/').pop()}</p>
-              </div>
-              <div className="flex gap-1 flex-shrink-0">
-                <button onClick={() => setEditing({ collection: 'resumes', id: item._id, data: item })}
-                  className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-200 text-blue-600')}><Edit3 size={16} /></button>
-                <button onClick={() => deleteItem('resumes', item._id)}
-                  className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}><Trash2 size={16} /></button>
-              </div>
+      <div className="space-y-6">
+        {/* Generated (ATS) Resumes */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <FileText size={16} className="text-violet-500" />
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Generated Resumes (ATS)</h3>
             </div>
+            <button onClick={loadGeneratedResumes} disabled={generatedResumesLoading}
+              className={'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ' + (dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
+              <RefreshCw size={12} className={generatedResumesLoading ? 'animate-spin' : ''} /> Refresh
+            </button>
           </div>
-        ))}
-        <button onClick={() => setEditing({ collection: 'resumes', id: null })}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all cursor-pointer">
-          <Plus size={16} /> Add Resume
-        </button>
+          {generatedResumesLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 size={20} className="animate-spin text-violet-500" />
+            </div>
+          ) : generatedResumes.length === 0 ? (
+            <p className={'text-sm text-center py-8 ' + (dark ? 'text-gray-500' : 'text-gray-400')}>
+              No generated resumes yet. Run Auto Apply on a job to generate ATS-tailored resumes.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {generatedResumes.map(item => (
+                <div key={item._id} className={'p-4 rounded-xl border ' + (dark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold">{item.pdfFilename || 'Generated Resume'}</p>
+                      <p className={'text-sm mt-0.5 ' + (dark ? 'text-gray-400' : 'text-gray-500')}>
+                        {item.createdAt ? 'Generated ' + new Date(item.createdAt).toLocaleDateString() : ''}
+                        {item.keywordsMatched?.length ? ' · ' + item.keywordsMatched.length + ' keywords matched' : ''}
+                      </p>
+                      {item.content && (
+                        <p className={'text-xs mt-2 whitespace-pre-wrap line-clamp-2 ' + (dark ? 'text-gray-500' : 'text-gray-400')}>{item.content}</p>
+                      )}
+                    </div>
+                    <div className="flex gap-1 flex-shrink-0">
+                      <button onClick={() => downloadGeneratedResume(item._id, item.pdfFilename)}
+                        className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-emerald-400' : 'hover:bg-gray-200 text-emerald-600')}><Download size={16} /></button>
+                      <button onClick={() => deleteGeneratedResume(item._id)}
+                        className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}><Trash2 size={16} /></button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Base Resume Files */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Base Resume Files</h3>
+          </div>
+          <div className="space-y-3">
+            {items.map(item => (
+              <div key={item._id} className={'p-4 rounded-xl border ' + (dark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200')}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold">{item.label}</p>
+                    <p className={'text-sm ' + (dark ? 'text-gray-400' : 'text-gray-500')}>{item.fileUrl?.split('/').pop()}</p>
+                  </div>
+                  <div className="flex gap-1 flex-shrink-0">
+                    <button onClick={() => setEditing({ collection: 'resumes', id: item._id, data: item })}
+                      className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-200 text-blue-600')}><Edit3 size={16} /></button>
+                    <button onClick={() => deleteItem('resumes', item._id)}
+                      className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}><Trash2 size={16} /></button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            <button onClick={() => setEditing({ collection: 'resumes', id: null })}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all cursor-pointer">
+              <Plus size={16} /> Add Resume
+            </button>
+          </div>
+        </div>
       </div>
     )
   }
@@ -898,6 +1070,7 @@ export default function AdminDashboard() {
                       </div>
                       <p className={'text-sm ' + (dark ? 'text-gray-400' : 'text-gray-500')}>
                         {site.credentials?.email ? 'Configured: ' + site.credentials.email : 'No credentials'}
+                        {site.hasCookies ? ' | Session cookie' + (site.cookieUpdatedAt ? ' ' + formatTimeAgo(site.cookieUpdatedAt) : '') : ''}
                         {site.lastFetched ? ' | Last: ' + formatTimeAgo(site.lastFetched) : ''}
                       </p>
                     </div>
@@ -909,7 +1082,7 @@ export default function AdminDashboard() {
                       <span className={'absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ' + (site.enabled ? 'translate-x-5' : '')} />
                     </button>
                     {/* Edit */}
-                    <button onClick={() => { setCredsModal({ name: site.name, label: site.label }); setCredsForm({ email: '', password: '' }) }}
+                    <button onClick={() => { setCredsModal({ name: site.name, label: site.label }); setCredsForm({ email: '', password: '' }); setCookiesForm('') }}
                       className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-200 text-blue-600')}>
                       <Edit3 size={16} />
                     </button>
@@ -917,7 +1090,7 @@ export default function AdminDashboard() {
                     {(() => {
                       const TestIcon = testingSite === site.name ? Loader2 : CheckCircle2
                       return (
-                        <button onClick={() => testJobSite(site.name)} disabled={testingSite === site.name || !site.credentials?.email}
+                        <button onClick={() => testJobSite(site.name)} disabled={testingSite === site.name || (!site.credentials?.email && !site.hasCookies)}
                           className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-emerald-400' : 'hover:bg-gray-200 text-emerald-600') + ' disabled:opacity-40'}>
                           <TestIcon size={16} className={testingSite === site.name ? 'animate-spin' : ''} />
                         </button>
@@ -970,6 +1143,18 @@ export default function AdminDashboard() {
                     </button>
                   </div>
                 </div>
+                <div className={'pt-2 border-t ' + (dark ? 'border-gray-700' : 'border-gray-200')}>
+                  <label className={'text-sm font-medium ' + (dark ? 'text-gray-300' : 'text-gray-700')}>
+                    Session Cookie Header <span className="text-xs font-normal opacity-70">(fallback when SSO/CAPTCHA blocks login)</span>
+                  </label>
+                  <textarea value={cookiesForm} rows={3}
+                    onChange={e => setCookiesForm(e.target.value)}
+                    placeholder="Paste the full Cookie header from DevTools → Network → Request Headers"
+                    className={'w-full mt-1 px-3 py-2 rounded-xl border outline-none text-sm font-mono resize-y ' + (dark ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400')} />
+                  <p className={'text-xs mt-1 ' + (dark ? 'text-gray-500' : 'text-gray-400')}>
+                    Cleared if left empty. Stored encrypted. Useful for Indeed/Naukri when password login is impossible.
+                  </p>
+                </div>
               </div>
               <div className="flex justify-end gap-2 mt-5">
                 <button onClick={() => setCredsModal(null)}
@@ -978,6 +1163,13 @@ export default function AdminDashboard() {
                 </button>
                 <button onClick={async () => {
                   const ok = await saveJobSite(credsModal.name, { email: credsForm.email, password: credsForm.password, enabled: true })
+                  if (ok && cookiesForm) {
+                    try {
+                      await API.put('/api/job-sites/' + credsModal.name + '/cookies', { cookies: cookiesForm })
+                      showToast('Session cookie saved', 'success')
+                      await refreshJobSites()
+                    } catch (err) { showToast(err.response?.data?.error || 'Cookie save failed', 'error') }
+                  }
                   if (ok) setCredsModal(null)
                 }} disabled={credsSaving}
                   className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">
@@ -998,6 +1190,74 @@ export default function AdminDashboard() {
 
     return (
       <div className="space-y-4">
+        {/* Pipeline status & controls */}
+        {pipeline && (
+          <div className={'p-4 rounded-xl border ' + (dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200')}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className={'w-2.5 h-2.5 rounded-full ' + (pipeline.paused ? 'bg-red-500' : 'bg-emerald-500')} />
+                <div>
+                  <p className="font-semibold text-sm">Apply Pipeline {pipeline.paused ? 'Paused' : 'Running'}</p>
+                  <p className={'text-xs ' + (dark ? 'text-gray-400' : 'text-gray-500')}>
+                    AI usage: {pipeline.aiDailyUsage}/{pipeline.aiDailyBudget} today · {pipeline.aiWeeklyUsage}/{pipeline.aiWeeklyBudget} this week
+                    {pipeline.maxApplyPerBatch ? ' · Max ' + pipeline.maxApplyPerBatch + '/batch' : ''}
+                    {pipeline.applyRateDelayMs ? ' · ' + (pipeline.applyRateDelayMs / 1000) + 's between submits' : ''}
+                    {pipeline.siteConcurrency ? ' · Concurrency ' + pipeline.siteConcurrency : ''}
+                  </p>
+                </div>
+              </div>
+              <button onClick={async () => {
+                try {
+                  await API.post('/api/pipeline/' + (pipeline.paused ? 'resume' : 'pause'))
+                  await refreshPipeline()
+                  showToast(pipeline.paused ? 'Pipeline resumed' : 'Pipeline paused', 'success')
+                } catch (err) { showToast(err.response?.data?.error || 'Failed to update pipeline', 'error') }
+              }} className={'px-3 py-1.5 rounded-xl text-sm font-medium text-white cursor-pointer transition-all ' + (pipeline.paused
+                ? 'bg-emerald-500 hover:bg-emerald-600'
+                : 'bg-red-500 hover:bg-red-600')}>
+                {pipeline.paused ? 'Resume' : 'Pause'}
+              </button>
+            </div>
+            <div className="mt-4 pt-3 border-t grid grid-cols-2 md:grid-cols-5 gap-3">
+              {[
+                { key: 'aiDailyBudget', label: 'Daily AI budget' },
+                { key: 'aiWeeklyBudget', label: 'Weekly AI budget' },
+                { key: 'maxApplyPerBatch', label: 'Max apps / batch' },
+                { key: 'applyRateDelayMs', label: 'Delay (ms) / submit' },
+                { key: 'siteConcurrency', label: 'Site concurrency' },
+              ].map(f => (
+                <div key={f.key}>
+                  <label className={'text-xs font-medium ' + (dark ? 'text-gray-400' : 'text-gray-500')}>{f.label}</label>
+                  <input type="number" value={pipelineBudget[f.key]}
+                    onChange={e => setPipelineBudget(p => ({ ...p, [f.key]: e.target.value }))}
+                    className={'w-full mt-1 px-2 py-1.5 rounded-lg border outline-none text-sm ' + (dark ? 'bg-gray-800 border-gray-600 text-white' : 'bg-gray-50 border-gray-200 text-gray-900')} />
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end mt-3">
+              <button onClick={async () => {
+                setBudgetSaving(true)
+                try {
+                  const patch = {}
+                  for (const [k, v] of Object.entries(pipelineBudget)) {
+                    const n = Number(v)
+                    if (v !== '' && !isNaN(n)) patch[k] = n
+                  }
+                  if (!Object.keys(patch).length) return
+                  await API.put('/api/pipeline/budget', patch)
+                  await refreshPipeline()
+                  showToast('Pipeline settings saved', 'success')
+                } catch (err) { showToast(err.response?.data?.error || 'Save failed', 'error') }
+                finally { setBudgetSaving(false) }
+              }} disabled={budgetSaving}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">
+                {budgetSaving ? <Loader2 size={14} className="animate-spin" /> : null}
+                Save Settings
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-3">
           <button onClick={handleSelectAll} disabled={!items.length}
@@ -1007,15 +1267,20 @@ export default function AdminDashboard() {
           </button>
           {hasSelection && (
             <>
-              <button onClick={() => handleBulkAction('apply')} disabled={matchingJobs}
+              <button onClick={() => handleBulkAction('apply')} disabled={matchingJobs || applying}
                 className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white bg-emerald-500 hover:bg-emerald-600 transition-all disabled:opacity-50 cursor-pointer">
-                <Zap size={16} /> Apply ({selectedJobs.size})
+                <Zap size={16} /> Mark Applied ({selectedJobs.size})
               </button>
-              <button onClick={() => handleBulkAction('pass')} disabled={matchingJobs}
+              <button onClick={startAutomatedApply} disabled={matchingJobs || applying || !selectedJobs.size}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-violet-600 to-fuchsia-500 hover:from-violet-700 hover:to-fuchsia-600 transition-all disabled:opacity-50 cursor-pointer">
+                {applying ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
+                {applying ? 'Queuing...' : `Auto Apply (${selectedJobs.size})`}
+              </button>
+              <button onClick={() => handleBulkAction('pass')} disabled={matchingJobs || applying}
                 className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-all disabled:opacity-50 cursor-pointer">
                 Pass ({selectedJobs.size})
               </button>
-              <button onClick={matchSelectedJobs} disabled={matchingJobs}
+              <button onClick={matchSelectedJobs} disabled={matchingJobs || applying}
                 className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">
                 {matchingJobs ? <Loader2 size={16} className="animate-spin" /> : <Target size={16} />}
                 {matchingJobs ? 'Matching...' : 'Match'}
@@ -1140,6 +1405,56 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* Live Apply Progress Panel */}
+        {applyProgress.length > 0 && (
+          <div className={'p-4 rounded-xl border ' + (dark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <Zap size={16} className="text-violet-500" /> Auto-Apply Pipeline
+              </h3>
+              <div className="flex items-center gap-2">
+                {lastBatchId && (
+                  <button onClick={() => { setApplyProgress([]); setLastBatchId(null) }}
+                    className={'text-xs px-2 py-1 rounded-lg cursor-pointer ' + (dark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
+                    Clear
+                  </button>
+                )}
+                <span className={'text-xs ' + (dark ? 'text-gray-400' : 'text-gray-500')}>
+                  {applyProgress.filter(p => p.status === 'applied').length}/{applyProgress.length} applied
+                </span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {applyProgress.map((app, i) => (
+                <div key={app.applicationId || i} className={'rounded-xl p-3 ' + (dark ? 'bg-gray-900' : 'bg-gray-50')}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium">{app.jobTitle || app.lastAction || app.applicationId}</span>
+                    <span className={'text-xs font-medium px-2 py-0.5 rounded-full ' + (
+                      app.status === 'applied' ? 'bg-emerald-500/10 text-emerald-500'
+                        : app.status === 'failed' ? 'bg-red-500/10 text-red-500'
+                        : app.status === 'canceled' ? 'bg-gray-500/10 text-gray-500'
+                        : app.status === 'not_applied' ? 'bg-amber-500/10 text-amber-500'
+                        : 'bg-blue-500/10 text-blue-500'
+                    )}>{app.status}</span>
+                  </div>
+                  <div className="space-y-1">
+                    {(app.steps || []).map((step, si) => (
+                      <div key={si} className="flex items-center gap-2 text-xs">
+                        {step.status === 'done' ? <CheckCircle2 size={14} className="text-emerald-500" />
+                          : step.status === 'running' ? <Loader2 size={14} className="animate-spin text-blue-500" />
+                          : step.status === 'failed' ? <AlertCircle size={14} className="text-red-500" />
+                          : <Clock size={14} className={dark ? 'text-gray-600' : 'text-gray-400'} />}
+                        <span className={step.status === 'failed' ? 'text-red-400' : (dark ? 'text-gray-300' : 'text-gray-600')}>{step.label || step.key}</span>
+                        {step.error && <span className="text-red-400 ml-auto">{step.error}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Job Detail Side Panel */}
         {jobDetailPanel && (
           <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/50" onClick={closeJobDetail}>
@@ -1211,6 +1526,27 @@ export default function AdminDashboard() {
                     </div>
                   </div>
                 )}
+
+                {/* AI Tools */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <button onClick={() => generateCoverLetter(jobDetailPanel)} disabled={aiLoading}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 transition-all disabled:opacity-50 cursor-pointer">
+                      {aiLoading ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
+                      Cover Letter
+                    </button>
+                    <button onClick={() => optimizeResume(jobDetailPanel)} disabled={aiLoading}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-violet-600 to-purple-500 hover:from-violet-700 hover:to-purple-600 transition-all disabled:opacity-50 cursor-pointer">
+                      {aiLoading ? <Loader2 size={16} className="animate-spin" /> : <Target size={16} />}
+                      Optimize Resume
+                    </button>
+                  </div>
+                  {aiResult && (
+                    <div className={'p-3 rounded-xl border text-sm whitespace-pre-wrap max-h-64 overflow-y-auto ' + (dark ? 'bg-gray-800 border-gray-700 text-gray-300' : 'bg-gray-50 border-gray-200 text-gray-700')}>
+                      {aiResult}
+                    </div>
+                  )}
+                </div>
 
                 {/* Actions */}
                 <div className="flex gap-2">

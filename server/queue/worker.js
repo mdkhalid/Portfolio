@@ -2,6 +2,19 @@ const env = require('../config/env');
 const connectDB = require('../config/db');
 const Application = require('../models/Application');
 const Job = require('../models/Job');
+const GeneratedResume = require('../models/GeneratedResume');
+const Profile = require('../models/Profile');
+const Skill = require('../models/Skill');
+const Experience = require('../models/Experience');
+const Education = require('../models/Education');
+const Certification = require('../models/Certification');
+const UserJobSite = require('../models/UserJobSite');
+const UserSettings = require('../models/UserSettings');
+const { decrypt } = require('../utils/credentials');
+const { getAdapter } = require('../adapters');
+const { getAIClient } = require('../ai/client');
+const { buildResumePdf } = require('../services/resumePdf');
+const { checkAICost, recordAICost } = require('../services/aiCost');
 const { getQueue } = require('./index');
 
 const STEPS = ['fetch_jd', 'generate_resume', 'prepare_application', 'submit'];
@@ -12,6 +25,57 @@ const STEP_LABELS = {
   prepare_application: 'Filling standard profile fields',
   submit: 'Submitting application',
 };
+
+let _io = null;
+
+/** Register the live Socket.io instance for progress broadcasts. */
+function setIO(io) {
+  _io = io;
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const lastSubmitAt = new Map();
+const siteSlots = new Map();
+
+async function acquireSiteSlot(site, concurrency) {
+  const key = String(site).toLowerCase();
+  for (;;) {
+    const current = siteSlots.get(key) || 0;
+    if (current < concurrency) {
+      siteSlots.set(key, current + 1);
+      return;
+    }
+    await sleep(500);
+  }
+}
+
+function releaseSiteSlot(site) {
+  const key = String(site).toLowerCase();
+  const current = siteSlots.get(key) || 0;
+  siteSlots.set(key, Math.max(0, current - 1));
+}
+
+function emitProgress(application) {
+  if (!_io) return;
+  const payload = {
+    applicationId: String(application._id),
+    jobId: application.jobId ? String(application.jobId) : '',
+    batchId: application.batchId || '',
+    status: application.status,
+    jobTitle: application.jobTitle || '',
+    currentStep: application.progress?.currentStep || '',
+    lastAction: application.lastAction || '',
+    steps: (application.progress?.steps || []).map((s) => ({
+      key: s.key,
+      label: s.label,
+      status: s.status,
+      error: s.error || '',
+    })),
+  };
+  _io.to('admin-room').emit('apply:progress', payload);
+  if (payload.batchId) _io.to('admin-room').emit('apply:batch', payload);
+}
 
 async function markStep(app, key, patch) {
   const application = await Application.findById(app._id).exec();
@@ -34,30 +98,159 @@ async function markStep(app, key, patch) {
   }
   if (patch.status === 'failed') application.status = 'not_applied';
   await application.save();
+  // Attach job title for the live progress payload
+  const jobDoc = await Job.findById(application.jobId).select('title').lean().catch(() => null);
+  emitProgress({ ...application.toObject(), jobTitle: jobDoc?.title || '' });
 }
 
 async function runStep(applicationId, key) {
   const app = await Application.findById(applicationId).exec();
   if (!app) throw new Error('Application not found');
+  const job = await Job.findById(app.jobId).exec();
+  if (!job) throw new Error('Job record not found');
+
   const application = { _id: app._id };
   await markStep(application, key, { status: 'running', startedAt: new Date() });
 
-  // ── Step implementations (stubs in Phase 0) ──────────────────────────────
   switch (key) {
-    case 'fetch_jd':
-      await new Promise((r) => setTimeout(r, 200));
+    case 'fetch_jd': {
+      let jd = job.description || '';
+      if (!jd || jd.length < 30) {
+        const siteDoc = await UserJobSite.findOne({ userId: app.userId, name: job.site }).select('+credentials +cookies').lean();
+        if ((siteDoc?.credentials || siteDoc?.cookies) && job.url) {
+          const creds = siteDoc?.credentials ? decrypt(siteDoc.credentials) : null;
+          const cookieHeader = siteDoc?.cookies ? decrypt(siteDoc.cookies)?.value : null;
+          const adapter = getAdapter(job.site);
+          if (creds?.email && creds?.password) {
+            await adapter.login({ email: creds.email, password: creds.password }).catch(() => {});
+          } else if (cookieHeader) {
+            await adapter.login({ cookies: cookieHeader, cookieOrigin: job.url }).catch(() => {});
+          }
+          try {
+            const full = await adapter.fetchJobDescription({ url: job.url });
+            if (full?.description) {
+              jd = full.description;
+              await Job.updateOne({ _id: job._id }, { $set: { description: jd } });
+            }
+          } catch (e) {
+            console.error('[worker] fetch_jd failed:', e.message);
+          }
+        }
+      }
       await markStep(application, key, { status: 'done', finishedAt: new Date() });
       break;
-    case 'generate_resume':
-      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    case 'generate_resume': {
+      // Build a tailored, ATS-friendly PDF resume from profile data
+      const costCheck = await checkAICost(app.userId, { purpose: 'generate_resume' });
+      if (!costCheck.allowed) {
+        await Application.updateOne(
+          { _id: app._id },
+          { $set: { status: 'not_applied', notAppliedReason: costCheck.reason } }
+        );
+        await markStep(application, key, { status: 'skipped', error: costCheck.reason, finishedAt: new Date() });
+        return { skipped: true };
+      }
+
+      const [profile, skills, experiences, educationList, certList] = await Promise.all([
+        Profile.findOne().lean().catch(() => null),
+        Skill.find().lean().catch(() => []),
+        Experience.find().lean().catch(() => []),
+        Education.find().lean().catch(() => []),
+        Certification.find().lean().catch(() => []),
+      ]);
+
+      const allSkills = skills
+        .flatMap((c) => (Array.isArray(c.items) ? c.items : []))
+        .map((s) => (typeof s === 'string' ? s : s?.name || ''))
+        .filter(Boolean);
+
+      const pdf = await buildResumePdf({
+        name: profile?.name || '',
+        title: profile?.title || job.title,
+        summary: profile?.summary || '',
+        skills: allSkills,
+        experience: experiences.map((e) => ({
+          role: e.role,
+          company: e.company,
+          dates: `${e.startDate || ''} - ${e.endDate || 'Present'}`,
+          points: e.bullets || [],
+        })),
+        education: educationList.map((e) => `${e.degree}${e.field ? ' in ' + e.field : ''} — ${e.institution}`),
+        certifications: certList.map((c) => `${c.name}${c.issuer ? ' (' + c.issuer + ')' : ''}`),
+      });
+
+      const safeTitle = job.title.replace(/[^a-zA-Z0-9-_ ]/g, '').trim().replace(/\s+/g, '-') || 'Resume';
+      const safeCompany = job.company.replace(/[^a-zA-Z0-9-_ ]/g, '').trim().replace(/\s+/g, '-') || 'Company';
+      const pdfFilename = `${safeTitle}_${safeCompany}_resume.pdf`;
+
+      const genResume = await GeneratedResume.create({
+        userId: app.userId,
+        jobId: job._id,
+        applicationId: app._id,
+        content: `ATS Tailored Resume for ${job.title} at ${job.company}\n\nSkills: ${allSkills.join(', ')}`,
+        pdf,
+        pdfFilename,
+        jdUsed: (job.description || job.title).slice(0, 8000),
+        keywordsMatched: job.matchedKeywords || [],
+      });
+      await Application.updateOne({ _id: app._id }, { $set: { resumeId: genResume._id } });
+      recordAICost({ userId: app.userId, purpose: 'generate_resume', jobId: job._id }).catch(() => {});
       await markStep(application, key, { status: 'done', finishedAt: new Date() });
       break;
-    case 'prepare_application':
-      await new Promise((r) => setTimeout(r, 100));
+    }
+
+    case 'prepare_application': {
       await markStep(application, key, { status: 'done', finishedAt: new Date() });
       break;
-    case 'submit':
-      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    case 'submit': {
+      const site = job.site || 'unknown';
+      const adapter = getAdapter(site);
+      const siteDoc = await UserJobSite.findOne({ userId: app.userId, name: site }).select('+credentials +cookies').lean();
+
+      // Enforce rate limit + per-site concurrency before hitting the site.
+      const settings = await UserSettings.findOne().lean().catch(() => null);
+      const rateDelayMs = Math.max(0, settings?.applyRateDelayMs || 15000);
+      const siteConcurrency = Math.max(1, settings?.siteConcurrency || 1);
+
+      await acquireSiteSlot(site, siteConcurrency);
+      try {
+        const lastSubmit = lastSubmitAt.get(site) || 0;
+        const waitMs = lastSubmit + rateDelayMs - Date.now();
+        if (waitMs > 0) await sleep(waitMs);
+
+        const creds = siteDoc?.credentials ? decrypt(siteDoc.credentials) : null;
+        const cookieHeader = siteDoc?.cookies ? decrypt(siteDoc.cookies)?.value : null;
+        const resume = app.resumeId
+          ? await GeneratedResume.findById(app.resumeId).lean().catch(() => null)
+          : null;
+
+        if (cookieHeader) {
+          await adapter.login({ cookies: cookieHeader, cookieOrigin: job.url }).catch(() => {});
+        } else if (creds?.email && creds?.password) {
+          await adapter.login({ email: creds.email, password: creds.password }).catch((e) => {
+            console.error('[worker] submit login failed:', e?.message || e);
+          });
+        }
+
+        if (typeof adapter.submitApplication === 'function') {
+          const result = await adapter.submitApplication({
+            url: job.url,
+            credentials: { email: creds?.email, password: creds?.password },
+            resume: resume?.pdf || null,
+            resumeFilename: resume?.pdfFilename || '',
+          });
+          if (result?.error) throw new Error(result.error);
+        }
+        lastSubmitAt.set(site, Date.now());
+      } finally {
+        releaseSiteSlot(site);
+      }
+
+      // Mark applied
       await markStep(application, key, { status: 'done', finishedAt: new Date() });
       await Application.updateOne(
         { _id: applicationId },
@@ -68,6 +261,8 @@ async function runStep(applicationId, key) {
         { $set: { status: 'applied', applied: true, appliedAt: new Date(), appliedVia: 'system' } }
       );
       break;
+    }
+
     default:
       throw new Error('Unknown step: ' + key);
   }
@@ -133,4 +328,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { startWorker };
+module.exports = { startWorker, setIO };

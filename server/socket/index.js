@@ -4,7 +4,7 @@ const { verifyJwt } = require('../middleware/auth');
 
 const MAX_ACTIVE = 3;
 
-function setupSocket(server) {
+function setupSocket(server, onIO) {
   const parseList = (val) =>
     (val || '')
       .split(',')
@@ -19,6 +19,9 @@ function setupSocket(server) {
   const io = new Server(server, {
     cors: { origin: origins, methods: ['GET', 'POST'], credentials: true },
   });
+
+  // Hand the Socket.io instance to the worker for live apply progress.
+  if (onIO) onIO(io);
 
   let adminConnected = false;
   let adminCount = 0;

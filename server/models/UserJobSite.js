@@ -9,6 +9,9 @@ const userJobSiteSchema = new mongoose.Schema(
     enabled: { type: Boolean, default: false },
     // Encrypted credentials / session data; never selected by default.
     credentials: { type: mongoose.Schema.Types.Mixed, select: false, default: null },
+    // Encrypted paste-in cookie header string (browser session fallback for login).
+    cookies: { type: String, select: false, default: null },
+    cookieUpdatedAt: { type: Date, default: null },
     lastFetched: { type: Date, default: null },
     status: { type: String, enum: ['disconnected', 'connected', 'error'], default: 'disconnected' },
   },

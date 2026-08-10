@@ -7,8 +7,8 @@ const SITES = {
 };
 
 const SITE_META = {
-  naukri: { label: 'Naukri', requiresLogin: true },
-  indeed: { label: 'Indeed', requiresLogin: true },
+  naukri: { label: 'Naukri', requiresLogin: true, homeUrl: 'https://www.naukri.com' },
+  indeed: { label: 'Indeed', requiresLogin: true, homeUrl: 'https://www.indeed.com' },
 };
 
 function getAdapter(name) {

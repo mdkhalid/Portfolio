@@ -136,6 +136,13 @@ app.get('/api/jobs', auth, require('./routes/jobs').list);
 app.post('/api/jobs/fetch', auth, csrfProtection, jobFetchLimiter, require('./routes/jobs').fetch);
 app.post('/api/jobs/match', auth, csrfProtection, jobFetchLimiter, require('./routes/jobs').match);
 app.put('/api/jobs/:id', auth, csrfProtection, require('./routes/jobs').update);
+app.post('/api/jobs/apply', auth, csrfProtection, jobFetchLimiter, require('./routes/jobs').apply);
+app.get('/api/jobs/apply/batch/:batchId', auth, require('./routes/jobs').getBatchProgress);
+app.post('/api/jobs/apply/batch/:batchId/cancel', auth, csrfProtection, require('./routes/jobs').cancelBatch);
+app.post('/api/applications/:id/cancel', auth, csrfProtection, require('./routes/jobs').cancelApplication);
+app.get('/api/applications/:id/progress', auth, require('./routes/jobs').getApplicationProgress);
+app.use('/api/resume', auth, csrfProtection, require('./routes/resume-ai'));
+app.use('/api/pipeline', auth, csrfProtection, require('./routes/pipeline'));
 
 app.use('/api/upload', auth, csrfProtection, require('./routes/upload'));
 app.use('/api/resume-files', auth, csrfProtection, require('./routes/upload-resume'));
@@ -196,7 +203,10 @@ if (require.main === module) {
 
   // Start the async apply-pipeline worker (Bull/Redis queue) in-process.
   if (env.NODE_ENV !== 'test') {
-    const { startWorker } = require('./queue/worker');
+    const { startWorker, setIO } = require('./queue/worker');
+    const { setupSocket: socketSetup } = require('./socket');
+    setIO({ io: null }); // placeholder; real io wired after setup
+    setupSocket(server, setIO);
     startWorker().catch((err) => console.error('[worker] failed to start:', err.message));
     const { startScheduler } = require('./queue/scheduler');
     startScheduler();

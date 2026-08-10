@@ -1,4 +1,4 @@
-const { withPage, safeText, delay } = require('./browser');
+const { withPage, safeText, delay, loginWithCookies } = require('./browser');
 
 const BASE = 'https://www.naukri.com';
 
@@ -18,11 +18,24 @@ function urlSafeQuery(query) {
 }
 
 /**
- * Log in to Naukri with email/password. Returns the page with an active
- * authenticated session (cookies kept in the shared browser context).
+ * Log in to Naukri. Prefers a pasted session cookie header (fallback when
+ * password login is blocked by CAPTCHA/OTP); otherwise uses email/password.
+ * Returns { ok: true, via } with an active authenticated session.
  * Throws a structured error on failure.
  */
-async function login({ email, password }) {
+async function login({ email, password, cookies, cookieOrigin }) {
+  if (cookies && cookieOrigin) {
+    const ok = await withPage(async (page) => {
+      const isLoggedIn = await loginWithCookies(page, cookies, cookieOrigin, async (p) => {
+        const url = p.url();
+        const loggedOut = await p.$('.loginBtn, [data-testid="login-button"], a[href*="nlogin/login"]');
+        return !(url.includes('/login') || loggedOut);
+      });
+      return isLoggedIn;
+    });
+    if (ok) return { ok: true, via: 'cookies' };
+  }
+
   return withPage(async (page) => {
     await page.goto(`${BASE}/nlogin/login`, { waitUntil: 'networkidle2', timeout: 30000 });
     await delay(2000);
@@ -44,9 +57,9 @@ async function login({ email, password }) {
     const hasError = await page.$('.error, .alert, [class*=error], [class*=Error]');
     if (url.includes('/login') || hasError) {
       const errText = await page.$eval('.error, .alert, [class*=error], [class*=Error]', el => el.innerText).catch(() => '');
-      throw new Error(errText || 'Naukri login failed — check credentials or complete CAPTCHA on the site.');
+      throw new Error(errText || 'Naukri login failed — check credentials, complete CAPTCHA on the site, or paste a session cookie.');
     }
-    return { ok: true };
+    return { ok: true, via: 'password' };
   });
 }
 

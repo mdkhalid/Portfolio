@@ -1,21 +1,33 @@
-const { withPage, safeText, delay } = require('./browser');
+const { withPage, safeText, delay, loginWithCookies } = require('./browser');
 
 const BASE = 'https://www.indeed.com';
 
 const normalize = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 
 /**
- * Log in to Indeed. Indeed relies heavily on Google/Apple SSO and CAPTCHA,
- * so automation is best-effort. We navigate to the login page; if programmatic
- * login is blocked we return a structured error rather than failing silently.
+ * Log in to Indeed. Prefers a pasted session cookie header (fallback when
+ * Google/Apple SSO or CAPTCHA blocks programmatic login); otherwise attempts
+ * the email/password form and returns a structured error if blocked.
  */
-async function login({ email, password }) {
+async function login({ email, password, cookies, cookieOrigin }) {
+  if (cookies && cookieOrigin) {
+    const ok = await withPage(async (page) => {
+      const isLoggedIn = await loginWithCookies(page, cookies, cookieOrigin, async (p) => {
+        const url = p.url();
+        const loggedOut = await p.$('a[href*="/account/login"], a[data-testid="login-link"]');
+        return !(url.includes('login') || loggedOut);
+      });
+      return isLoggedIn;
+    });
+    if (ok) return { ok: true, via: 'cookies' };
+  }
+
   return withPage(async (page) => {
     await page.goto(`${BASE}/account/login`, { waitUntil: 'domcontentloaded', timeout: 30000 });
     // Attempt the email/password form if present.
     const hasForm = !!(await page.$('input[name="email"], input[name="login-email"], input[type="email"]'));
     if (!hasForm) {
-      throw new Error('Indeed login uses Google/Apple SSO or CAPTCHA and cannot be automated. Log in manually in the browser once, then retry.');
+      throw new Error('Indeed login uses Google/Apple SSO or CAPTCHA and cannot be automated. Log in manually, then paste your session cookie.');
     }
     const emailSel = 'input[name="email"], input[name="login-email"], input[type="email"]';
     const pwSel = 'input[type="password"]';
@@ -26,9 +38,9 @@ async function login({ email, password }) {
       page.click('button[type="submit"], button[data-testid="login-button"]').catch(() => {}),
     ]);
     if (page.url().includes('login')) {
-      throw new Error('Indeed login failed — SSO/CAPTCHA required. Log in manually, then retry.');
+      throw new Error('Indeed login failed — SSO/CAPTCHA required. Log in manually, then paste your session cookie.');
     }
-    return { ok: true };
+    return { ok: true, via: 'password' };
   });
 }
 

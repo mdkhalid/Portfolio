@@ -943,6 +943,33 @@ This job requires additional information:
     - Bulk selection + bulk actions: Match, Apply (mark as applied), Pass (mark as passed).
   - Verified: client build (`npm run build`) succeeded without errors, jest test suite passes (20/20).
   - Next: Dev Phase 3 — Automation & Application Queue.
+- **2026-08-10**: Dev Phase 3 (Auto-Apply System) complete + partial Dev Phase 4 (AI resume tools):
+  - **Apply pipeline endpoints** (`server/routes/jobs.js`): `POST /api/jobs/apply` (enqueues bulk-selected jobs → returns `batchId` immediately), `GET /api/jobs/apply/batch/:batchId`, `POST /api/jobs/apply/batch/:batchId/cancel`, `POST /api/applications/:id/cancel`, `GET /api/applications/:id/progress`. Idempotency guard skips jobs already queued/running/pending; `batchSize` cap (default 20, max 50).
+  - **Worker upgrades** (`server/queue/worker.js`): real `fetch_jd` step (pulls full JD via adapter if missing), `generate_resume` step creates a `GeneratedResume` record linked to the Application, `submit` marks job applied (`appliedVia: 'system'`). Per-step timeline + progress persistence.
+  - **Live progress via Socket.io** (`server/socket/index.js`, `server/queue/worker.js`): `setupSocket(server, onIO)` hands the io instance to the worker; `apply:progress` + `apply:batch` events broadcast to the admin room as each step runs.
+  - **AI resume tools** (`server/routes/resume-ai.js`): `POST /api/resume/optimize` (ATS keyword suggestions from JD) and `POST /api/resume/cover-letter` (tailored AI cover letter). Mounted under `/api/resume`.
+  - **Frontend** (`client/src/pages/AdminDashboard.jsx`): Auto Apply toolbar button, live Auto-Apply Pipeline panel (per-job step checkmarks/spinners via socket), Cover Letter + Optimize Resume buttons in the job detail side panel with inline results.
+  - Verified: server boots clean, 23/23 jest tests pass, client `vite build` succeeds.
+  - **Not yet done (remaining Phase 3)**: master pause/kill-switch, AI cost guard, per-site concurrency + rate-delay tuning, cookie-import login fallback.
+  - **Remaining Phase 4**: ATS-friendly PDF generation (pdf-lib), generated-resume view/download/soft-delete endpoints + UI.
+  - Next: finish Phase 3 extras → Phase 4 ATS PDF → Phase 5 — Application Tracking & Status Management.
+- **2026-08-10**: Dev Phase 4 (AI Features) complete:
+  - **ATS-friendly PDF generation** (`server/services/resumePdf.js`, `pdf-lib` installed): clean single-column, standard-headings, keyword-rich resume PDF with profile name/title, summary, skills, experience, education, certifications; auto multi-page.
+  - Worker `generate_resume` step now builds the PDF from profile data and persists it (Buffer + filename) on `GeneratedResume`, along with `jdUsed` snapshot and `keywordsMatched`.
+  - **Generated resume endpoints** (`server/routes/resume-ai.js`): `GET /api/resume/generated` (list, no pdf buffer), `GET /api/resume/generated/:id` (record), `GET /api/resume/generated/:id/pdf` (download PDF), `DELETE /api/resume/generated/:id` (soft delete via `deletedAt`). All scoped to `req.adminId`.
+  - **Frontend** (`client/src/pages/AdminDashboard.jsx`): Resumes tab now has a **Generated Resumes (ATS)** section — list with generation date + keyword count, download button, soft-delete button, and refresh; loads automatically when the tab opens. Base resume files remain unchanged below.
+  - Verified: PDF service produces valid `%PDF` output (1547 bytes test), worker loads clean, 23/23 jest tests pass, client `vite build` succeeds.
+  - **Remaining**: Phase 3 extras (master pause/kill-switch, AI cost guard, per-site rate tuning, cookie-import login fallback) and Phase 5 — Application Tracking & Status Management.
+  - Next: Dev Phase 5 — Application Tracking & Status Management.
+- **2026-08-10**: Dev Phase 3 extras complete:
+  - **Master pause/kill-switch** (`server/routes/pipeline.js`): `GET /api/pipeline/status`, `POST /api/pipeline/pause|resume`, `PUT /api/pipeline/budget`. `POST /api/jobs/apply` rejects with `409 PIPELINE_PAUSED` when `UserSettings.pipelinePaused` is set. Admin UI now shows a live **Apply Pipeline** control card (Running/Paused pill, AI usage today/this week, per-batch cap, rate-delay, site concurrency) with Save Settings.
+  - **AI cost guard** (`server/services/aiCost.js` + `server/models/AiUsage.js`): daily/weekly generation budgets with UTC day/week buckets. `checkAICost` before + `recordAICost` after wired into the match endpoint, `/api/resume/cover-letter`, `/api/resume/optimize`, and the worker `generate_resume` step (skips application when budget exhausted). Budget limits are configurable from the UI.
+  - **Per-site concurrency + rate-delay tuning**: `UserSettings.applyRateDelayMs` (default 15s between submits) + `siteConcurrency` (default 1); worker enforces both with a per-site in-flight semaphore (`acquireSiteSlot`/`releaseSiteSlot`) and last-submit timestamp.
+  - **Cookie-import login fallback**: `UserJobSite.cookies` (encrypted Cookie header string) + `cookieUpdatedAt`, `PUT /api/job-sites/:name/cookies` endpoint, `setCookiesFromHeader`/`loginWithCookies` in `server/adapters/browser.js`; Naukri + Indeed `login()` now try a pasted session cookie first (SSO/CAPTCHA fallback), worker `fetch_jd`/`submit` use it, test endpoint reports `via: cookies`. UI: paste-Cookie textarea in the site credentials modal + "Session cookie" indicator on site cards.
+  - `maxApplyPerBatch` no longer hardcoded — read from `UserSettings` (default 20) in `/api/jobs/apply`.
+  - Verified: 28/28 jest tests pass (added pipeline/cookie/apply 401 coverage), client `vite build` succeeds.
+  - **Remaining**: Phase 5 — Application Tracking & Status Management.
+  - Next: Dev Phase 5 — Application Tracking & Status Management.
 
 ### Open Questions Still to Decide
 - Start with **Naukri/Indeed** (scraping) or also attempt **LinkedIn** (API) later?

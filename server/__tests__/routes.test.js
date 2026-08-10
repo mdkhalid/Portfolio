@@ -212,4 +212,29 @@ describe('Jobs Endpoints (Phase 2)', () => {
     const res = await request(app).put('/api/jobs/123456789012345678901234').send({ status: 'applied' });
     expect(res.status).toBe(401);
   });
+
+  it('GET /api/pipeline/status should return 401 without auth token', async () => {
+    const res = await request(app).get('/api/pipeline/status');
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/pipeline/pause should return 401 without auth token', async () => {
+    const res = await request(app).post('/api/pipeline/pause');
+    expect(res.status).toBe(401);
+  });
+
+  it('PUT /api/pipeline/budget should return 401 without auth token', async () => {
+    const res = await request(app).put('/api/pipeline/budget').send({ aiDailyBudget: 50 });
+    expect(res.status).toBe(401);
+  });
+
+  it('PUT /api/job-sites/naukri/cookies should return 401 without auth token', async () => {
+    const res = await request(app).put('/api/job-sites/naukri/cookies').send({ cookies: 'a=1; b=2' });
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/jobs/apply should return 401 without auth token', async () => {
+    const res = await request(app).post('/api/jobs/apply').send({ jobIds: [] });
+    expect(res.status).toBe(401);
+  });
 });

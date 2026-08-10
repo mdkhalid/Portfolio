@@ -20,6 +20,8 @@ const userSettingsSchema = new mongoose.Schema(
     notifyEmail: { type: Boolean, default: false },
     notifyDigest: { type: String, enum: ['none', 'instant', 'daily'], default: 'instant' },
     pipelinePaused: { type: Boolean, default: false },
+    applyRateDelayMs: { type: Number, default: 15000, min: 0, max: 3600000 },
+    siteConcurrency: { type: Number, default: 1, min: 1, max: 5 },
     baseResumeTemplates: [{ type: String, maxlength: 100 }],
   },
   { timestamps: true }

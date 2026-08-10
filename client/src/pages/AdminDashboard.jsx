@@ -362,7 +362,8 @@ export default function AdminDashboard() {
   const closeJobDetail = () => setJobDetailPanel(null)
 
   const matchSelectedJobs = async () => {
-    const ids = Array.from(selectedJobs)
+    const selectedItems = jobApps.items.filter(item => selectedJobs.has(item._id))
+    const ids = selectedItems.filter(i => i.status !== 'applied' && !i.matchScore).map(i => i._id)
     if (!ids.length) return
     setMatchingJobs(true)
     try {
@@ -385,7 +386,10 @@ export default function AdminDashboard() {
   }
 
   const handleBulkAction = async (action) => {
-    const ids = Array.from(selectedJobs)
+    const selectedItems = jobApps.items.filter(item => selectedJobs.has(item._id))
+    const ids = action === 'apply'
+      ? selectedItems.filter(i => i.status !== 'applied').map(i => i._id)
+      : selectedItems.filter(i => i.status !== 'passed').map(i => i._id)
     if (!ids.length) return
     try {
       const newStatus = action === 'apply' ? 'applied' : 'passed'
@@ -396,7 +400,7 @@ export default function AdminDashboard() {
       }))
       setSelectedJobs(new Set())
       if (action === 'apply') {
-        showToast(`${ids.length} jobs marked as applied (Automated queue in Phase 3)`, 'success')
+        showToast(`${ids.length} jobs marked as applied`, 'success')
       } else {
         showToast(`${ids.length} jobs marked as passed`, 'success')
       }
@@ -406,7 +410,8 @@ export default function AdminDashboard() {
   }
 
   const startAutomatedApply = async () => {
-    const ids = Array.from(selectedJobs)
+    const selectedItems = jobApps.items.filter(item => selectedJobs.has(item._id))
+    const ids = selectedItems.filter(i => i.status !== 'applied').map(i => i._id)
     if (!ids.length) return
     try {
       setApplying(true)
@@ -1187,6 +1192,10 @@ export default function AdminDashboard() {
   const renderJobApps = () => {
     const { items, total, page, pages } = jobApps
     const hasSelection = selectedJobs.size > 0
+    const selectedItems = items.filter(item => selectedJobs.has(item._id))
+    const applyableCount = selectedItems.filter(i => i.status !== 'applied').length
+    const passableCount = selectedItems.filter(i => i.status !== 'applied' && i.status !== 'passed').length
+    const matchableCount = selectedItems.filter(i => i.status !== 'applied' && !i.matchScore).length
 
     return (
       <div className="space-y-4">
@@ -1267,23 +1276,23 @@ export default function AdminDashboard() {
           </button>
           {hasSelection && (
             <>
-              <button onClick={() => handleBulkAction('apply')} disabled={matchingJobs || applying}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white bg-emerald-500 hover:bg-emerald-600 transition-all disabled:opacity-50 cursor-pointer">
-                <Zap size={16} /> Mark Applied ({selectedJobs.size})
+              <button onClick={() => handleBulkAction('apply')} disabled={matchingJobs || applying || !applyableCount}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white bg-emerald-500 hover:bg-emerald-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                <Zap size={16} /> Mark Applied ({applyableCount})
               </button>
-              <button onClick={startAutomatedApply} disabled={matchingJobs || applying || !selectedJobs.size}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-violet-600 to-fuchsia-500 hover:from-violet-700 hover:to-fuchsia-600 transition-all disabled:opacity-50 cursor-pointer">
+              <button onClick={startAutomatedApply} disabled={matchingJobs || applying || !applyableCount}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-violet-600 to-fuchsia-500 hover:from-violet-700 hover:to-fuchsia-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
                 {applying ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
-                {applying ? 'Queuing...' : `Auto Apply (${selectedJobs.size})`}
+                {applying ? 'Queuing...' : `Auto Apply (${applyableCount})`}
               </button>
-              <button onClick={() => handleBulkAction('pass')} disabled={matchingJobs || applying}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-all disabled:opacity-50 cursor-pointer">
-                Pass ({selectedJobs.size})
+              <button onClick={() => handleBulkAction('pass')} disabled={matchingJobs || applying || !passableCount}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                Pass ({passableCount})
               </button>
-              <button onClick={matchSelectedJobs} disabled={matchingJobs || applying}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">
+              <button onClick={matchSelectedJobs} disabled={matchingJobs || applying || !matchableCount}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
                 {matchingJobs ? <Loader2 size={16} className="animate-spin" /> : <Target size={16} />}
-                {matchingJobs ? 'Matching...' : 'Match'}
+                {matchingJobs ? 'Matching...' : `Match (${matchableCount})`}
               </button>
             </>
           )}

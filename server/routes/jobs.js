@@ -380,7 +380,7 @@ async function getUploadedResumeText() {
     const parsed = await parser.getText();
     parser.destroy();
 
-    return parsed?.text ? sanitizeForAI(parsed.text) : '';
+    return parsed?.text ? sanitizeForAI(parsed.text, { checkInjection: false }) : '';
   } catch (err) {
     console.error('Failed to parse uploaded resume PDF for matching:', err.message);
     return '';

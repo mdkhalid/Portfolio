@@ -971,6 +971,8 @@ This job requires additional information:
   - **Remaining**: Phase 5 — Application Tracking & Status Management.
   - Next: Dev Phase 5 — Application Tracking & Status Management.
 
+- **2026-08-10 (follow-up)**: Added **Issue 3 — Write Suggested Keywords into an Actual Resume (Per-Job / Bulk)** to Phase 1 Follow-ups (required): auto generate + attach tailored resume per job (`POST /api/resume/generate`, single + bulk), keyword-merge into Skills/Summary **without changing resume structure**, keywords woven naturally (no weird text), per-job viewable PDF, Auto-Apply uses the attached resume. Next: implement Issue 3 phase-wise.
+
 ### Open Questions Still to Decide
 - Start with **Naukri/Indeed** (scraping) or also attempt **LinkedIn** (API) later?
 - Build **UI-first** or **backend-first**? (Recommendation: backend-first for Phases 1-2, then UI.)
@@ -1026,3 +1028,35 @@ This job requires additional information:
 - `server/routes/job-sites.js` → add site accepts `baseUrl`, update save/login/test
 - `server/models/UserJobSite.js` → add `baseUrl` field, relax `SITE_ENUM`
 - `client/src/pages/AdminDashboard.jsx` → Add Site modal with name/URL/creds fields
+
+### Issue 3: Write Suggested Keywords into an Actual Resume (Per-Job / Bulk) — REQUIRED
+**Problem**: The Optimize Resume feature only *displays* keyword suggestions in the side panel — nothing is written into a real resume. The Auto-Apply `generate_resume` step builds a PDF from profile skills only and stores the suggested keywords only as `keywordsMatched` metadata, never merging them into the resume content. There is no way to edit a per-job resume before attaching it.
+
+**User Request**: For every job, individually or in bulk, be able to **generate an actual resume that incorporates the suggested keywords**, review/edit it, and attach the updated resume to that job/application. **The new resume must be viewable per job.**
+
+**Hard constraints (from user)**:
+- **DO NOT change the resume structure** — same sections, order, and layout as the base resume.
+- **Only change keywords** — merge suggested keywords into the Skills list and weave a few into the Summary naturally.
+- **Must not look weird** — keywords inserted grammatically (no awkward comma lists, no invented experience/claims). The resume should read as a properly adjusted, natural document.
+- **Auto edit + attach** — generation is automatic; the generated resume is attached to the job and viewable per job.
+
+**Proposed Solution — Generate & Attach Tailored Resume**:
+1. **`POST /api/resume/generate`** (body: `{ jobId }` or bulk `{ jobIds: [] }`):
+   - Runs the optimize-style keyword analysis for each job's JD (reuse `server/services/aiCost.js` guard).
+   - Merges suggested keywords into the resume: append missing keywords to **Skills**, and have the AI weave 1-3 of the most important into the **Summary** sentence flow (keep original tone/length; empty summary stays empty).
+   - Builds an ATS-friendly PDF via `server/services/resumePdf.js` with the **same structure** and persists a `GeneratedResume` record (keyword source + JD snapshot).
+   - Bulk mode loops over ids and returns per-job results; each generated resume is stored + linkable.
+2. **Attach & edit**:
+   - Generated resume becomes **viewable per job** (`GET /api/resume/generated/:id/pdf` + per-job link in the job detail panel).
+   - A job's chosen resume is attached to the job/application (link `GeneratedResume.jobId` + `applicationId`, and `Job.resumeId`).
+   - The Auto-Apply `submit` step uses the attached tailored resume instead of the generic one.
+3. **UI**:
+   - Job Applications tab: "Generate Resume" per job in the side panel; bulk "Generate Resumes" toolbar button for selected jobs. After generation show a "View Resume" link for that job.
+   - Resumes tab already lists generated resumes — surface keyword count + per-job PDF download.
+
+**Files to change**:
+- `server/routes/resume-ai.js` → add `POST /generate` (single + bulk), keyword-merge logic, attach to job/application
+- `server/models/Job.js` → add optional `resumeId` (attached tailored resume)
+- `server/queue/worker.js` → `generate_resume`/`submit` steps prefer the attached job resume
+- `client/src/pages/AdminDashboard.jsx` → per-job Generate Resume + View Resume link + bulk toolbar button
+- `server/__tests__/routes.test.js` → add coverage for `POST /api/resume/generate` (single + bulk, 401 without auth)

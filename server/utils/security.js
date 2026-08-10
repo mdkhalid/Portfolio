@@ -29,7 +29,7 @@ const OBFUSCATION_PATTERNS = [
   /%[0-9a-f]{2}/i,
   /String\.fromCharCode/i,
   /\.concat\(/i,
-  /\+.*\+/,
+  /["']\s*\+\s*["']/,
 ];
 
 function normalizeInput(input) {
@@ -45,18 +45,25 @@ function hasObfuscation(input) {
   return OBFUSCATION_PATTERNS.some((re) => re.test(input));
 }
 
-const sanitizeForAI = (input) => {
+const sanitizeForAI = (input, options = {}) => {
   if (typeof input !== 'string') return '';
 
+  const { checkInjection = true } = options;
   const normalized = normalizeInput(input);
 
   if (hasObfuscation(input)) {
     throw new AppError('Message contains disallowed content', 400, 'INVALID_INPUT');
   }
 
-  for (const re of PROMPT_INJECTION_PATTERNS) {
-    if (re.test(normalized)) {
-      throw new AppError('Message contains disallowed content', 400, 'INVALID_INPUT');
+  // Prompt-injection phrase detection is intended for short, user-typed inputs
+  // (chat messages). Long-form documents (job descriptions, resume text) contain
+  // legitimate phrases like "Role: Developer" or "System:" that would be false
+  // positives, so callers can pass { checkInjection: false } for those.
+  if (checkInjection) {
+    for (const re of PROMPT_INJECTION_PATTERNS) {
+      if (re.test(normalized)) {
+        throw new AppError('Message contains disallowed content', 400, 'INVALID_INPUT');
+      }
     }
   }
 

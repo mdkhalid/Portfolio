@@ -6,6 +6,13 @@ const AiUsage = require('../models/AiUsage');
  * daily/weekly budget (UserSettings.aiDailyBudget / aiWeeklyBudget).
  */
 
+// Lazy require to avoid any module-cycle risk at import time.
+let _notify = null;
+const getNotify = () => {
+  if (!_notify) _notify = require('./notifications').notify;
+  return _notify;
+};
+
 /** Get or create settings for a user. */
 async function getSettings(userId) {
   let settings = await UserSettings.findOne({ userId }).lean();
@@ -47,6 +54,13 @@ async function checkAICost(userId, { date = new Date() } = {}) {
 
   const { daily, weekly, day, week } = await getUsage(userId, date);
   if (weeklyCap > 0 && weekly >= weeklyCap) {
+    getNotify()({
+      userId,
+      type: 'ai_budget',
+      title: 'AI budget reached',
+      body: `Weekly AI budget reached (${weekly}/${weeklyCap} generations). AI steps paused until the next budget window.`,
+      dedupeKey: `ai-budget-${userId}-week-${week}`,
+    }).catch(() => {});
     return {
       allowed: false,
       reason: `Weekly AI budget reached (${weekly}/${weeklyCap} generations). Paused AI steps until the next budget window.`,
@@ -54,6 +68,13 @@ async function checkAICost(userId, { date = new Date() } = {}) {
     };
   }
   if (dailyCap > 0 && daily >= dailyCap) {
+    getNotify()({
+      userId,
+      type: 'ai_budget',
+      title: 'AI budget reached',
+      body: `Daily AI budget reached (${daily}/${dailyCap} generations). AI steps paused until tomorrow.`,
+      dedupeKey: `ai-budget-${userId}-day-${day}`,
+    }).catch(() => {});
     return {
       allowed: false,
       reason: `Daily AI budget reached (${daily}/${dailyCap} generations). Paused AI steps until tomorrow.`,

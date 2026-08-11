@@ -1,4 +1,5 @@
 const { withPage, safeText, delay, loginWithCookies } = require('./browser');
+const { detectApplyFormFields, fillFields } = require('../services/applyFields');
 
 const BASE = 'https://www.indeed.com';
 
@@ -117,13 +118,25 @@ async function fetchJobDescription(input) {
 }
 
 /**
+ * Detect the apply form fields for an Indeed job (best-effort, no submit).
+ * Returns [{ key, label, type, selector, options }] or [].
+ */
+async function detectApplyFields({ url }) {
+  return detectApplyFormFields({
+    url,
+    applySelectors: ['button[data-testid="applyButton"], #indeedApplyButton, button[class*="apply"], a[class*="apply"]'],
+  });
+}
+
+/**
  * Submit an application for an Indeed job.
- * Best-effort: opens the job page and clicks the primary Apply button.
+ * Opens the job page, clicks the primary Apply button, fills any detected
+ * apply-form fields from the resolved `fields` map, then confirms.
  * Indeed apply often routes through employer sites / SSO; when that happens we
  * throw a structured error so the worker marks the application not_applied
  * instead of silently pretending success.
  */
-async function submitApplication({ url, credentials, resume, resumeFilename }) {
+async function submitApplication({ url, credentials, resume, resumeFilename, fields, detected }) {
   if (!url) throw new Error('Missing job URL');
   return withPage(async (page) => {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -142,6 +155,12 @@ async function submitApplication({ url, credentials, resume, resumeFilename }) {
     ]);
     await delay(3500);
 
+    // Auto-fill the detected apply-form fields (best-effort; skips missing ones).
+    if (fields && detected?.length) {
+      await fillFields(page, fields, detected).catch(() => {});
+      await delay(500);
+    }
+
     // External employer application — can't be automated beyond the click.
     const urlNow = page.url();
     if (!urlNow.includes('indeed.com')) {
@@ -157,9 +176,20 @@ async function submitApplication({ url, credentials, resume, resumeFilename }) {
       await delay(1500);
     }
 
-    const applied = await page.$('[class*="success"], [data-testid="post-apply"]').catch(() => null);
-    return { ok: true, applied: Boolean(applied), via: 'submitApplication' };
+    // Check if the Apply button is still visible — if so, the application
+    // was NOT actually submitted (form rejected, validation error, etc.).
+    const stillHasApply = await page.$('button[data-testid="applyButton"], #indeedApplyButton, button[class*="apply"]').catch(() => null);
+    if (stillHasApply) {
+      return { ok: true, applied: false, via: 'submitApplication' };
+    }
+
+    // Look for explicit success text instead of broad class selectors.
+    const hasSuccessText = await page.evaluate(() => {
+      const body = (document.body && document.body.innerText) || '';
+      return /thank you for applying|application submitted|successfully applied|applied successfully|your application has been sent/i.test(body.slice(0, 5000));
+    });
+    return { ok: true, applied: hasSuccessText, via: 'submitApplication' };
   });
 }
 
-module.exports = { login, searchJobs, fetchJobDescription, submitApplication };
+module.exports = { login, searchJobs, fetchJobDescription, submitApplication, detectApplyFields };

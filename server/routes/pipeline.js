@@ -1,10 +1,13 @@
 const express = require('express');
 const UserSettings = require('../models/UserSettings');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
-const { int } = require('../middleware/validate');
+const { int, bool } = require('../middleware/validate');
 const { checkAICost, getUsage } = require('../services/aiCost');
+const { notify } = require('../services/notifications');
 
 const router = express.Router();
+
+const DIGESTS = ['none', 'instant', 'daily'];
 
 /** GET /api/pipeline/status — current pipeline + budget status. */
 router.get('/status', asyncHandler(async (req, res) => {
@@ -23,6 +26,8 @@ router.get('/status', asyncHandler(async (req, res) => {
     maxApplyPerBatch: settings.maxApplyPerBatch,
     applyRateDelayMs: settings.applyRateDelayMs,
     siteConcurrency: settings.siteConcurrency,
+    notifyEmail: settings.notifyEmail,
+    notifyDigest: settings.notifyDigest,
   });
 }));
 
@@ -33,6 +38,12 @@ router.post('/pause', asyncHandler(async (req, res) => {
     { $set: { pipelinePaused: true } },
     { upsert: true }
   );
+  notify({
+    userId: req.adminId,
+    type: 'pipeline_paused',
+    title: 'Apply pipeline paused',
+    body: 'No new applications will be queued until you resume.',
+  }).catch(() => {});
   res.json({ paused: true, message: 'Pipeline paused. No new applications will be queued.' });
 }));
 
@@ -43,6 +54,12 @@ router.post('/resume', asyncHandler(async (req, res) => {
     { $set: { pipelinePaused: false } },
     { upsert: true }
   );
+  notify({
+    userId: req.adminId,
+    type: 'pipeline_resumed',
+    title: 'Apply pipeline resumed',
+    body: 'New applications will be accepted again.',
+  }).catch(() => {});
   res.json({ paused: false, message: 'Pipeline resumed. New applications will be accepted.' });
 }));
 
@@ -53,6 +70,12 @@ router.put('/budget', asyncHandler(async (req, res) => {
   const maxApplyPerBatch = int(req.body, 'maxApplyPerBatch', { min: 1, max: 500, optional: true });
   const applyRateDelayMs = int(req.body, 'applyRateDelayMs', { min: 0, max: 3600000, optional: true });
   const siteConcurrency = int(req.body, 'siteConcurrency', { min: 1, max: 5, optional: true });
+  const notifyEmail = bool(req.body, 'notifyEmail', { optional: true });
+  const notifyDigestRaw = req.body?.notifyDigest;
+  const notifyDigest =
+    notifyDigestRaw !== undefined && notifyDigestRaw !== ''
+      ? (DIGESTS.includes(notifyDigestRaw) ? notifyDigestRaw : (() => { throw new AppError('notifyDigest must be one of: none, instant, daily', 400, 'INVALID_TYPE'); })())
+      : undefined;
 
   const patch = {};
   if (aiDailyBudget !== undefined) patch.aiDailyBudget = aiDailyBudget;
@@ -60,6 +83,8 @@ router.put('/budget', asyncHandler(async (req, res) => {
   if (maxApplyPerBatch !== undefined) patch.maxApplyPerBatch = maxApplyPerBatch;
   if (applyRateDelayMs !== undefined) patch.applyRateDelayMs = applyRateDelayMs;
   if (siteConcurrency !== undefined) patch.siteConcurrency = siteConcurrency;
+  if (notifyEmail !== undefined) patch.notifyEmail = notifyEmail;
+  if (notifyDigest !== undefined) patch.notifyDigest = notifyDigest;
 
   if (!Object.keys(patch).length) throw new AppError('Nothing to update', 400, 'NOTHING_TO_UPDATE');
 

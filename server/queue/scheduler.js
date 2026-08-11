@@ -5,6 +5,7 @@ const UserSettings = require('../models/UserSettings');
 const { fetchFromSite } = require('../routes/jobs');
 
 let _timer = null;
+let _digestTimer = null;
 
 /**
  * Daily scheduled refresh: re-runs the job fetch for every user with enabled
@@ -43,6 +44,8 @@ async function runStaleExpiry() {
 async function tick() {
   await runStaleExpiry().catch(() => {});
   await runScheduledFetch().catch(() => {});
+  const { sendDailyDigests } = require('../services/notifications');
+  await sendDailyDigests().catch(() => {});
 }
 
 /** Start the daily scheduler; also runs one tick shortly after boot. */
@@ -50,6 +53,12 @@ function startScheduler() {
   if (_timer) return _timer;
   _timer = setInterval(tick, 24 * 60 * 60 * 1000);
   _timer.unref();
+  // Email digests go out a few times a day so users aren't waiting a full 24h.
+  _digestTimer = setInterval(() => {
+    const { sendDailyDigests } = require('../services/notifications');
+    sendDailyDigests().catch(() => {});
+  }, 6 * 60 * 60 * 1000);
+  _digestTimer.unref();
   setTimeout(tick, 5000).unref();
   console.log(
     `[scheduler] job fetch + stale expiry scheduled daily (cron "${env.JOB_FETCH_SCHEDULE}" documented)`
@@ -61,6 +70,10 @@ function stopScheduler() {
   if (_timer) {
     clearInterval(_timer);
     _timer = null;
+  }
+  if (_digestTimer) {
+    clearInterval(_digestTimer);
+    _digestTimer = null;
   }
 }
 

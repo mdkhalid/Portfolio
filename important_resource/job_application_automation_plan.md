@@ -3,7 +3,7 @@
 **Goal**: Build a system to fetch, match, and auto-apply to jobs from Naukri, Indeed, and other sites, with AI-driven resume optimization.
 
 **Design Principles**:
-- **Single-user first** (you), **multi-user later** (future-proofed).
+- **Single-user only** (you). **Multi-user is NOT planned for now** — will be considered later if needed; the schema is already minimally future-proofed (owner `userId` fields).
 - **Modular phases** to avoid scope creep.
 - **Reuse existing patterns** (Tailwind, modals, toasts).
 - **Secure credential storage** (encrypted in DB).
@@ -414,7 +414,12 @@
 
 ---
 
-## Phase 6: Multi-User Future-Proofing
+## Phase 6: Multi-User Future-Proofing — NOT PLANNED (do later if needed)
+### Status
+- **Explicitly out of scope for now.** Single-user only.
+- Minimal future-proofing already done (owner `userId` fields on every model, per-user site configs). Full multi-user hardening (roles, ownership scoping, per-user isolation, admin-vs-user gating) will only be considered if a multi-user need actually arises later.
+- Revisit by searching this plan for "multi-user".
+
 ### Goals
 - Prepare the system for multiple users (in future, anyone can log in, add job sites, and use their own credentials).
 - Ensure secure credential storage.
@@ -908,16 +913,16 @@ This job requires additional information:
 - **Dev Phase 2 — Matching & Listing** ✅ **COMPLETED**: `/api/jobs/match` (AI score + matched/missing keywords), Job Applications tab (tiles, circular score, filters incl. job age, search, server-side pagination), side panel with match breakdown + resume preview, bulk select/apply/pass.
 - **Dev Phase 3 — Auto-Apply Pipeline** ✅ **COMPLETED**: `/api/jobs/apply` (returns `batchId` immediately), Bull workers (`fetch_jd → generate_resume → prepare_application → submit`), live progress view via Socket.io, `waiting_user` → Pending Action Modal, master pause/kill-switch, batch cancel-all, max-per-batch cap, AI cost guard, crash-safe idempotent steps.
 - **Dev Phase 4 — AI Resume Engine** ✅ **COMPLETED**: base resume variants + template picker, `/api/resume/generate`, ATS-friendly formatting, cover letter generation, `/api/resume/optimize` keyword suggestions, generated resume persisted with each application (view/download/soft-delete).
-- **Dev Phase 5 — Tracking & Records** (next): Tracking tab (status badges, filters, timeline, already-applied import/manual-mark/auto-detect), retry failed/not-applied, saved-resumes section + endpoints, `not_applied` reasons.
-- **Dev Phase 6 — Notifications**: toast/badge notifications, optional email notifications (batch summary, pending input, failures), digest mode.
-- **Dev Phase 7 — Multi-User Hardening**: roles, ownership scoping everywhere, per-user isolation of credentials/sessions, admin-vs-user gating.
+- **Dev Phase 5 — Tracking & Records** ✅ **COMPLETED**: Tracking tab (status badges, filters, timeline, already-applied import/manual-mark/auto-detect), retry failed/not-applied, saved-resumes section + endpoints, `not_applied` reasons.
+- **Dev Phase 6 — Notifications** ✅ **COMPLETED**: in-app notification bell + unread badge + dropdown, live toasts via Socket.io for pipeline events, optional email alerts (instant/daily digest/none) for batch summaries, pending-input items, failures, and AI-budget / pause events, email rate cap + dedupe, notification settings in the pipeline card.
+- **Dev Phase 7 — Multi-User Hardening**: **NOT PLANNED — single-user only.** Dropped for now; will be considered later only if multi-user support is actually needed. Not started.
 
 ### Sprint Plan (initial build)
 1. **Sprint 1** = Dev Phase 0 ✅ done + Dev Phase 1 (job sites + fetch/dedupe/blocklist/expiry) ✅ done.
 2. **Sprint 2** = Dev Phase 2 (matching, tiles, filters, search, pagination, side panel) ✅ done.
 3. **Sprint 3** = Dev Phase 3 + 4 (async pipeline + AI resume engine) ✅ done.
-4. **Sprint 4** = Dev Phase 5 + 6 (tracking, records, notifications) — **next**.
-5. **Sprint 5** = Dev Phase 7 (multi-user hardening).
+4. **Sprint 4** = Dev Phase 5 + 6 (tracking, records, notifications) ✅ done.
+5. **Sprint 5** = Dev Phase 7 (multi-user hardening) — **NOT PLANNED, dropped for now** (single-user only). The plan is complete without it.
 
 ### Progress Log
 - **2026-08-08**: Dev Phase 0 complete (models, queue infra, worker scaffold, env vars; boot + smoke + jest verified). Next: Dev Phase 1 — Naukri/Indeed integration.
@@ -972,6 +977,56 @@ This job requires additional information:
   - Next: Dev Phase 5 — Application Tracking & Status Management.
 
 - **2026-08-10 (follow-up)**: Added **Issue 3 — Write Suggested Keywords into an Actual Resume (Per-Job / Bulk)** to Phase 1 Follow-ups (required): auto generate + attach tailored resume per job (`POST /api/resume/generate`, single + bulk), keyword-merge into Skills/Summary **without changing resume structure**, keywords woven naturally (no weird text), per-job viewable PDF, Auto-Apply uses the attached resume. Next: implement Issue 3 phase-wise.
+- **2026-08-11**: **Issue 3 implemented**:
+  - New shared service `server/services/resumeGenerate.js` — `buildTailoredResume(job, { userId, skipOnBudgetExceeded })`: loads profile context, runs one AI call (keyword extraction + natural Summary rewrite, keeping structure/tone/length), deterministic fallback to stored `missingKeywords`, merges keywords into Skills (dedupe, case-insensitive), builds the same-structure ATS PDF, respects AI budget guard.
+  - `POST /api/resume/generate` (`server/routes/resume-ai.js`): accepts `{ jobId }` or `{ jobIds }` (bulk, max 20), persists `GeneratedResume` per job (linked to job + latest application), sets `Job.resumeId`, returns per-job results with `keywordsAdded`/`usedAI`.
+  - `Job.resumeId` field added; worker `generate_resume` step now reuses an attached resume when present, otherwise generates via the shared service (keeps skip-on-budget behavior).
+  - Client (`AdminDashboard.jsx`): per-job "Generate Resume"/"Regenerate Resume" + "View Attached Resume" in the detail side panel, bulk "Generate Resumes (n)" toolbar button, "Resume" badge on job tiles, updated Resumes-tab empty state.
+  - Verified: 31/31 jest tests pass, client `vite build` succeeds, worker/service modules load cleanly.
+  - Next: Dev Phase 5 — Application Tracking & Status Management.
+- **2026-08-11**: **Dev Phase 5 — Application Tracking & Status Management complete**:
+  - `Application.appliedVia` field (`system`/`imported`/`manual`); worker submit step sets `appliedVia: 'system'`.
+  - `PUT /api/jobs/:id` (manual apply/pass) now also creates/updates an `Application` record so manually-marked jobs appear in Tracking alongside system applications.
+  - New endpoints (`server/routes/jobs.js`): `GET /api/applications` (paginated, filters: site/status/via/date range, populated with job info), `PUT /api/applications/:id` (status + lastAction with timeline events, keeps Job in sync when applied), `POST /api/applications/:id/retry` (requeues failed/not_applied/canceled apps into Bull queue; guards: pipeline paused → 409, job expired/already applied → 400; resets progress + increments attempts).
+  - Client: new **Tracking** tab — application cards (title, company, site, status badge, applied-via, applied date, Retry button for retryable states), filters (site/status/via), server-side pagination, detail side panel with last action, "Open Job Posting", and a reverse-chronological timeline view.
+  - Verified: 34/34 jest tests pass, client `vite build` succeeds, full end-to-end smoke test passes (login → generate resume single/bulk → PDF download → mark applied → applications list/filters → status update → retry guard + successful requeue).
+  - Next: Dev Phase 6 — Notifications.
+- **2026-08-11**: **Auto-Fill Apply Forms (capture fields, AI workflow, user-attention fallback)** — keeps bulk apply automatic by default:
+  - New `ApplyField` model — per-user+site knowledge base of apply-form fields (`key`, `label`, `type`, `selector`, `options`, `value`, `source`, `timesUsed`), unique `{userId, site, key}`. Values are learned from every successful apply and reused automatically.
+  - New shared service `server/services/applyFields.js`:
+    - `detectFields(page)` — generic Puppeteer form-field detection (visible text inputs/selects/textareas + label/aria/placeholder/name resolution, stable selector building).
+    - `fillFields(page, fieldValues, detected)` — React-safe value setting (prototype setter + input/change events) for text/textarea/select; skips missing fields.
+    - `resolveFieldValues({ userId, site, detected, jobTitle })` — priority: learned knowledge base → candidate profile (name/email/phone/location/title/years/linkedin/github) → AI (one JSON call, PII like email/phone/password never invented, select-only-from-options, budget-guarded). Anything still unresolved becomes `waitingFields`.
+    - `learnFieldValues(...)` — upserts resolved values into the knowledge base with `timesUsed+1`.
+    - `detectApplyFormFields({ url, applySelectors })` — opens a job, clicks apply, detects the form (no submit).
+  - Application model: added `fieldValues` (Map), `detectedFields`, `waitingFields`; progress step status `waiting_user` added (→ application `pending`).
+  - Worker: `prepare_application` is now real — detects fields (best-effort; no inline form → proceeds), resolves values, stages them on the application; if required fields are unresolved it pauses THAT job at `pending`/`waiting_user` ("Needs your attention") and the pipeline loop stops for that job only. `submit` passes `fields`+`detected` to the adapter to fill the form before confirming, and learns resolved values into the knowledge base on success. Loop now also breaks on `skipped` (fixes submit-after-not_applied).
+  - Adapters (naukri, indeed): added `detectApplyFields({ url })`; `submitApplication` now accepts `fields`+`detected` and auto-fills the form.
+  - New `POST /api/applications/:id/answers` — saves user answers for pending `waitingFields`, merges into `fieldValues`, learns them into the knowledge base (source `user`), then automatically requeues the application to resume and submit (no manual retry).
+  - Client: Tracking detail panel shows an amber **"Needs your attention"** form (inputs/selects/textareas pre-filled with AI suggestions) with "Save & Auto-Apply"; card badge for pending-needing-attention; live progress panel renders `waiting_user` steps.
+  - Verified: 35/35 jest tests pass, client `vite build` succeeds, smoke test confirms profile+saved auto-fill, AI-off fallback → waiting, answers → requeue → knowledge base learn, and 400 guards.
+  - Next: Dev Phase 6 — Notifications.
+- **2026-08-11**: **Dev Phase 6 — Notifications complete**:
+  - New `Notification` model — in-app + email record per user (`type`: batch_complete, apply_success, apply_failed, needs_input, pipeline_paused, pipeline_resumed, ai_budget, system), `title/body/metadata`, optional unique `dedupeKey` (per-user), `read`, `emailDelivered`, `digestPending`.
+  - New `server/services/notifications.js`:
+    - `notify()` — dedupe check (skips if same dedupeKey within maxAge), creates the record, emits Socket.io `notify:inapp` to the admin dashboard, and handles email per `UserSettings.notifyEmail` + `notifyDigest` (`instant` sends now, `daily` queues, `none` never). Instant email is rate-capped at 8/hour → excess falls back to digest (prevents bulk-run spam).
+    - `sendEmail()` — lazy nodemailer (Gmail SMTP via `EMAIL_USER`/`EMAIL_PASS`), never crashes when SMTP is unconfigured.
+    - `listNotifications/unreadCount/markRead/markAllRead`, and `sendDailyDigests()` — groups all `digestPending` notifications per user into one summary email.
+  - Routes `server/routes/notifications.js`: `GET /api/notifications` (+page/limit + unreadCount), `GET /unread-count`, `PUT /:id/read`, `PUT /read-all` — all behind `auth` + CSRF.
+  - Notification hooks:
+    - Worker: `apply_success` (submit done), `apply_failed` (step failure, deduped per application), `needs_input` (waiting_user — "Complete details for <Job>"), `ai_budget` (resume skipped on budget), and `batch_complete` via new `maybeNotifyBatchComplete(batchId)` (fires once when a batch has no queued/running/pending apps left; summary "N applied · X failed · Y need input · Z canceled").
+    - Pipeline pause/resume routes → `pipeline_paused`/`pipeline_resumed`.
+    - `aiCost.checkAICost` → `ai_budget` notification (deduped once per day/week).
+  - Settings: `GET /api/pipeline/status` now returns `notifyEmail` + `notifyDigest`; `PUT /api/pipeline/budget` accepts them (`bool` + enum `none|instant|daily`).
+  - Scheduler: runs `sendDailyDigests()` on the daily tick + a 6-hourly digest interval.
+  - Client (`AdminDashboard.jsx`):
+    - Notification bell in the header with unread-count badge + dropdown (recent list, type icons, click → mark read + jump to Tracking/job-apps tab, "Mark all read").
+    - Socket listener for `notify:inapp` on the existing admin socket → live toasts (warning for failed/needs-input/budget, success for applied/resumed, info for batch complete) + badge bump.
+    - Toast renderer extended with `warning` (amber) and `info` (blue) variants.
+    - Apply Pipeline card: "Email notifications" toggle + "Email digest" select (Instant/Daily summary/None).
+  - Verified: 41/41 jest tests pass (added notification 401 guards, create/list/read/read-all/dedupe flow, pipeline notify-prefs + invalid-digest 400), client `vite build` succeeds, smoke test confirms dedupe, digestPending behavior, pause/resume + ai_budget + batch_complete notifications, mark-read/mark-all API flow, and no-crash when SMTP unconfigured.
+  - **2026-08-11 (cont.)**: Added Phase 6.5 integration coverage — `server/__tests__/routes.test.js` now 42/42 tests (custom-site add + duplicate 409 + masked email response, manual-job add/list + unknown-site 400, mark-applied creates Application with `appliedVia: manual` and clears `needsManualApply`, unknown-site PUT 400). JWT signed directly in test to avoid auth rate-limiter (5 logins/IP window already consumed by earlier tests).
+  - Next: **Dev Phase 7 — Multi-User Hardening is NOT PLANNED** (single-user only; dropped for now, revisit only if multi-user support is actually needed later). The automation system (Phases 1–6) is feature-complete for single-user use.
 
 ### Open Questions Still to Decide
 - Start with **Naukri/Indeed** (scraping) or also attempt **LinkedIn** (API) later?

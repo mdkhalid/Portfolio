@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Job = require('../models/Job');
 const GeneratedResume = require('../models/GeneratedResume');
 const Application = require('../models/Application');
@@ -6,6 +7,7 @@ const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const { getAIClient } = require('../ai/client');
 const { str } = require('../middleware/validate');
 const { checkAICost, recordAICost } = require('../services/aiCost');
+const { buildTailoredResume } = require('../services/resumeGenerate');
 
 const router = express.Router();
 
@@ -105,6 +107,64 @@ ${(job.description || '').slice(0, 3500)}`;
 
   recordAICost({ userId: req.adminId, purpose: 'cover_letter', jobId }).catch(() => {});
   res.json({ jobId, coverLetter });
+}));
+
+/**
+ * POST /api/resume/generate
+ * Body: { jobId: string } or { jobIds: string[] }
+ * Generates a tailored, ATS-friendly resume per job that merges JD keywords into
+ * the Skills list and weaves the most important ones into the Summary — WITHOUT
+ * changing the resume structure. Persists a GeneratedResume and attaches it to
+ * the job (Job.resumeId) so Auto-Apply reuses it.
+ */
+router.post('/generate', asyncHandler(async (req, res) => {
+  const jobId = str(req.body, 'jobId', { min: 1, max: 100, optional: true });
+  let jobIds = Array.isArray(req.body?.jobIds) ? req.body.jobIds : null;
+  if (!jobId && !jobIds) throw new AppError('jobId or jobIds required', 400, 'MISSING_JOB_IDS');
+  if (jobId && !jobIds) jobIds = [jobId];
+  jobIds = jobIds.slice(0, 20);
+
+  const results = [];
+  for (const id of jobIds) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      results.push({ jobId: id, error: 'invalid_id' });
+      continue;
+    }
+    const job = await Job.findOne({ _id: id, userId: req.adminId }).lean();
+    if (!job) {
+      results.push({ jobId: id, error: 'not_found' });
+      continue;
+    }
+    try {
+      const built = await buildTailoredResume(job, { userId: req.adminId });
+      const app = await Application.findOne({ userId: req.adminId, jobId: job._id })
+        .sort({ createdAt: -1 })
+        .lean();
+      const gen = await GeneratedResume.create({
+        userId: req.adminId,
+        jobId: job._id,
+        applicationId: app?._id || null,
+        content: built.content,
+        pdf: built.pdf,
+        pdfFilename: built.pdfFilename,
+        jdUsed: built.jdUsed,
+        keywordsMatched: built.keywordsMatched,
+        costBucket: new Date().toISOString().slice(0, 10),
+      });
+      await Job.updateOne({ _id: job._id }, { $set: { resumeId: gen._id } });
+      results.push({
+        jobId: job._id,
+        resumeId: gen._id,
+        pdfFilename: built.pdfFilename,
+        keywordsAdded: built.keywordsMatched.length,
+        usedAI: built.usedAI,
+      });
+    } catch (err) {
+      results.push({ jobId: id, error: String(err?.message || 'failed').slice(0, 200) });
+    }
+  }
+
+  res.json({ generated: results.filter((r) => !r.error).length, results });
 }));
 
 // ─── Generated Resume Management (Phase 4) ───────────────────────────────────

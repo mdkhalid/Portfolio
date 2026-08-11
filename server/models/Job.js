@@ -1,6 +1,5 @@
 const mongoose = require('mongoose');
 
-const SITE_ENUM = ['naukri', 'indeed', 'linkedin'];
 const JOB_STATUS = ['new', 'pending', 'applied', 'passed', 'not_applied', 'expired'];
 const APPLIED_VIA = ['system', 'imported', 'manual'];
 
@@ -13,7 +12,7 @@ const jobSchema = new mongoose.Schema(
     salary: { type: String, default: '', maxlength: 200, trim: true },
     description: { type: String, default: '' },
     url: { type: String, default: '', maxlength: 1000 },
-    site: { type: String, enum: SITE_ENUM, required: true },
+    site: { type: String, required: true },
     siteJobId: { type: String, default: '' },
     dedupeKey: { type: String, required: true, maxlength: 64 },
     postedDate: { type: Date, default: null, index: true },
@@ -25,12 +24,18 @@ const jobSchema = new mongoose.Schema(
     appliedAt: { type: Date, default: null },
     appliedVia: { type: String, enum: APPLIED_VIA, default: null },
     status: { type: String, enum: JOB_STATUS, default: 'new' },
+    resumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'GeneratedResume', default: null },
+    // Set when the job could not be auto-submitted (external employer redirect /
+    // custom site) and the user must apply in the browser, then mark applied.
+    needsManualApply: { type: Boolean, default: false },
+    manualApplyReason: { type: String, default: '', maxlength: 500 },
   },
   { timestamps: true }
 );
 
 jobSchema.index({ userId: 1, status: 1 });
 jobSchema.index({ userId: 1, site: 1 });
+jobSchema.index({ userId: 1, needsManualApply: 1 });
 jobSchema.index({ userId: 1, postedDate: 1 });
 // Per-user dedupe uniqueness (dedupeKey alone is globally unique; combine with userId).
 jobSchema.index({ userId: 1, dedupeKey: 1 }, { unique: true });

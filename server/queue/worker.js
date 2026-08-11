@@ -3,18 +3,14 @@ const connectDB = require('../config/db');
 const Application = require('../models/Application');
 const Job = require('../models/Job');
 const GeneratedResume = require('../models/GeneratedResume');
-const Profile = require('../models/Profile');
-const Skill = require('../models/Skill');
-const Experience = require('../models/Experience');
-const Education = require('../models/Education');
-const Certification = require('../models/Certification');
 const UserJobSite = require('../models/UserJobSite');
 const UserSettings = require('../models/UserSettings');
 const { decrypt } = require('../utils/credentials');
 const { getAdapter } = require('../adapters');
-const { getAIClient } = require('../ai/client');
-const { buildResumePdf } = require('../services/resumePdf');
-const { checkAICost, recordAICost } = require('../services/aiCost');
+const { isAutomatedSite } = require('../adapters');
+const { buildTailoredResume } = require('../services/resumeGenerate');
+const { resolveFieldValues, learnFieldValues } = require('../services/applyFields');
+const { notify } = require('../services/notifications');
 const { getQueue } = require('./index');
 
 const STEPS = ['fetch_jd', 'generate_resume', 'prepare_application', 'submit'];
@@ -34,6 +30,16 @@ function setIO(io) {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Decide whether a submit failure means the user must apply in the browser
+ * (external employer redirect, no apply button, non-automated custom site)
+ * vs. a transient error that a retry could fix.
+ */
+function isManualApplyFailure(err) {
+  const msg = String(err?.message || '');
+  return /employer site|redirected to an employer|no apply button|apply manually|complete the application manually|is not automated|no automation/i.test(msg);
+}
 
 const lastSubmitAt = new Map();
 const siteSlots = new Map();
@@ -77,6 +83,44 @@ function emitProgress(application) {
   if (payload.batchId) _io.to('admin-room').emit('apply:batch', payload);
 }
 
+/** Build a short "<title> · <company> · <site>" string from an application + job. */
+function appLabel(app, job) {
+  const title = job?.title || app.jobTitle || 'Job';
+  const parts = [title];
+  if (job?.company) parts.push(job.company);
+  if (job?.site) parts.push(job.site);
+  return parts.join(' · ');
+}
+
+/**
+ * When the last active application of a batch reaches a terminal state, emit a
+ * single batch_complete notification. Terminal = no queued/running/pending apps left.
+ */
+async function maybeNotifyBatchComplete(batchId) {
+  if (!batchId) return;
+  try {
+    const apps = await Application.find({ batchId }).select('userId status').lean();
+    if (!apps.length) return;
+    const nonTerminal = apps.some((a) => ['queued', 'running', 'pending'].includes(a.status));
+    if (nonTerminal) return;
+    const applied = apps.filter((a) => a.status === 'applied').length;
+    const failed = apps.filter((a) => ['failed', 'not_applied'].includes(a.status)).length;
+    const needInput = apps.filter((a) => a.status === 'pending').length;
+    const canceled = apps.filter((a) => a.status === 'canceled').length;
+    await notify({
+      userId: apps[0].userId,
+      type: 'batch_complete',
+      title: 'Apply batch finished',
+      body: `${applied} applied · ${failed} failed · ${needInput} need input · ${canceled} canceled`,
+      metadata: { batchId, applied, failed, needInput, canceled },
+      dedupeKey: `batch-${batchId}`,
+      maxAgeMs: 24 * 60 * 60 * 1000,
+    });
+  } catch (err) {
+    console.error('[worker] batch complete notify failed:', err?.message || err);
+  }
+}
+
 async function markStep(app, key, patch) {
   const application = await Application.findById(app._id).exec();
   if (!application) return;
@@ -97,6 +141,7 @@ async function markStep(app, key, patch) {
     });
   }
   if (patch.status === 'failed') application.status = 'not_applied';
+  if (patch.status === 'waiting_user') application.status = 'pending';
   await application.save();
   // Attach job title for the live progress payload
   const jobDoc = await Job.findById(application.jobId).select('title').lean().catch(() => null);
@@ -155,66 +200,118 @@ async function runStep(applicationId, key) {
     }
 
     case 'generate_resume': {
-      // Build a tailored, ATS-friendly PDF resume from profile data
-      const costCheck = await checkAICost(app.userId, { purpose: 'generate_resume' });
-      if (!costCheck.allowed) {
-        await Application.updateOne(
-          { _id: app._id },
-          { $set: { status: 'not_applied', notAppliedReason: costCheck.reason } }
-        );
-        await markStep(application, key, { status: 'skipped', error: costCheck.reason, finishedAt: new Date() });
-        return { skipped: true };
+      // Prefer a tailored resume already attached to the job (from
+      // POST /api/resume/generate). Fall back to generating one here.
+      if (job.resumeId) {
+        const attached = await GeneratedResume.findById(job.resumeId).lean().catch(() => null);
+        if (attached) {
+          await Application.updateOne({ _id: app._id }, { $set: { resumeId: attached._id } });
+          await markStep(application, key, { status: 'done', finishedAt: new Date() });
+          break;
+        }
       }
 
-      const [profile, skills, experiences, educationList, certList] = await Promise.all([
-        Profile.findOne().lean().catch(() => null),
-        Skill.find().lean().catch(() => []),
-        Experience.find().lean().catch(() => []),
-        Education.find().lean().catch(() => []),
-        Certification.find().lean().catch(() => []),
-      ]);
-
-      const allSkills = skills
-        .flatMap((c) => (Array.isArray(c.items) ? c.items : []))
-        .map((s) => (typeof s === 'string' ? s : s?.name || ''))
-        .filter(Boolean);
-
-      const pdf = await buildResumePdf({
-        name: profile?.name || '',
-        title: profile?.title || job.title,
-        summary: profile?.summary || '',
-        skills: allSkills,
-        experience: experiences.map((e) => ({
-          role: e.role,
-          company: e.company,
-          dates: `${e.startDate || ''} - ${e.endDate || 'Present'}`,
-          points: e.bullets || [],
-        })),
-        education: educationList.map((e) => `${e.degree}${e.field ? ' in ' + e.field : ''} — ${e.institution}`),
-        certifications: certList.map((c) => `${c.name}${c.issuer ? ' (' + c.issuer + ')' : ''}`),
-      });
-
-      const safeTitle = job.title.replace(/[^a-zA-Z0-9-_ ]/g, '').trim().replace(/\s+/g, '-') || 'Resume';
-      const safeCompany = job.company.replace(/[^a-zA-Z0-9-_ ]/g, '').trim().replace(/\s+/g, '-') || 'Company';
-      const pdfFilename = `${safeTitle}_${safeCompany}_resume.pdf`;
+      // Build a tailored, ATS-friendly PDF resume from profile data
+      const built = await buildTailoredResume(job, { userId: app.userId, skipOnBudgetExceeded: true });
+      if (built.aiSkipped) {
+        await Application.updateOne(
+          { _id: app._id },
+          { $set: { status: 'not_applied', notAppliedReason: built.reason } }
+        );
+        await markStep(application, key, { status: 'skipped', error: built.reason, finishedAt: new Date() });
+        notify({
+          userId: app.userId,
+          type: 'ai_budget',
+          title: 'AI budget reached — resume skipped',
+          body: `Resume generation paused for ${appLabel(app, job)}.`,
+          metadata: { applicationId: String(app._id), jobId: String(job._id), jobTitle: job.title, company: job.company },
+          dedupeKey: `ai-budget-app-${app._id}`,
+        }).catch(() => {});
+        return { skipped: true };
+      }
 
       const genResume = await GeneratedResume.create({
         userId: app.userId,
         jobId: job._id,
         applicationId: app._id,
-        content: `ATS Tailored Resume for ${job.title} at ${job.company}\n\nSkills: ${allSkills.join(', ')}`,
-        pdf,
-        pdfFilename,
-        jdUsed: (job.description || job.title).slice(0, 8000),
-        keywordsMatched: job.matchedKeywords || [],
+        content: built.content,
+        pdf: built.pdf,
+        pdfFilename: built.pdfFilename,
+        jdUsed: built.jdUsed,
+        keywordsMatched: built.keywordsMatched,
       });
       await Application.updateOne({ _id: app._id }, { $set: { resumeId: genResume._id } });
-      recordAICost({ userId: app.userId, purpose: 'generate_resume', jobId: job._id }).catch(() => {});
+      await Job.updateOne({ _id: job._id }, { $set: { resumeId: genResume._id } });
       await markStep(application, key, { status: 'done', finishedAt: new Date() });
       break;
     }
 
     case 'prepare_application': {
+      // Already resolved (e.g. user filled fields earlier) → use as-is.
+      const existingFields = app.fieldValues ? Object.fromEntries(app.fieldValues) : {};
+      if (Object.keys(existingFields).length > 0) {
+        await markStep(application, key, { status: 'done', finishedAt: new Date() });
+        break;
+      }
+
+      // Best-effort detect the apply form fields. If detection fails or the
+      // site has no inline form, there is nothing to stage → proceed.
+      let detected = [];
+      const adapter = getAdapter(job.site);
+      if (typeof adapter.detectApplyFields === 'function') {
+        try {
+          detected = await adapter.detectApplyFields({ url: job.url }) || [];
+        } catch (err) {
+          console.error('[worker] prepare_application detect failed:', err?.message || err);
+        }
+      }
+
+      let fieldValues = {};
+      let fieldMeta = {};
+      let waitingFields = [];
+      if (detected.length) {
+        const resolved = await resolveFieldValues({
+          userId: app.userId,
+          site: job.site,
+          detected,
+          jobTitle: job.title,
+        });
+        fieldValues = resolved.fieldValues;
+        fieldMeta = resolved.fieldMeta;
+        waitingFields = resolved.waitingFields;
+      }
+
+      // Stage resolved values on the application for the submit step.
+      await Application.updateOne(
+        { _id: app._id },
+        {
+          $set: {
+            detectedFields: detected,
+            fieldValues,
+            waitingFields,
+          },
+        }
+      );
+
+      if (waitingFields.length) {
+        const needed = waitingFields.map((f) => f.label || f.key).join(', ');
+        await markStep(application, key, {
+          status: 'waiting_user',
+          error: `Needs your attention: ${needed}`,
+          finishedAt: new Date(),
+        });
+        notify({
+          userId: app.userId,
+          type: 'needs_input',
+          title: `Job needs your attention — ${job.title}`,
+          body: `${job.company || job.site} needs input: ${needed}.`,
+          metadata: { applicationId: String(app._id), jobId: String(job._id), jobTitle: job.title, company: job.company },
+          dedupeKey: `needs-input-${app._id}`,
+          maxAgeMs: 7 * 24 * 60 * 60 * 1000,
+        }).catch(() => {});
+        return { waiting: true };
+      }
+
       await markStep(application, key, { status: 'done', finishedAt: new Date() });
       break;
     }
@@ -255,8 +352,33 @@ async function runStep(applicationId, key) {
             credentials: { email: creds?.email, password: creds?.password },
             resume: resume?.pdf || null,
             resumeFilename: resume?.pdfFilename || '',
+            fields: app.fieldValues ? Object.fromEntries(app.fieldValues) : {},
+            detected: app.detectedFields || [],
           });
           if (result?.error) throw new Error(result.error);
+
+          // The adapter didn't throw, but it may report the application was
+          // NOT actually submitted (e.g. needsManualApply, external redirect,
+          // or success indicator missing).  Honour that signal instead of
+          // blindly marking "applied".
+          if (result && result.applied === false) {
+            const reason = result.reason || 'Application could not be confirmed on the site.';
+            // Route into Manual Apply if the adapter says so (YC, custom sites).
+            if (result.needsManualApply) {
+              await Application.updateOne(
+                { _id: applicationId },
+                { $set: { status: 'not_applied', notAppliedReason: reason, needsManualApply: true, manualApplyReason: reason } }
+              );
+              await Job.updateOne(
+                { _id: app.jobId },
+                { $set: { needsManualApply: true, manualApplyReason: reason } }
+              );
+              await markStep(application, key, { status: 'done', finishedAt: new Date() });
+              lastSubmitAt.set(site, Date.now());
+              break; // skip the "mark applied" block below
+            }
+            throw new Error(reason);
+          }
         } else {
           throw new Error(`No submit support for ${site} yet — application not submitted.`);
         }
@@ -265,16 +387,38 @@ async function runStep(applicationId, key) {
         releaseSiteSlot(site);
       }
 
+      // Learn the resolved field values into the knowledge base so future
+      // applications on this site auto-fill (keeps bulk apply automatic).
+      if (app.fieldValues && Object.keys(Object.fromEntries(app.fieldValues)).length) {
+        await learnFieldValues({
+          userId: app.userId,
+          site,
+          fieldValues: Object.fromEntries(app.fieldValues),
+          fieldMeta: (app.detectedFields || []).reduce((acc, f) => {
+            acc[f.key] = { label: f.label, type: f.type, selector: f.selector, options: f.options };
+            return acc;
+          }, {}),
+        }).catch(() => {});
+      }
+
       // Mark applied
       await markStep(application, key, { status: 'done', finishedAt: new Date() });
       await Application.updateOne(
         { _id: applicationId },
-        { $set: { status: 'applied', appliedAt: new Date() } }
+        { $set: { status: 'applied', appliedAt: new Date(), appliedVia: 'system' } }
       );
       await Job.updateOne(
         { _id: app.jobId },
         { $set: { status: 'applied', applied: true, appliedAt: new Date(), appliedVia: 'system' } }
       );
+      notify({
+        userId: app.userId,
+        type: 'apply_success',
+        title: `Applied — ${job.title}`,
+        body: `${job.company || ''}${job.company ? ' · ' : ''}${job.site}`,
+        metadata: { applicationId: String(app._id), jobId: String(job._id), jobTitle: job.title, company: job.company },
+        dedupeKey: `apply-success-${app._id}`,
+      }).catch(() => {});
       break;
     }
 
@@ -318,18 +462,45 @@ async function startWorker() {
     for (const key of STEPS) {
       if (app.status === 'canceled') break;
       try {
-        await runStep(applicationId, key);
+        const result = await runStep(applicationId, key);
+        // Stop the chain when a step needs user input or was skipped —
+        // don't let submit run on a not_applied/pending application.
+        if (result?.waiting || result?.skipped) break;
       } catch (err) {
         const a = await Application.findById(applicationId).exec();
         if (a) {
+          const manualApply = isManualApplyFailure(err);
           await Application.updateOne(
             { _id: applicationId },
-            { $set: { status: 'not_applied', notAppliedReason: String(err?.message || 'site_error').slice(0, 300) } }
+            { $set: {
+                status: 'not_applied',
+                notAppliedReason: String(err?.message || 'site_error').slice(0, 300),
+                needsManualApply: manualApply,
+                manualApplyReason: manualApply ? String(err?.message || '').slice(0, 500) : '',
+              } }
           );
+          // Route the job into the Manual Apply list so the user can finish in
+          // the browser (external employer redirect / no automation for site).
+          if (a.jobId && manualApply) {
+            await Job.updateOne(
+              { _id: a.jobId },
+              { $set: { needsManualApply: true, manualApplyReason: String(err?.message || 'Apply manually.').slice(0, 500) } }
+            );
+          }
+          const jobDoc = a.jobId ? await Job.findById(a.jobId).select('title company site').lean().catch(() => null) : null;
+          notify({
+            userId: a.userId,
+            type: 'apply_failed',
+            title: `Apply failed — ${jobDoc?.title || 'job'}`,
+            body: String(err?.message || 'site_error').slice(0, 200),
+            metadata: { applicationId: String(a._id), jobId: a.jobId ? String(a.jobId) : '', jobTitle: jobDoc?.title || '', company: jobDoc?.company },
+            dedupeKey: `apply-failed-${applicationId}`,
+          }).catch(() => {});
         }
         throw err;
       }
     }
+    await maybeNotifyBatchComplete(app.batchId || '');
     return { done: true };
   });
 
@@ -343,4 +514,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { startWorker, setIO };
+module.exports = { startWorker, setIO, maybeNotifyBatchComplete };

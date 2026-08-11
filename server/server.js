@@ -133,6 +133,10 @@ app.get('/api/activity', auth, require('./routes/activity').getRecent);
 
 app.use('/api/job-sites', auth, csrfProtection, jobSiteLimiter, require('./routes/job-sites'));
 app.get('/api/jobs', auth, require('./routes/jobs').list);
+app.get('/api/jobs/manual', auth, require('./routes/jobs').manualList);
+app.post('/api/jobs/manual', auth, csrfProtection, require('./routes/jobs').manualCreate);
+app.post('/api/jobs/:id/mark-applied', auth, csrfProtection, require('./routes/jobs').manualMarkApplied);
+app.put('/api/jobs/:id/mark-pass', auth, csrfProtection, require('./routes/jobs').manualMarkPass);
 app.post('/api/jobs/fetch', auth, csrfProtection, jobFetchLimiter, require('./routes/jobs').fetch);
 app.post('/api/jobs/match', auth, csrfProtection, jobFetchLimiter, require('./routes/jobs').match);
 app.put('/api/jobs/:id', auth, csrfProtection, require('./routes/jobs').update);
@@ -141,8 +145,13 @@ app.get('/api/jobs/apply/batch/:batchId', auth, require('./routes/jobs').getBatc
 app.post('/api/jobs/apply/batch/:batchId/cancel', auth, csrfProtection, require('./routes/jobs').cancelBatch);
 app.post('/api/applications/:id/cancel', auth, csrfProtection, require('./routes/jobs').cancelApplication);
 app.get('/api/applications/:id/progress', auth, require('./routes/jobs').getApplicationProgress);
+app.get('/api/applications', auth, require('./routes/jobs').listApplications);
+app.put('/api/applications/:id', auth, csrfProtection, require('./routes/jobs').updateApplication);
+app.post('/api/applications/:id/retry', auth, csrfProtection, require('./routes/jobs').retryApplication);
+app.post('/api/applications/:id/answers', auth, csrfProtection, require('./routes/jobs').submitApplicationAnswers);
 app.use('/api/resume', auth, csrfProtection, require('./routes/resume-ai'));
 app.use('/api/pipeline', auth, csrfProtection, require('./routes/pipeline'));
+app.use('/api/notifications', auth, csrfProtection, require('./routes/notifications'));
 
 app.use('/api/upload', auth, csrfProtection, require('./routes/upload'));
 app.use('/api/resume-files', auth, csrfProtection, require('./routes/upload-resume'));
@@ -199,17 +208,22 @@ module.exports = app;
 if (require.main === module) {
   const PORT = env.PORT;
   const server = http.createServer(app);
-  setupSocket(server);
 
   // Start the async apply-pipeline worker (Bull/Redis queue) in-process.
   if (env.NODE_ENV !== 'test') {
     const { startWorker, setIO } = require('./queue/worker');
+    const notifications = require('./services/notifications');
     const { setupSocket: socketSetup } = require('./socket');
     setIO({ io: null }); // placeholder; real io wired after setup
-    setupSocket(server, setIO);
+    setupSocket(server, (io) => {
+      setIO(io);
+      notifications.setIO(io);
+    });
     startWorker().catch((err) => console.error('[worker] failed to start:', err.message));
     const { startScheduler } = require('./queue/scheduler');
     startScheduler();
+  } else {
+    setupSocket(server);
   }
 
   server.listen(PORT, () =>

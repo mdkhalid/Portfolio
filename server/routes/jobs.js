@@ -12,7 +12,7 @@ const Activity = require('../models/Activity');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const { strArray, str, int } = require('../middleware/validate');
 const { decrypt } = require('../utils/credentials');
-const { getAdapter, SITE_META } = require('../adapters');
+const { getAdapter, SITE_META, isAutomatedSite } = require('../adapters');
 const { buildDedupeKey, parsePostedDate } = require('../services/jobDedupe');
 const { getAIClient } = require('../ai/client');
 const { sanitizeForAI } = require('../utils/security');
@@ -51,6 +51,10 @@ function applyBlocklist(jobs, blocklist) {
 async function fetchFromSite({ userId, site, location = '', pageCount = 1, maxJobs = 50 }) {
   const doc = await UserJobSite.findOne({ userId, name: site }).select('+credentials +cookies').lean();
   if (!doc || !doc.enabled) return { site, count: 0, created: 0, updated: 0, skipped: 0 };
+  if (!isAutomatedSite(site)) {
+    // Custom sites have no search automation; jobs are added manually.
+    return { site, count: 0, created: 0, updated: 0, skipped: 0, manualOnly: true };
+  }
   const creds = doc.credentials ? decrypt(doc.credentials) : null;
   const cookieHeader = doc.cookies ? decrypt(doc.cookies)?.value : null;
   const settings = await UserSettings.findOne({ userId }).lean();
@@ -142,7 +146,7 @@ exports.fetch = asyncHandler(async (req, res) => {
     throw new AppError('Add a profile title or skills first so we know what to search for.', 400, 'NO_KEYWORDS');
   }
 
-  const results = { sites: [], total: 0, created: 0, updated: 0, skipped: 0, errors: [] };
+  const results = { sites: [], total: 0, created: 0, updated: 0, skipped: 0, manualOnly: [], errors: [] };
 
   for (const site of enabledNames) {
     try {
@@ -152,6 +156,7 @@ exports.fetch = asyncHandler(async (req, res) => {
       results.created += outcome.created;
       results.updated += outcome.updated;
       results.skipped += outcome.skipped;
+      if (outcome.manualOnly) results.manualOnly.push(site);
     } catch (err) {
       results.errors.push({ site, error: err.message || 'Fetch failed' });
     }
@@ -176,6 +181,11 @@ exports.list = asyncHandler(async (req, res) => {
   if (site) filter.site = site;
   const status = req.query.status;
   if (status) filter.status = status;
+  const manual = req.query.manual;
+  if (manual === '1' || manual === 'true') {
+    filter.needsManualApply = true;
+    filter.status = { $in: ['new', 'not_applied', 'pending'] };
+  }
   const age = req.query.age; // 24h | 3d | 7d | 14d
   if (age) {
     const hours = { '24h': 24, '3d': 72, '7d': 168, '14d': 336 }[age];
@@ -278,7 +288,7 @@ exports.match = asyncHandler(async (req, res) => {
             const creds = siteDoc?.credentials ? decrypt(siteDoc.credentials) : null;
             const cookieHeader = siteDoc?.cookies ? decrypt(siteDoc.cookies)?.value : null;
             try {
-              if (cookieHeader) await adapter.login({ cookies: cookieHeader, cookieOrigin: job.url });
+              if (cookieHeader) await adapter.login({ cookies: cookieHeader, cookieOrigin: SITE_META[job.site]?.homeUrl || job.url });
               else if (creds?.email && creds?.password) await adapter.login({ email: creds.email, password: creds.password });
               fetched = await tryFetch();
             } catch (e) {
@@ -376,7 +386,7 @@ async function getUploadedResumeText() {
     if (!fs.existsSync(fullPath)) return '';
 
     const dataBuffer = fs.readFileSync(fullPath);
-    const parser = new PDFParse({ data: dataBuffer });
+    const parser = new PDFParse({ data: dataBuffer, verbosity: 0 });
     const parsed = await parser.getText();
     parser.destroy();
 
@@ -437,9 +447,8 @@ async function fallbackMatch(job, profileText) {
   const matched = uniqueJdWords.filter(w => profileLower.includes(w));
   const missing = uniqueJdWords.filter(w => !profileLower.includes(w));
   
-  // Calculate percentage, floor at 75% for experienced matches
-  const ratio = uniqueJdWords.length > 0 ? (matched.length / uniqueJdWords.length) : 0.8;
-  const score = Math.max(75, Math.min(95, Math.round(ratio * 100 + 35)));
+  const ratio = uniqueJdWords.length > 0 ? (matched.length / uniqueJdWords.length) : 0;
+  const score = Math.round(ratio * 100);
 
   return {
     jobId: job._id,
@@ -471,12 +480,164 @@ exports.update = asyncHandler(async (req, res) => {
   }
 
   const updated = await Job.findByIdAndUpdate(id, { $set: updates }, { new: true }).lean();
+
+  // Keep the Tracking tab unified: manual apply/pass also surfaces as an
+  // Application record so it appears alongside system/imported applications.
+  if (req.body.status === 'applied' || req.body.status === 'passed') {
+    const existing = await Application.findOne({ userId: req.adminId, jobId: id }).sort({ createdAt: -1 }).lean();
+    if (existing) {
+      if (req.body.status === 'applied' && existing.status !== 'applied') {
+        await Application.updateOne(
+          { _id: existing._id },
+          { $set: { status: 'applied', appliedAt: new Date(), appliedVia: 'manual' } }
+        );
+      }
+    } else {
+      await Application.create({
+        userId: req.adminId,
+        jobId: id,
+        site: job.site,
+        status: req.body.status,
+        appliedAt: req.body.status === 'applied' ? new Date() : null,
+        appliedVia: 'manual',
+        timeline: [{ event: req.body.status === 'applied' ? 'Marked as applied (manual)' : 'Marked as passed (manual)' }],
+      });
+    }
+  }
+
   res.json(updated);
 });
 
-// ─── Phase 3: Apply Pipeline ─────────────────────────────────────────────────
+// ─── Manual Apply ────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/jobs/manual — jobs that need the user to apply in the browser
+ * (external employer redirects, custom sites with no automation).
+ */
+exports.manualList = asyncHandler(async (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+  const filter = { userId: req.adminId, needsManualApply: true };
+
+  const status = String(req.query.status || '');
+  if (status) {
+    const valid = ['new', 'not_applied', 'pending'];
+    if (!valid.includes(status)) throw new AppError('Invalid status filter', 400, 'INVALID_STATUS');
+    filter.status = status;
+  }
+  const site = String(req.query.site || '');
+  if (site) filter.site = site;
+
+  const [total, items] = await Promise.all([
+    Job.countDocuments(filter),
+    Job.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean(),
+  ]);
+  res.json({ items, total, page, pages: Math.ceil(total / limit) });
+});
+
+/**
+ * POST /api/jobs/manual — add a job by hand for a custom/manual site.
+ * Body: { title, company, url, site, location? }. Dedupes on url+title.
+ */
+exports.manualCreate = asyncHandler(async (req, res) => {
+  const title = str(req.body, 'title', { min: 2, max: 200 });
+  const company = str(req.body, 'company', { min: 1, max: 200 });
+  const url = str(req.body, 'url', { min: 8, max: 1000 });
+  const site = str(req.body, 'site', { min: 1, max: 50 }).toLowerCase();
+  const location = str(req.body, 'location', { max: 200, optional: true }) || '';
+
+  const siteDoc = await UserJobSite.findOne({ userId: req.adminId, name: site }).lean();
+  if (!siteDoc) throw new AppError('Unknown site. Add it in the Job Sites tab first.', 400, 'INVALID_SITE');
+
+  const dedupeKey = buildDedupeKey({ title, company, location });
+  const existing = await Job.findOne({ userId: req.adminId, dedupeKey }).lean();
+  if (existing) {
+    // Re-flag an already-tracked job so it reappears in the Manual Apply list.
+    await Job.updateOne({ _id: existing._id }, { $set: { needsManualApply: true, manualApplyReason: 'Added manually', status: 'new' } });
+    return res.json({ job: existing, duplicate: true });
+  }
+
+  const job = await Job.create({
+    userId: req.adminId,
+    title,
+    company,
+    location,
+    url,
+    site,
+    siteJobId: '',
+    dedupeKey,
+    postedDate: new Date(),
+    lastSeenAt: new Date(),
+    status: 'new',
+    needsManualApply: true,
+    manualApplyReason: 'Added manually',
+  });
+  res.status(201).json({ job });
+});
+
+/** POST /api/jobs/:id/mark-applied — user finished applying in the browser. */
+exports.manualMarkApplied = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const job = await Job.findOneAndUpdate(
+    { _id: id, userId: req.adminId },
+    {
+      $set: {
+        status: 'applied',
+        applied: true,
+        appliedAt: new Date(),
+        appliedVia: 'manual',
+        needsManualApply: false,
+        manualApplyReason: '',
+      },
+    },
+    { new: true }
+  ).lean();
+  if (!job) throw new AppError('Job not found', 404, 'NOT_FOUND');
+
+  const existingApp = await Application.findOne({ userId: req.adminId, jobId: id }).sort({ createdAt: -1 }).lean();
+  if (existingApp) {
+    await Application.updateOne(
+      { _id: existingApp._id },
+      { $set: { status: 'applied', appliedAt: new Date(), appliedVia: 'manual', needsManualApply: false } }
+    );
+  } else {
+    await Application.create({
+      userId: req.adminId,
+      jobId: id,
+      site: job.site,
+      status: 'applied',
+      appliedAt: new Date(),
+      appliedVia: 'manual',
+      needsManualApply: false,
+      timeline: [{ event: 'Marked as applied (manual)' }],
+    });
+  }
+
+  res.json(job);
+});
+
+/** PUT /api/jobs/:id/mark-pass — user chose not to apply. */
+exports.manualMarkPass = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const job = await Job.findOneAndUpdate(
+    { _id: id, userId: req.adminId },
+    { $set: { status: 'passed', needsManualApply: false, manualApplyReason: '' } },
+    { new: true }
+  ).lean();
+  if (!job) throw new AppError('Job not found', 404, 'NOT_FOUND');
+  const existingApp = await Application.findOne({ userId: req.adminId, jobId: id }).sort({ createdAt: -1 }).lean();
+  if (existingApp) {
+    await Application.updateOne({ _id: existingApp._id }, { $set: { status: 'passed', needsManualApply: false } });
+  }
+  res.json(job);
+});
 
 const Application = require('../models/Application');
+const ApplyField = require('../models/ApplyField');
 const crypto = require('crypto');
 const { getQueue } = require('../queue');
 const { checkAICost, recordAICost } = require('../services/aiCost');
@@ -507,8 +668,20 @@ exports.apply = asyncHandler(async (req, res) => {
   const batchId = crypto.randomUUID();
   const queue = await getQueue();
   const enqueued = [];
+  const manual = [];
 
   for (const job of jobs.slice(0, maxBatch)) {
+    // Jobs on custom sites (or otherwise flagged manual) have no automation:
+    // flag them for manual apply instead of queueing a doomed auto-run.
+    if (job.needsManualApply || !isAutomatedSite(job.site)) {
+      await Job.updateOne(
+        { _id: job._id },
+        { $set: { needsManualApply: true, manualApplyReason: job.manualApplyReason || 'No automation for this site — apply manually.' } }
+      );
+      manual.push(job._id);
+      continue;
+    }
+
     const existing = await Application.findOne({
       userId: req.adminId,
       jobId: job._id,
@@ -523,6 +696,15 @@ exports.apply = asyncHandler(async (req, res) => {
       batchId,
       status: 'queued',
       timeline: [{ event: 'Application queued', details: `Batch ${batchId}` }],
+      progress: {
+        currentStep: '',
+        steps: [
+          { key: 'fetch_jd', label: 'Fetching job description', status: 'queued' },
+          { key: 'generate_resume', label: 'Preparing ATS-friendly resume', status: 'queued' },
+          { key: 'prepare_application', label: 'Filling standard profile fields', status: 'queued' },
+          { key: 'submit', label: 'Submitting application', status: 'queued' },
+        ],
+      },
     });
 
     await queue.add('apply', { applicationId: app._id, batchId }, {
@@ -538,8 +720,14 @@ exports.apply = asyncHandler(async (req, res) => {
   res.json({
     batchId,
     queued: enqueued.length,
-    skipped: jobIds.length - enqueued.length,
-    note: enqueued.length ? 'Applications queued. Watch the Progress panel for live updates.' : 'All selected jobs were already queued/running/pending.',
+    skipped: jobIds.length - enqueued.length - manual.length,
+    manual: manual.length,
+    manualJobIds: manual,
+    note: manual.length
+      ? `${manual.length} job(s) need manual application — added to the Manual Apply list.`
+      : enqueued.length
+        ? 'Applications queued. Watch the Progress panel for live updates.'
+        : 'All selected jobs were already queued/running/pending or need manual apply.',
   });
 });
 
@@ -579,4 +767,224 @@ exports.getApplicationProgress = asyncHandler(async (req, res) => {
     .lean();
   if (!app) throw new AppError('Application not found', 404, 'NOT_FOUND');
   res.json(app);
+});
+
+// ─── Phase 5: Application Tracking & Status Management ─────────────────────────
+
+const TRACKING_STATUSES = [
+  'queued', 'running', 'applied', 'pending', 'failed', 'passed', 'canceled', 'not_applied',
+];
+const NOT_APPLIED_REASONS = [
+  'job_expired', 'login_failed', 'site_error', 'missing_info',
+  'location_mismatch', 'salary_mismatch', 'blocked_or_captcha', 'manual_skip', 'other',
+];
+
+/** GET /api/applications — paginated, filterable application list for Tracking. */
+exports.listApplications = asyncHandler(async (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+  const filter = { userId: req.adminId };
+
+  const site = String(req.query.site || '');
+  if (site) filter.site = site;
+  const status = String(req.query.status || '');
+  if (status) {
+    if (!TRACKING_STATUSES.includes(status)) throw new AppError('Invalid status filter', 400, 'INVALID_STATUS');
+    filter.status = status;
+  }
+  const via = String(req.query.via || '');
+  if (via) filter.appliedVia = via;
+  const from = req.query.from;
+  if (from) filter.appliedAt = { $gte: new Date(from) };
+  const to = req.query.to;
+  if (to) {
+    if (!filter.appliedAt) filter.appliedAt = {};
+    filter.appliedAt.$lte = new Date(to);
+  }
+
+  const [total, items] = await Promise.all([
+    Application.countDocuments(filter),
+    Application.find(filter)
+      .populate('jobId', 'title company location site url matchScore resumeId')
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean(),
+  ]);
+  res.json({ items, total, page, pages: Math.ceil(total / limit) });
+});
+
+/** PUT /api/applications/:id — update an application status (e.g. pending → applied). */
+exports.updateApplication = asyncHandler(async (req, res) => {
+  const app = await Application.findOne({ _id: req.params.id, userId: req.adminId });
+  if (!app) throw new AppError('Application not found', 404, 'NOT_FOUND');
+
+  const { status, lastAction } = req.body;
+  const patch = {};
+  if (status !== undefined) {
+    if (!TRACKING_STATUSES.includes(status)) throw new AppError('Invalid status', 400, 'INVALID_STATUS');
+    patch.status = status;
+    if (status === 'applied') patch.appliedAt = new Date();
+  }
+  if (lastAction !== undefined && lastAction !== null && lastAction !== '') {
+    patch.lastAction = String(lastAction).slice(0, 500);
+  }
+
+  const timelineEvents = [];
+  if (status !== undefined) {
+    timelineEvents.push({ event: `Status updated to ${status}`, details: patch.lastAction || '' });
+  }
+  if (lastAction && lastAction !== app.lastAction) {
+    timelineEvents.push({ event: String(lastAction).slice(0, 200) });
+  }
+
+  const update = timelineEvents.length
+    ? { $set: patch, $push: { timeline: { $each: timelineEvents } } }
+    : { $set: patch };
+
+  const updated = await Application.findByIdAndUpdate(app._id, update, { new: true })
+    .populate('jobId', 'title company site')
+    .lean();
+  if (!updated) throw new AppError('Application not found', 404, 'NOT_FOUND');
+
+  // Keep the Job in sync when an application is marked applied.
+  if (status === 'applied') {
+    await Job.updateOne(
+      { _id: app.jobId },
+      { $set: { status: 'applied', applied: true, appliedAt: new Date(), appliedVia: updated.appliedVia || 'manual' } }
+    );
+  }
+  res.json(updated);
+});
+
+/** POST /api/applications/:id/retry — requeue a failed/not_applied/canceled application. */
+exports.retryApplication = asyncHandler(async (req, res) => {
+  const app = await Application.findOne({ _id: req.params.id, userId: req.adminId });
+  if (!app) throw new AppError('Application not found', 404, 'NOT_FOUND');
+  if (!['failed', 'not_applied', 'canceled'].includes(app.status)) {
+    throw new AppError('Only failed, not_applied, or canceled applications can be retried', 400, 'INVALID_STATUS');
+  }
+  const job = await Job.findById(app.jobId).lean();
+  if (!job) throw new AppError('Job not found', 404, 'NOT_FOUND');
+  if (job.status === 'expired') {
+    throw new AppError('Job has expired and cannot be retried', 400, 'JOB_EXPIRED');
+  }
+  if (job.status === 'applied') {
+    throw new AppError('Job is already applied and cannot be retried', 400, 'ALREADY_APPLIED');
+  }
+
+  const settings = await UserSettings.findOne({ userId: req.adminId }).lean();
+  if (settings?.pipelinePaused) {
+    throw new AppError('Pipeline is paused. Resume it in settings before retrying.', 409, 'PIPELINE_PAUSED');
+  }
+
+  const batchId = crypto.randomUUID();
+  app.status = 'queued';
+  app.batchId = batchId;
+  app.notAppliedReason = null;
+  app.progress = {
+    currentStep: '',
+    steps: [],
+    attempts: (app.progress?.attempts || 0) + 1,
+  };
+  app.timeline.push({ event: 'Retry queued', details: `Batch ${batchId}` });
+  await app.save();
+
+  const queue = await getQueue();
+  await queue.add('apply', { applicationId: app._id, batchId }, {
+    jobId: String(app._id),
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5000 },
+    removeOnComplete: true,
+    removeOnFail: false,
+  });
+  res.json({ message: 'Application requeued for retry', application: app });
+});
+
+/**
+ * POST /api/applications/:id/answers
+ * Body: { fields: { key: value }, maybeMore?: boolean }
+ * Saves user-provided values for a pending application's waiting fields,
+ * learns them into the ApplyField knowledge base (so future applications
+ * auto-fill), then automatically requeues the application to resume and
+ * submit — no further manual action needed.
+ */
+exports.submitApplicationAnswers = asyncHandler(async (req, res) => {
+  const app = await Application.findOne({ _id: req.params.id, userId: req.adminId });
+  if (!app) throw new AppError('Application not found', 404, 'NOT_FOUND');
+  if (app.status !== 'pending') {
+    throw new AppError('Only pending applications awaiting user input can be answered', 400, 'INVALID_STATUS');
+  }
+
+  const fields = req.body?.fields;
+  if (!fields || typeof fields !== 'object' || Array.isArray(fields)) {
+    throw new AppError('fields object required', 400, 'MISSING_FIELDS');
+  }
+  const sanitized = {};
+  for (const [k, v] of Object.entries(fields)) {
+    const key = String(k).replace(/[^a-zA-Z0-9_]/g, '').slice(0, 80);
+    const value = String(v ?? '').trim().slice(0, 2000);
+    if (key && value) sanitized[key] = value;
+  }
+  if (!Object.keys(sanitized).length) {
+    throw new AppError('Provide at least one field value', 400, 'EMPTY_FIELDS');
+  }
+
+  // Merge into fieldValues and keep remaining waiting fields that were not
+  // answered (in case the user wants to skip some).
+  const merged = new Map(app.fieldValues || new Map());
+  for (const [k, v] of Object.entries(sanitized)) merged.set(k, v);
+  const answeredKeys = new Set(Object.keys(sanitized));
+  const remainingWaiting = (app.waitingFields || []).filter((f) => !answeredKeys.has(f.key));
+
+  // Learn each answer for future automatic applications on this site.
+  const site = app.site;
+  const metaByKey = (app.detectedFields || []).reduce((acc, f) => {
+    acc[f.key] = { label: f.label, type: f.type, selector: f.selector, options: f.options };
+    return acc;
+  }, {});
+  for (const [k, v] of Object.entries(sanitized)) {
+    const meta = metaByKey[k] || {};
+    await ApplyField.updateOne(
+      { userId: req.adminId, site, key: k },
+      {
+        $set: { label: meta.label || '', type: meta.type || 'text', selector: meta.selector || '', options: meta.options || [], value: v, source: 'user' },
+        $inc: { timesUsed: 1 },
+      },
+      { upsert: true }
+    ).catch(() => {});
+  }
+
+  const newBatchId = crypto.randomUUID();
+  app.status = 'queued';
+  app.batchId = newBatchId;
+  app.fieldValues = merged;
+  app.waitingFields = remainingWaiting;
+  app.progress = {
+    currentStep: '',
+    steps: [],
+    attempts: (app.progress?.attempts || 0) + 1,
+  };
+  app.timeline.push({
+    event: 'User filled additional details',
+    details: `Answers provided: ${Object.keys(sanitized).join(', ')}. Application resumed automatically.`,
+  });
+  await app.save();
+
+  const queue = await getQueue();
+  await queue.add('apply', { applicationId: app._id, batchId: newBatchId }, {
+    jobId: String(app._id),
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5000 },
+    removeOnComplete: true,
+    removeOnFail: false,
+  });
+
+  res.json({
+    message: remainingWaiting.length
+      ? 'Answers saved. Application resumed — some fields still need attention.'
+      : 'Answers saved. Application resumed and submitting automatically.',
+    stillWaiting: remainingWaiting.length,
+    application: app,
+  });
 });

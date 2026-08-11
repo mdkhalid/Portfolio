@@ -1,7 +1,14 @@
 let _browserPromise = null;
 let _puppeteer = null;
 
-const LAUNCH_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--lang=en-US'];
+const LAUNCH_ARGS = [
+  '--no-sandbox',
+  '--disable-setuid-sandbox',
+  '--disable-dev-shm-usage',
+  '--lang=en-US',
+  '--disable-blink-features=AutomationControlled',
+  '--disable-features=IsolateOrigins,site-per-process',
+];
 
 async function getBrowser() {
   if (!_browserPromise) {
@@ -26,8 +33,14 @@ async function newPage() {
   const browser = await getBrowser();
   const page = await browser.newPage();
   await page.setUserAgent(
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'
   );
+  // Remove webdriver flag so sites can't detect Puppeteer.
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    // Remove Puppeteer-specific properties
+    delete navigator.__proto__.webdriver;
+  });
   return page;
 }
 
@@ -129,6 +142,10 @@ async function closeBrowser() {
  * Injects the cookies for `originUrl`, loads the site, and returns whether
  * `checkLoggedIn(page)` reports an active session. `checkLoggedIn` defaults
  * to true once cookies are injected (best-effort).
+ *
+ * If `checkLoggedIn` throws, the error is rethrown so callers can surface the
+ * specific reason (e.g. "redirected to auth page") instead of a generic
+ * "did not authenticate" message.
  */
 async function loginWithCookies(page, cookieHeader, originUrl, checkLoggedIn) {
   const set = await setCookiesFromHeader(page, cookieHeader, originUrl);
@@ -138,7 +155,8 @@ async function loginWithCookies(page, cookieHeader, originUrl, checkLoggedIn) {
   if (typeof checkLoggedIn !== 'function') return true;
   try {
     return Boolean(await checkLoggedIn(page));
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && /(auth page|login page|login form|cookie was not accepted)/i.test(err.message)) throw err;
     return false;
   }
 }

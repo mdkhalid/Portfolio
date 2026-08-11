@@ -1,11 +1,13 @@
 const mongoose = require('mongoose');
 
-const SITE_ENUM = ['naukri', 'indeed', 'linkedin'];
-
 const userJobSiteSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    name: { type: String, enum: SITE_ENUM, required: true },
+    name: { type: String, required: true, maxlength: 50 },
+    // Custom (user-added) sites get a display label + base URL; built-ins use SITE_META.
+    label: { type: String, default: '', maxlength: 100 },
+    baseUrl: { type: String, default: '', maxlength: 500 },
+    custom: { type: Boolean, default: false },
     enabled: { type: Boolean, default: false },
     // Encrypted credentials / session data; never selected by default.
     credentials: { type: mongoose.Schema.Types.Mixed, select: false, default: null },

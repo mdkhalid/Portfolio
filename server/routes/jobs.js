@@ -779,6 +779,40 @@ const NOT_APPLIED_REASONS = [
   'location_mismatch', 'salary_mismatch', 'blocked_or_captcha', 'manual_skip', 'other',
 ];
 
+/**
+ * GET /api/applications/active
+ * Applications currently being worked (queued / running / pending) — used by
+ * the UI to rebuild the live progress panel after a refresh or reconnect.
+ */
+exports.activeApplications = asyncHandler(async (req, res) => {
+  const apps = await Application.find({
+    userId: req.adminId,
+    status: { $in: ['queued', 'running', 'pending'] },
+  })
+    .populate('jobId', 'title company site')
+    .sort({ createdAt: 1 })
+    .limit(100)
+    .lean();
+
+  res.json({
+    items: apps.map((a) => ({
+      applicationId: String(a._id),
+      jobId: a.jobId ? String(a.jobId._id || a.jobId) : '',
+      batchId: a.batchId || '',
+      status: a.status,
+      jobTitle: a.jobId?.title || '',
+      lastAction: a.lastAction || '',
+      currentStep: a.progress?.currentStep || '',
+      steps: (a.progress?.steps || []).map((s) => ({
+        key: s.key,
+        label: s.label,
+        status: s.status,
+        error: s.error || '',
+      })),
+    })),
+  });
+});
+
 /** GET /api/applications — paginated, filterable application list for Tracking. */
 exports.listApplications = asyncHandler(async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);

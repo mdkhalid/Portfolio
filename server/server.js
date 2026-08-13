@@ -146,6 +146,7 @@ app.post('/api/jobs/apply/batch/:batchId/cancel', auth, csrfProtection, require(
 app.post('/api/applications/:id/cancel', auth, csrfProtection, require('./routes/jobs').cancelApplication);
 app.get('/api/applications/:id/progress', auth, require('./routes/jobs').getApplicationProgress);
 app.get('/api/applications', auth, require('./routes/jobs').listApplications);
+app.get('/api/applications/active', auth, require('./routes/jobs').activeApplications);
 app.put('/api/applications/:id', auth, csrfProtection, require('./routes/jobs').updateApplication);
 app.post('/api/applications/:id/retry', auth, csrfProtection, require('./routes/jobs').retryApplication);
 app.post('/api/applications/:id/answers', auth, csrfProtection, require('./routes/jobs').submitApplicationAnswers);

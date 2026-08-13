@@ -1,4 +1,4 @@
-const { withPage, safeText, delay, loginWithCookies } = require('./browser');
+const { withPage, safeText, delay, loginWithCookies, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied } = require('./browser');
 const { detectApplyFormFields, fillFields } = require('../services/applyFields');
 
 const BASE = 'https://www.indeed.com';
@@ -130,11 +130,10 @@ async function detectApplyFields({ url }) {
 
 /**
  * Submit an application for an Indeed job.
- * Opens the job page, clicks the primary Apply button, fills any detected
- * apply-form fields from the resolved `fields` map, then confirms.
- * Indeed apply often routes through employer sites / SSO; when that happens we
- * throw a structured error so the worker marks the application not_applied
- * instead of silently pretending success.
+ * Opens the job page, clicks the primary Apply button, walks the apply wizard
+ * (Continue/Next → resume upload → Submit), and confirms. External employer
+ * redirects throw so the worker routes the job to Manual Apply.
+ * Returns { ok: true, applied } or throws a structured error.
  */
 async function submitApplication({ url, credentials, resume, resumeFilename, fields, detected }) {
   if (!url) throw new Error('Missing job URL');
@@ -155,40 +154,29 @@ async function submitApplication({ url, credentials, resume, resumeFilename, fie
     ]);
     await delay(3500);
 
-    // Auto-fill the detected apply-form fields (best-effort; skips missing ones).
-    if (fields && detected?.length) {
-      await fillFields(page, fields, detected).catch(() => {});
-      await delay(500);
-    }
-
     // External employer application — can't be automated beyond the click.
     const urlNow = page.url();
     if (!urlNow.includes('indeed.com')) {
       throw new Error('Indeed redirected to an employer site — complete the application manually.');
     }
 
-    const confirmBtn = await page.$('button[data-testid="form-submit"], button[type="submit"], button[class*="submit"]');
-    if (confirmBtn) {
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
-        confirmBtn.click(),
-      ]);
-      await delay(1500);
+    // Walk the Indeed apply wizard: fill fields, upload resume, click Continue/Next/Submit.
+    for (let i = 0; i < 6; i++) {
+      if (fields && detected?.length) {
+        await fillFields(page, fields, detected).catch(() => {});
+      }
+      if (resume) {
+        await uploadResumeFile(page, resume, resumeFilename).catch(() => {});
+      }
+      const clicked = await clickButtonByText(page, ['continue', 'next', 'submit application', 'submit', 'save and continue']);
+      if (!clicked) break;
+      await delay(1800);
     }
 
-    // Check if the Apply button is still visible — if so, the application
-    // was NOT actually submitted (form rejected, validation error, etc.).
-    const stillHasApply = await page.$('button[data-testid="applyButton"], #indeedApplyButton, button[class*="apply"]').catch(() => null);
-    if (stillHasApply) {
-      return { ok: true, applied: false, via: 'submitApplication' };
-    }
-
-    // Look for explicit success text instead of broad class selectors.
-    const hasSuccessText = await page.evaluate(() => {
-      const body = (document.body && document.body.innerText) || '';
-      return /thank you for applying|application submitted|successfully applied|applied successfully|your application has been sent/i.test(body.slice(0, 5000));
-    });
-    return { ok: true, applied: hasSuccessText, via: 'submitApplication' };
+    // Verify the application actually went through — Indeed replaces the apply
+    // button with success text or disables it on the modal.
+    const state = await readApplyState(page, 'button[data-testid="applyButton"], #indeedApplyButton, button[class*="apply"]');
+    return { ok: true, ...confirmApplied(state), via: 'submitApplication' };
   });
 }
 

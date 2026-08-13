@@ -1,5 +1,8 @@
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env'), quiet: true });
+// override: true makes the .env file the single source of truth, so a stale
+// OS-level environment variable (e.g. an old OPENAI_API_KEY) can never shadow
+// the value configured in .env.
+require('dotenv').config({ path: path.resolve(__dirname, '..', '.env'), override: true, quiet: true });
 
 const required = (name) => {
   const v = process.env[name];

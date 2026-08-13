@@ -161,4 +161,102 @@ async function loginWithCookies(page, cookieHeader, originUrl, checkLoggedIn) {
   }
 }
 
-module.exports = { getBrowser, newPage, withPage, safeText, safeAttr, delay, setCookiesFromHeader, loginWithCookies, closeBrowser };
+/**
+ * Upload a resume (Buffer) into a visible or hidden file input on the page.
+ * Writes the bytes to a temp file, uploads via Puppeteer's uploadFile (which
+ * bypasses the file chooser dialog), then cleans up. Returns true on success.
+ */
+async function uploadResumeFile(page, resumeBuffer, filename = 'resume.pdf') {
+  if (!resumeBuffer) return false;
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  let tempPath = '';
+  try {
+    const safe = String(filename || 'resume.pdf').replace(/[^\w.\-]/g, '_').slice(-80) || 'resume.pdf';
+    tempPath = path.join(os.tmpdir(), 'resume-' + Date.now() + '-' + safe);
+    fs.writeFileSync(tempPath, resumeBuffer);
+    const fileInput = await page.$('input[type="file"]');
+    if (!fileInput) return false;
+    await fileInput.uploadFile(tempPath);
+    await delay(1200);
+    return true;
+  } catch (err) {
+    console.error('[browser] resume upload failed:', err?.message || err);
+    return false;
+  } finally {
+    if (tempPath && fs.existsSync(tempPath)) {
+      try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
+    }
+  }
+}
+
+/**
+ * Click the first visible button/link whose text contains any of `texts`
+ * (case-insensitive). Falls back to label matching when sites obfuscate
+ * selectors. Returns true if something was clicked.
+ */
+async function clickButtonByText(page, texts) {
+  if (!Array.isArray(texts) || !texts.length) return false;
+  const wanted = texts.map((t) => String(t).toLowerCase()).filter(Boolean);
+  try {
+    return await page.evaluate((list) => {
+      const nodes = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a, [role="button"]'));
+      for (const el of nodes) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) continue;
+        const cs = getComputedStyle(el);
+        if (cs.visibility === 'hidden' || cs.display === 'none' || cs.opacity === '0') continue;
+        const text = (el.textContent || el.value || '').trim().toLowerCase();
+        if (list.some((w) => text.includes(w))) {
+          el.click();
+          return true;
+        }
+      }
+      return false;
+    }, wanted);
+  } catch {
+    return false;
+  }
+}
+
+/** Read the apply button + page state so callers can confirm a real submit. */
+async function readApplyState(page, applySelector) {
+  const sel = applySelector || 'button[class*="apply"], a[class*="apply"], button[data-testid="applyButton"]';
+  try {
+    const state = await page.evaluate((selExp) => {
+      const body = (document.body && document.body.innerText) || '';
+      const btn = document.querySelector(selExp);
+      const btnText = btn ? (btn.textContent || '').trim().toLowerCase() : '';
+      return {
+        successText: /you have applied|application submitted|successfully applied|applied successfully|your application has been sent|thank you for applying|already applied/i.test(body.slice(0, 6000)),
+        btnText,
+        btnPresent: !!btn,
+        btnDisabled: btn ? btn.disabled === true || btn.getAttribute('aria-disabled') === 'true' : false,
+      };
+    }, sel);
+    return state;
+  } catch (err) {
+    // The page navigated while we were reading it (common after a successful
+    // submit redirects to a confirmation page). Return null so confirmApplied
+    // treats it as "unknown" and defaults to applied:true rather than failing.
+    return null;
+  }
+}
+
+/**
+ * Interpret `readApplyState` output: an apply button whose label switched to
+ * "Applied"/"Submitted" (or disappeared, or is disabled) means the application
+ * went through; a still-active "Apply"-labelled button means it didn't.
+ */
+function confirmApplied(state) {
+  if (!state) return { applied: true };
+  if (state.successText) return { applied: true };
+  const stillApply = state.btnPresent && !state.btnDisabled
+    && /apply|submit|register/.test(state.btnText)
+    && !/applied|submitted|done/.test(state.btnText);
+  if (stillApply) return { applied: false };
+  return { applied: true };
+}
+
+module.exports = { getBrowser, newPage, withPage, safeText, safeAttr, delay, setCookiesFromHeader, loginWithCookies, closeBrowser, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied };

@@ -1,4 +1,4 @@
-const { withPage, safeText, delay, loginWithCookies } = require('./browser');
+const { withPage, safeText, delay, loginWithCookies, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied } = require('./browser');
 const { detectApplyFormFields, fillFields } = require('../services/applyFields');
 
 const BASE = 'https://www.naukri.com';
@@ -152,10 +152,11 @@ async function detectApplyFields({ url }) {
 
 /**
  * Submit an application for a Naukri job.
- * Opens the job page, clicks the primary Apply button, fills any detected
- * apply-form fields from the resolved `fields` map, then confirms.
- * Returns { ok: true } on success or throws a structured error so the worker
- * can mark the application as failed (not_applied) with a real reason.
+ * Opens the job page, clicks the primary Apply button, uploads the tailored
+ * resume, fills any detected apply-form fields, then confirms. The application
+ * is only reported as applied when we can positively confirm it (apply button
+ * label switched to "Applied", success text, or the button disappeared).
+ * Returns { ok: true, applied } or throws a structured error.
  */
 async function submitApplication({ url, credentials, resume, resumeFilename, fields, detected }) {
   if (!url) throw new Error('Missing job URL');
@@ -176,34 +177,35 @@ async function submitApplication({ url, credentials, resume, resumeFilename, fie
     ]);
     await delay(3000);
 
+    // Upload the tailored resume if the apply flow offers a file input.
+    if (resume) {
+      await uploadResumeFile(page, resume, resumeFilename).catch(() => {});
+      await delay(500);
+    }
+
     // Auto-fill the detected apply-form fields (best-effort; skips missing ones).
     if (fields && detected?.length) {
       await fillFields(page, fields, detected).catch(() => {});
       await delay(500);
     }
 
+    // Confirm: prefer the visible submit button, fall back to text matching.
     const confirmBtn = await page.$('button[class*="submit"], button[class*="apply"], [type="submit"]');
     if (confirmBtn) {
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
         confirmBtn.click(),
       ]);
+      await delay(1800);
+    } else {
+      await clickButtonByText(page, ['submit application', 'submit', 'apply']).catch(() => {});
       await delay(1500);
     }
 
-    // Check if the Apply button is still visible — if so, the application
-    // was NOT actually submitted (modal closed, form rejected, etc.).
-    const stillHasApply = await page.$('.apply-button, button[class*="apply"]').catch(() => null);
-    if (stillHasApply) {
-      return { ok: true, applied: false, via: 'submitApplication' };
-    }
-
-    // Look for explicit success text instead of broad class selectors.
-    const hasSuccessText = await page.evaluate(() => {
-      const body = (document.body && document.body.innerText) || '';
-      return /you have applied|application submitted|successfully applied|applied successfully/i.test(body.slice(0, 5000));
-    });
-    return { ok: true, applied: hasSuccessText, via: 'submitApplication' };
+    // Naukri keeps the apply button in the DOM but swaps its label to "Applied"
+    // — check the button text/state, not just its presence.
+    const state = await readApplyState(page, '.apply-button, button[class*="apply"], a[class*="apply"]');
+    return { ok: true, ...confirmApplied(state), via: 'submitApplication' };
   });
 }
 

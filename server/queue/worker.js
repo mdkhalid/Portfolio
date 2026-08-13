@@ -22,6 +22,16 @@ const STEP_LABELS = {
   submit: 'Submitting application',
 };
 
+/** Map a raw apply error to a stable, filterable `notAppliedReason` enum. */
+function mapNotAppliedReason(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  if (/login|credential|cookie|authenticate|not logged|sign ?in|sign ?in|session/i.test(msg)) return 'login_failed';
+  if (/captcha|blocked|recaptcha|automated|bot detection/i.test(msg)) return 'blocked_or_captcha';
+  if (/expired|closed|no longer accepting|not accepting|filled/i.test(msg)) return 'job_expired';
+  if (/missing|provide|required/i.test(msg)) return 'missing_info';
+  return 'site_error';
+}
+
 let _io = null;
 
 /** Register the live Socket.io instance for progress broadcasts. */
@@ -131,7 +141,12 @@ async function markStep(app, key, patch) {
   }
   const prevStatus = step.status;
   Object.assign(step, patch);
-  if (patch.status === 'running') application.progress.currentStep = key;
+  if (patch.status === 'running') {
+    application.progress.currentStep = key;
+    // Reflect "actively working" so the live panel + Tracking show 'running'
+    // instead of 'queued' while the worker is mid-step.
+    application.status = 'running';
+  }
   application.lastAction = step?.label || key;
   if (patch.status !== prevStatus) {
     const details = patch.error || (patch.status === 'done' ? '' : patch.status);
@@ -338,6 +353,15 @@ async function runStep(applicationId, key) {
           ? await GeneratedResume.findById(app.resumeId).lean().catch(() => null)
           : null;
 
+        // Applying on automated sites (Naukri/Indeed/YC) requires a logged-in
+        // session. Without saved credentials or a session cookie the browser run
+        // is doomed — surface a clear, retryable reason instead.
+        if (!cookieHeader && !(creds?.email && creds?.password)) {
+          throw new Error(
+            `Login required for ${site} — no saved credentials or session cookie. Add them in the Job Sites tab, then retry.`
+          );
+        }
+
         if (cookieHeader) {
           await adapter.login({ cookies: cookieHeader, cookieOrigin: job.url }).catch(() => {});
         } else if (creds?.email && creds?.password) {
@@ -427,6 +451,37 @@ async function runStep(applicationId, key) {
   }
 }
 
+async function rescueStuckApplications() {
+  try {
+    // Applications left 'queued'/'running' by a previous process (crash/restart,
+    // or an in-memory queue that lost jobs) never finish. Re-queue any that
+    // haven't been touched for a while so the pipeline picks them back up.
+    const cutoff = new Date(Date.now() - 60 * 1000);
+    const stuck = await Application.find({
+      status: { $in: ['queued', 'running'] },
+      updatedAt: { $lt: cutoff },
+    })
+      .select('_id batchId')
+      .limit(100)
+      .lean();
+    if (!stuck.length) return;
+    const queue = await getQueue();
+    for (const app of stuck) {
+      await Application.updateOne({ _id: app._id }, { $set: { status: 'queued' } });
+      await queue.add('apply', { applicationId: app._id, batchId: app.batchId || '' }, {
+        jobId: String(app._id),
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: true,
+        removeOnFail: false,
+      });
+    }
+    console.log(`[worker] requeued ${stuck.length} interrupted application(s) after restart`);
+  } catch (err) {
+    console.error('[worker] rescue stuck applications failed:', err?.message || err);
+  }
+}
+
 async function startWorker() {
   const mongoose = require('mongoose');
   // Wait for the main server's in-flight DB connection if one exists.
@@ -453,6 +508,7 @@ async function startWorker() {
     await connectDB();
   }
   const queue = await getQueue();
+  await rescueStuckApplications();
 
   queue.process('apply', async (job) => {
     const { applicationId } = job.data;
@@ -470,21 +526,29 @@ async function startWorker() {
         const a = await Application.findById(applicationId).exec();
         if (a) {
           const manualApply = isManualApplyFailure(err);
+          const rawReason = String(err?.message || 'site_error').slice(0, 500);
           await Application.updateOne(
             { _id: applicationId },
             { $set: {
                 status: 'not_applied',
-                notAppliedReason: String(err?.message || 'site_error').slice(0, 300),
+                notAppliedReason: mapNotAppliedReason(err),
+                lastAction: rawReason,
                 needsManualApply: manualApply,
-                manualApplyReason: manualApply ? String(err?.message || '').slice(0, 500) : '',
+                manualApplyReason: manualApply ? rawReason : '',
               } }
           );
+          // Persist the raw failure detail on the submit step + timeline so the
+          // user sees exactly why, while the enum reason stays filterable.
+          await Application.updateOne(
+            { _id: applicationId, 'progress.steps.key': 'submit' },
+            { $set: { 'progress.steps.$.error': rawReason, 'progress.steps.$.status': 'failed' } }
+          ).catch(() => {});
           // Route the job into the Manual Apply list so the user can finish in
           // the browser (external employer redirect / no automation for site).
           if (a.jobId && manualApply) {
             await Job.updateOne(
               { _id: a.jobId },
-              { $set: { needsManualApply: true, manualApplyReason: String(err?.message || 'Apply manually.').slice(0, 500) } }
+              { $set: { needsManualApply: true, manualApplyReason: rawReason } }
             );
           }
           const jobDoc = a.jobId ? await Job.findById(a.jobId).select('title company site').lean().catch(() => null) : null;

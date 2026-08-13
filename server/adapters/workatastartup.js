@@ -1,4 +1,4 @@
-const { withPage, delay, loginWithCookies } = require('./browser');
+const { withPage, delay, loginWithCookies, safeClick } = require('./browser');
 
 const BASE = 'https://www.workatastartup.com';
 const ACCOUNT = 'https://account.ycombinator.com';
@@ -49,7 +49,7 @@ async function login({ email, password, cookies, cookieOrigin }) {
     const continueBtn = await page.$('button[type="submit"], form button');
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
-      continueBtn ? continueBtn.click() : page.keyboard.press('Enter'),
+      continueBtn ? safeClick(page, continueBtn, 'continue') : page.keyboard.press('Enter'),
     ]);
     await delay(2500);
 
@@ -60,7 +60,7 @@ async function login({ email, password, cookies, cookieOrigin }) {
     const loginBtn = await page.$('button[type="submit"], form button');
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
-      loginBtn ? loginBtn.click() : page.keyboard.press('Enter'),
+      loginBtn ? safeClick(page, loginBtn, 'login') : page.keyboard.press('Enter'),
     ]);
     await delay(3000);
 

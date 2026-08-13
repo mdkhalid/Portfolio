@@ -1,4 +1,4 @@
-const { withPage, safeText, delay, loginWithCookies } = require('./browser');
+const { withPage, safeText, delay, loginWithCookies, safeClick } = require('./browser');
 
 /**
  * Generic adapter for user-added (custom) job sites.
@@ -78,7 +78,7 @@ async function login({ email, password, cookies, cookieOrigin, baseUrl }) {
     if (loginLink && !(await page.$('input[type="password"]'))) {
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
-        loginLink.click(),
+        safeClick(page, loginLink, 'login link'),
       ]);
       await delay(2000);
     }
@@ -100,7 +100,7 @@ async function login({ email, password, cookies, cookieOrigin, baseUrl }) {
     } else {
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
-        submit.click(),
+        safeClick(page, submit, 'login submit'),
       ]);
     }
     await delay(3000);

@@ -159,4 +159,59 @@ async function buildResumePdf({
   return Buffer.from(bytes);
 }
 
-module.exports = { buildResumePdf };
+/**
+ * Preserve the candidate's ORIGINAL resume PDF exactly, and append a final page
+ * listing the job-description keywords that were added. This keeps the original
+ * formatting/layout intact (we never rebuild the document) while still getting
+ * the matched keywords into the file for ATS parsing.
+ *
+ * @param {Buffer} originalBuffer - bytes of the candidate's uploaded resume PDF
+ * @param {string[]} keywords - keywords added for this role
+ * @param {Object} job - { title, company }
+ * @returns {Promise<Buffer>} original bytes (unchanged) if anything fails
+ */
+async function appendKeywordsToResumePdf(originalBuffer, keywords = [], job = {}) {
+  try {
+    const pdf = await PDFDocument.load(originalBuffer);
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+    const page = pdf.addPage();
+    const { width, height } = page.getSize();
+    const M = 56;
+    const cw = width - M * 2;
+    let y = height - M;
+
+    page.drawText('SKILLS — keywords matched to this role', { x: M, y, size: 14, font: bold, color: rgb(0.1, 0.1, 0.1) });
+    y -= 22;
+    page.drawText(`Added for: ${job?.title || ''} at ${job?.company || ''}`, {
+      x: M, y, size: 10, font, color: rgb(0.3, 0.3, 0.3),
+    });
+    y -= 20;
+
+    const words = keywords.join(',  ').split(/\s+/);
+    const lines = [];
+    let line = '';
+    for (const w of words) {
+      const test = line ? line + ' ' + w : w;
+      if (font.widthOfTextAtSize(test, 10) > cw) {
+        if (line) lines.push(line);
+        line = w;
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+    for (const l of lines) {
+      page.drawText(l, { x: M, y, size: 10, font, color: rgb(0.25, 0.25, 0.25) });
+      y -= 15;
+    }
+
+    const bytes = await pdf.save();
+    return Buffer.from(bytes);
+  } catch (err) {
+    console.error('[resumePdf] append keywords failed:', err?.message || err);
+    return originalBuffer;
+  }
+}
+
+module.exports = { buildResumePdf, appendKeywordsToResumePdf };

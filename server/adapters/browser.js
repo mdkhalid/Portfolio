@@ -220,6 +220,47 @@ async function clickButtonByText(page, texts) {
   }
 }
 
+/**
+ * Robust click: scroll the element into view, try Puppeteer's native click, and
+ * fall back to an in-page `el.click()` if the native click reports the node as
+ * not clickable (e.g. covered by an overlay or off-screen). Prevents the
+ * "Node is either not clickable or not an Element" failures that otherwise
+ * abort the whole apply job.
+ */
+async function safeClick(page, handle, label = 'button') {
+  if (!handle) throw new Error('Missing ' + label + ' element to click');
+  try {
+    await handle.evaluate((el) => {
+      if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'center', inline: 'center' });
+    });
+  } catch { /* ignore */ }
+  await delay(250);
+
+  // 1) Try Puppeteer's native click (real mouse event). If it fails ONLY because
+  //    the element is "not clickable" (overlay/animation), fall back below.
+  try {
+    await handle.click({ timeout: 4000, delay: 80 });
+    return true;
+  } catch (nativeErr) {
+    const msg = (nativeErr && nativeErr.message) || '';
+    // A navigation that destroys the context means the click already worked.
+    if (!/not clickable|is not visible|no node found|Node is detached/i.test(msg)) return true;
+
+    // 2) Fallback: JS-native click, fired on a timer so any resulting navigation
+    //    doesn't destroy the evaluate context (which would look like a failure).
+    try {
+      await handle.evaluate((el) => {
+        if (!el) return;
+        try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch (_) {}
+        setTimeout(() => { try { el.click(); } catch (_) {} }, 0);
+      });
+      return true;
+    } catch (jsErr) {
+      throw new Error('Could not click ' + label + ': ' + (nativeErr?.message || nativeErr));
+    }
+  }
+}
+
 /** Read the apply button + page state so callers can confirm a real submit. */
 async function readApplyState(page, applySelector) {
   const sel = applySelector || 'button[class*="apply"], a[class*="apply"], button[data-testid="applyButton"]';
@@ -259,4 +300,4 @@ function confirmApplied(state) {
   return { applied: true };
 }
 
-module.exports = { getBrowser, newPage, withPage, safeText, safeAttr, delay, setCookiesFromHeader, loginWithCookies, closeBrowser, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied };
+module.exports = { getBrowser, newPage, withPage, safeText, safeAttr, delay, setCookiesFromHeader, loginWithCookies, closeBrowser, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied, safeClick };

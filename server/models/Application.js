@@ -19,9 +19,10 @@ const NOT_APPLIED_REASON = [
   'salary_mismatch',
   'blocked_or_captcha',
   'manual_skip',
+  'ai_budget',
   'other',
 ];
-const STEP_STATUS = ['queued', 'running', 'done', 'failed', 'waiting', 'waiting_user'];
+const STEP_STATUS = ['queued', 'running', 'done', 'failed', 'waiting', 'waiting_user', 'skipped'];
 
 const progressStepSchema = new mongoose.Schema(
   {

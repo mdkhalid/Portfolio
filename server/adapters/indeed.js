@@ -1,4 +1,4 @@
-const { withPage, safeText, delay, loginWithCookies, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied } = require('./browser');
+const { withPage, safeText, delay, loginWithCookies, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied, safeClick } = require('./browser');
 const { detectApplyFormFields, fillFields } = require('../services/applyFields');
 
 const BASE = 'https://www.indeed.com';
@@ -21,6 +21,12 @@ async function login({ email, password, cookies, cookieOrigin }) {
       return isLoggedIn;
     });
     if (ok) return { ok: true, via: 'cookies' };
+    // Cookie present but didn't authenticate → it's expired/invalid. Without
+    // credentials there's no point falling through to a doomed password login
+    // that would only surface a confusing Puppeteer selector-timeout error.
+    if (!email || !password) {
+      throw new Error('Indeed session cookie is invalid or expired — re-paste a fresh cookie in the Job Sites tab.');
+    }
   }
 
   return withPage(async (page) => {
@@ -34,9 +40,10 @@ async function login({ email, password, cookies, cookieOrigin }) {
     const pwSel = 'input[type="password"]';
     await page.type(emailSel, email, { delay: 20 });
     await page.type(pwSel, password, { delay: 20 });
+    const submitBtn = await page.$('button[type="submit"], button[data-testid="login-button"]');
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
-      page.click('button[type="submit"], button[data-testid="login-button"]').catch(() => {}),
+      submitBtn ? safeClick(page, submitBtn, 'login submit') : page.keyboard.press('Enter'),
     ]);
     if (page.url().includes('login')) {
       throw new Error('Indeed login failed — SSO/CAPTCHA required. Log in manually, then paste your session cookie.');
@@ -68,7 +75,7 @@ async function searchJobs({ query, location = '', pageCount = 1, maxJobs = 50 })
       if (p > 0) {
         const next = await page.$('[data-testid="pagination-page-next"] a, a[aria-label="Next Page"], a[aria-label="Next"]');
         if (!next) break;
-        await next.click();
+        await safeClick(page, next, 'next');
         await delay(2500);
       }
       const items = await page.$$('.job_seen_beacon, td.resultContent, .slider_item');
@@ -150,7 +157,7 @@ async function submitApplication({ url, credentials, resume, resumeFilename, fie
 
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
-      applyBtn.click(),
+      safeClick(page, applyBtn, 'apply'),
     ]);
     await delay(3500);
 

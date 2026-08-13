@@ -671,6 +671,11 @@ exports.apply = asyncHandler(async (req, res) => {
   const manual = [];
 
   for (const job of jobs.slice(0, maxBatch)) {
+    // Never re-apply an already-applied job — this is the primary duplicate-
+    // apply guard. Applied jobs keep their record (Tracking tab) but are never
+    // submitted again.
+    if (job.applied || job.status === 'applied') continue;
+
     // Jobs on custom sites (or otherwise flagged manual) have no automation:
     // flag them for manual apply instead of queueing a doomed auto-run.
     if (job.needsManualApply || !isAutomatedSite(job.site)) {
@@ -682,30 +687,60 @@ exports.apply = asyncHandler(async (req, res) => {
       continue;
     }
 
-    const existing = await Application.findOne({
-      userId: req.adminId,
-      jobId: job._id,
-      status: { $in: ['queued', 'running', 'pending'] },
-    }).lean();
-    if (existing) continue; // idempotency guard
+    const existing = await Application.findOne({ userId: req.adminId, jobId: job._id }).lean();
+    if (existing && ['queued', 'running', 'pending', 'applied'].includes(existing.status)) {
+      continue; // idempotency guard (active OR already-applied)
+    }
 
-    const app = await Application.create({
-      userId: req.adminId,
-      jobId: job._id,
-      site: job.site,
-      batchId,
-      status: 'queued',
-      timeline: [{ event: 'Application queued', details: `Batch ${batchId}` }],
-      progress: {
-        currentStep: '',
-        steps: [
-          { key: 'fetch_jd', label: 'Fetching job description', status: 'queued' },
-          { key: 'generate_resume', label: 'Preparing ATS-friendly resume', status: 'queued' },
-          { key: 'prepare_application', label: 'Filling standard profile fields', status: 'queued' },
-          { key: 'submit', label: 'Submitting application', status: 'queued' },
-        ],
-      },
-    });
+    let app;
+    if (existing) {
+      // Reuse a prior terminal/failed application for this job instead of
+      // creating a duplicate record (which is what made "retry" look like it
+      // discarded the older attempt).
+      app = await Application.findByIdAndUpdate(
+        existing._id,
+        {
+          $set: {
+            batchId,
+            status: 'queued',
+            notAppliedReason: null,
+            needsManualApply: false,
+            manualApplyReason: '',
+            appliedAt: null,
+            progress: {
+              currentStep: '',
+              steps: [
+                { key: 'fetch_jd', label: 'Fetching job description', status: 'queued' },
+                { key: 'generate_resume', label: 'Preparing ATS-friendly resume', status: 'queued' },
+                { key: 'prepare_application', label: 'Filling standard profile fields', status: 'queued' },
+                { key: 'submit', label: 'Submitting application', status: 'queued' },
+              ],
+              attempts: (existing.progress?.attempts || 0) + 1,
+            },
+          },
+          $push: { timeline: { event: 'Application queued (reused)', details: `Batch ${batchId}` } },
+        },
+        { new: true }
+      );
+    } else {
+      app = await Application.create({
+        userId: req.adminId,
+        jobId: job._id,
+        site: job.site,
+        batchId,
+        status: 'queued',
+        timeline: [{ event: 'Application queued', details: `Batch ${batchId}` }],
+        progress: {
+          currentStep: '',
+          steps: [
+            { key: 'fetch_jd', label: 'Fetching job description', status: 'queued' },
+            { key: 'generate_resume', label: 'Preparing ATS-friendly resume', status: 'queued' },
+            { key: 'prepare_application', label: 'Filling standard profile fields', status: 'queued' },
+            { key: 'submit', label: 'Submitting application', status: 'queued' },
+          ],
+        },
+      });
+    }
 
     await queue.add('apply', { applicationId: app._id, batchId }, {
       jobId: String(app._id),

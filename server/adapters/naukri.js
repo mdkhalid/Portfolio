@@ -1,4 +1,4 @@
-const { withPage, safeText, delay, loginWithCookies, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied } = require('./browser');
+const { withPage, safeText, delay, loginWithCookies, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied, safeClick } = require('./browser');
 const { detectApplyFormFields, fillFields } = require('../services/applyFields');
 
 const BASE = 'https://www.naukri.com';
@@ -35,6 +35,12 @@ async function login({ email, password, cookies, cookieOrigin }) {
       return isLoggedIn;
     });
     if (ok) return { ok: true, via: 'cookies' };
+    // Cookie present but didn't authenticate → it's expired/invalid. Without
+    // credentials there's no point falling through to a doomed password login
+    // that would only surface a confusing Puppeteer selector-timeout error.
+    if (!email || !password) {
+      throw new Error('Naukri session cookie is invalid or expired — re-paste a fresh cookie in the Job Sites tab.');
+    }
   }
 
   return withPage(async (page) => {
@@ -53,7 +59,7 @@ async function login({ email, password, cookies, cookieOrigin }) {
     if (submitBtn) {
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
-        submitBtn.click(),
+        safeClick(page, submitBtn, 'login submit'),
       ]);
     } else {
       await page.keyboard.press('Enter');
@@ -94,7 +100,7 @@ async function searchJobs({ query, location = '', pageCount = 1, maxJobs = 50 })
         if (!next) break;
         await Promise.all([
           page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
-          next.click(),
+          safeClick(page, next, 'next'),
         ]);
         await delay(2000);
       }
@@ -171,10 +177,10 @@ async function submitApplication({ url, credentials, resume, resumeFilename, fie
       throw new Error('No apply button found on this Naukri job.');
     }
 
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
-      applyBtn.click(),
-    ]);
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
+        safeClick(page, applyBtn, 'apply'),
+      ]);
     await delay(3000);
 
     // Upload the tailored resume if the apply flow offers a file input.
@@ -194,7 +200,7 @@ async function submitApplication({ url, credentials, resume, resumeFilename, fie
     if (confirmBtn) {
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
-        confirmBtn.click(),
+        safeClick(page, confirmBtn, 'confirm'),
       ]);
       await delay(1800);
     } else {

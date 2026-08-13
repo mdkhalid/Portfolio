@@ -6,8 +6,7 @@ const GeneratedResume = require('../models/GeneratedResume');
 const UserJobSite = require('../models/UserJobSite');
 const UserSettings = require('../models/UserSettings');
 const { decrypt } = require('../utils/credentials');
-const { getAdapter } = require('../adapters');
-const { isAutomatedSite } = require('../adapters');
+const { getAdapter, isAutomatedSite, SITE_META } = require('../adapters');
 const { buildTailoredResume } = require('../services/resumeGenerate');
 const { resolveFieldValues, learnFieldValues } = require('../services/applyFields');
 const { notify } = require('../services/notifications');
@@ -196,7 +195,7 @@ async function runStep(applicationId, key) {
             const cookieHeader = siteDoc?.cookies ? decrypt(siteDoc.cookies)?.value : null;
             try {
               if (cookieHeader) {
-                await adapter.login({ cookies: cookieHeader, cookieOrigin: job.url });
+                await adapter.login({ cookies: cookieHeader, cookieOrigin: SITE_META[job.site]?.homeUrl || job.url });
               } else if (creds?.email && creds?.password) {
                 await adapter.login({ email: creds.email, password: creds.password });
               }
@@ -231,7 +230,7 @@ async function runStep(applicationId, key) {
       if (built.aiSkipped) {
         await Application.updateOne(
           { _id: app._id },
-          { $set: { status: 'not_applied', notAppliedReason: built.reason } }
+          { $set: { status: 'not_applied', notAppliedReason: 'ai_budget' } }
         );
         await markStep(application, key, { status: 'skipped', error: built.reason, finishedAt: new Date() });
         notify({
@@ -363,11 +362,13 @@ async function runStep(applicationId, key) {
         }
 
         if (cookieHeader) {
-          await adapter.login({ cookies: cookieHeader, cookieOrigin: job.url }).catch(() => {});
+          // Use the site's home URL (not the deep job URL) as the cookie origin
+          // so cookies are bound to the correct domain. A failed cookie login
+          // now throws a clear "cookie expired" error instead of silently
+          // submitting an unauthenticated (logged-out) application.
+          await adapter.login({ cookies: cookieHeader, cookieOrigin: SITE_META[site]?.homeUrl || job.url });
         } else if (creds?.email && creds?.password) {
-          await adapter.login({ email: creds.email, password: creds.password }).catch((e) => {
-            console.error('[worker] submit login failed:', e?.message || e);
-          });
+          await adapter.login({ email: creds.email, password: creds.password });
         }
 
         if (typeof adapter.submitApplication === 'function') {
@@ -391,7 +392,7 @@ async function runStep(applicationId, key) {
             if (result.needsManualApply) {
               await Application.updateOne(
                 { _id: applicationId },
-                { $set: { status: 'not_applied', notAppliedReason: reason, needsManualApply: true, manualApplyReason: reason } }
+                { $set: { status: 'not_applied', notAppliedReason: 'manual_skip', needsManualApply: true, manualApplyReason: reason } }
               );
               await Job.updateOne(
                 { _id: app.jobId },

@@ -196,7 +196,13 @@ router.get('/generated/:id/pdf', asyncHandler(async (req, res) => {
     .select('+pdf');
   if (!item) throw new AppError('Resume not found', 404, 'NOT_FOUND');
   if (!item.pdf || !item.pdf.length) throw new AppError('No PDF available for this resume', 404, 'NO_PDF');
-  res.setHeader('Content-Type', 'application/pdf');
+  const isDocx = /\.docx$/i.test(item.pdfFilename || '');
+  res.setHeader(
+    'Content-Type',
+    isDocx
+      ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      : 'application/pdf'
+  );
   res.setHeader('Content-Disposition', `attachment; filename="${item.pdfFilename || 'resume.pdf'}"`);
   res.send(item.pdf);
 }));

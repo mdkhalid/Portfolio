@@ -77,7 +77,11 @@ app.get(
       return res.status(400).json({ error: 'Invalid filename' });
     }
 
-    const resume = await Resume.findOne({ fileUrl: '/uploads/' + filename });
+    const resume = await Resume.findOne({
+      fileUrl: '/uploads/' + filename,
+      isMaster: { $ne: true },
+      showOnSite: { $ne: false },
+    });
     if (!resume) {
       return res.status(404).json({ error: 'File not found' });
     }
@@ -234,7 +238,11 @@ if (require.main === module) {
   const shutdown = (signal) => {
     console.log(`\n[shutdown] Received ${signal}, closing server...`);
     server.close(() => {
-      require('mongoose').connection.close(false, () => process.exit(0));
+      // Mongoose 7+: connection.close() is promise-based (no callback).
+      require('mongoose')
+        .connection.close(false)
+        .then(() => process.exit(0))
+        .catch(() => process.exit(1));
     });
     setTimeout(() => process.exit(1), 10000).unref();
   };

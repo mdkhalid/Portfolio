@@ -9,6 +9,7 @@ const FILE_SIGNATURES = {
   webp: { bytes: [0x52, 0x49, 0x46, 0x46], mime: 'image/webp', exts: ['webp'], riffType: 'WEBP' },
   pdf: { bytes: [0x25, 0x50, 0x44, 0x46], mime: 'application/pdf', exts: ['pdf'] },
   doc: { bytes: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1], mime: 'application/msword', exts: ['doc'] },
+  docx: { bytes: [0x50, 0x4b, 0x03, 0x04], mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', exts: ['docx'], contentMarker: 'word/' },
 };
 
 const matchesSignature = (buffer, sig) => {
@@ -18,8 +19,11 @@ const matchesSignature = (buffer, sig) => {
   }
   if (sig.riffType) {
     const type = buffer.slice(8, 12).toString('ascii');
-    return type === sig.riffType;
+    if (type !== sig.riffType) return false;
   }
+  // Zip-based Office formats share the PK signature — require an internal
+  // marker so a .xlsx/.zip cannot masquerade as a .docx resume.
+  if (sig.contentMarker && buffer.indexOf(sig.contentMarker) === -1) return false;
   return true;
 };
 
@@ -36,6 +40,8 @@ const validateFileType = (buffer, allowedExts, label = 'file') => {
   }
   const detected = detectFileType(buffer);
   if (!detected) {
+    // Plain text has no magic bytes — accept when allowed and not binary.
+    if (allowedExts.includes('txt') && !buffer.subarray(0, 512).includes(0)) return 'txt';
     throw new AppError(`Unsupported ${label} type (content does not match any known format)`, 400, 'UNSUPPORTED_FILE');
   }
   const sig = FILE_SIGNATURES[detected];

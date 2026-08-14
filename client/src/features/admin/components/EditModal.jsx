@@ -5,6 +5,7 @@ import { FileText, Plus, Upload, X } from 'lucide-react'
 export default function EditModal({ API, dark, editing, saveItem, saving, setData, setEditing, setSaving }) {
   const { collection, id, data: editData } = editing || {}
   const [form, setForm] = useState(editData || {})
+  const [error, setError] = useState('')
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -35,6 +36,7 @@ export default function EditModal({ API, dark, editing, saveItem, saving, setDat
       fd.append('label', form.label || '')
       if (form._newFile) fd.append('file', form._newFile)
       setSaving(true)
+      setError('')
       ;(async () => {
         try {
           const { data: result } = id
@@ -47,7 +49,10 @@ export default function EditModal({ API, dark, editing, saveItem, saving, setDat
               : [...(prev.resumes || []), result],
           }))
           setEditing(null)
-        } catch (err) { console.error(err) }
+        } catch (err) {
+          console.error(err)
+          setError(err.response?.data?.error || 'Resume save failed')
+        }
         finally { setSaving(false) }
       })()
       return
@@ -141,6 +146,7 @@ export default function EditModal({ API, dark, editing, saveItem, saving, setDat
           )}
         </div>
         <div className="flex justify-end gap-3 mt-6">
+          {error && <p className="mr-auto text-sm font-medium text-red-500">{error}</p>}
           <button onClick={() => setEditing(null)} className={'px-4 py-2 rounded-lg text-sm font-medium cursor-pointer ' + (dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>Cancel</button>
           <button onClick={handleSave} disabled={saving}
             className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">

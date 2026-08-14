@@ -11,6 +11,7 @@ const { getAIClient } = require('../ai/client');
 const { sanitizeForAI } = require('../utils/security');
 const { checkAICost, recordAICost } = require('./aiCost');
 const { buildResumePdf, appendKeywordsToResumePdf } = require('./resumePdf');
+const { extractDocxText, injectKeywordsIntoDocx } = require('./resumeDocx');
 
 /**
  * Shared, ATS-friendly tailored resume builder.
@@ -42,6 +43,22 @@ function safeSlug(s) {
   return String(s || '').replace(/[^a-zA-Z0-9-_ ]/g, '').trim().replace(/\s+/g, '-') || 'Resume';
 }
 
+/**
+ * Pick the master resume. Priority:
+ * 1. Explicit isMaster flag (set via "Set as Master" in the admin UI)
+ * 2. Label containing national/domestic/main/primary
+ * 3. Most recently updated record (falls back to order for legacy records)
+ */
+function pickMasterResume(resumes) {
+  if (!resumes || !resumes.length) return null;
+  const flagged = resumes.find((r) => r.isMaster);
+  if (flagged) return flagged;
+  const byLabel = resumes.find((r) => /national|domestic|main|primary/i.test(r.label));
+  if (byLabel) return byLabel;
+  const updated = (r) => new Date(r.updatedAt || r.createdAt || 0).getTime();
+  return [...resumes].sort((a, b) => updated(b) - updated(a))[0];
+}
+
 function dedupeMerge(baseSkills, additions) {
   const lower = new Set(baseSkills.map((s) => s.toLowerCase()));
   const merged = baseSkills.slice();
@@ -63,13 +80,16 @@ function dedupeMerge(baseSkills, additions) {
 async function getUploadedResumeText() {
   try {
     const resumes = await Resume.find().sort({ order: 1 }).lean();
-    if (!resumes || !resumes.length) return '';
-    const chosen = resumes.find((r) => /national|domestic|main|primary/i.test(r.label)) || resumes[0];
+    const chosen = pickMasterResume(resumes);
     if (!chosen || !chosen.fileUrl) return '';
     const fileName = path.basename(chosen.fileUrl);
     const fullPath = path.join(__dirname, '..', 'uploads', fileName);
     if (!fs.existsSync(fullPath)) return '';
     const dataBuffer = fs.readFileSync(fullPath);
+    if (/\.docx$/i.test(fileName)) {
+      const text = extractDocxText(dataBuffer);
+      return text.trim().length >= 200 ? sanitizeForAI(text, { checkInjection: false }) : '';
+    }
     const parser = new PDFParse({ data: dataBuffer, verbosity: 0 });
     const parsed = await parser.getText();
     parser.destroy();
@@ -89,8 +109,7 @@ async function getUploadedResumeText() {
 async function getUploadedResumeFile() {
   try {
     const resumes = await Resume.find().sort({ order: 1 }).lean();
-    if (!resumes || !resumes.length) return null;
-    const chosen = resumes.find((r) => /national|domestic|main|primary/i.test(r.label)) || resumes[0];
+    const chosen = pickMasterResume(resumes);
     if (!chosen || !chosen.fileUrl) return null;
     const fileName = path.basename(chosen.fileUrl);
     const fullPath = path.join(__dirname, '..', 'uploads', fileName);
@@ -187,6 +206,50 @@ ${jd}`;
 }
 
 /**
+ * Lightweight AI call: up to 8 missing JD keywords for this resume. Used by
+ * the DOCX path where keywords are injected into the existing Skills section
+ * (AI never touches layout or content, it only suggests terms).
+ */
+async function suggestMissingKeywords(resumeText, job, { client, model }) {
+  const jd = String(job?.description || job?.title || '').slice(0, 4000);
+  if (!client || jd.length < 30) return [];
+  const prompt = `You are an ATS keyword analyst. Compare the candidate's resume against the job description.
+
+Return ONLY valid JSON: { "keywords": ["...", "..."] }
+
+Rules:
+- Up to 8 missing tech skills, tools, frameworks, or domain terms that the JD requires and the resume does NOT already contain.
+- Never include terms that already appear anywhere in the resume.
+- No generic words (e.g. "communication", "teamwork").
+
+RESUME:
+${resumeText.slice(0, 20000) || '(not available)'}
+
+JOB DESCRIPTION:
+${jd}`;
+  try {
+    const completion = await client.chat.completions.create({
+      model,
+      messages: [
+        { role: 'system', content: 'You are an ATS keyword analyst. Return only valid JSON with a "keywords" array.' },
+        { role: 'user', content: prompt },
+      ],
+      max_tokens: 400,
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+    });
+    const parsed = JSON.parse(completion.choices?.[0]?.message?.content || '{}');
+    return (Array.isArray(parsed.keywords) ? parsed.keywords : [])
+      .map((k) => String(k || '').trim())
+      .filter(Boolean)
+      .slice(0, 8);
+  } catch (err) {
+    console.error('[resumeGenerate] keyword suggestion failed:', err?.message || err);
+    return [];
+  }
+}
+
+/**
  * @param {Object} job - Job document (uses description/title/company/matchedKeywords/missingKeywords)
  * @param {Object} opts
  * @param {string} opts.userId
@@ -215,6 +278,51 @@ async function buildTailoredResume(job, { userId, skipOnBudgetExceeded = false }
   const uploadedText = await getUploadedResumeText();
   const uploadedFile = await getUploadedResumeFile();
   if (uploadedFile) {
+    // DOCX master: inject JD keywords INTO the existing Skills section. The
+    // candidate's formatting/layout is preserved — we edit only that section
+    // and clone existing skill entries so style matches exactly.
+    if (/\.docx$/i.test(uploadedFile.fileName || '')) {
+      const pdfFilename = `${safeSlug(job?.title)}_${safeSlug(job?.company)}_resume.docx`;
+      let keywords = [];
+      let usedAI = false;
+      if (client && budgetOk) {
+        keywords = await suggestMissingKeywords(uploadedText, job, { client, model });
+        if (keywords.length) {
+          usedAI = true;
+          recordAICost({ userId, purpose: 'generate_resume', jobId: job?._id || null }).catch(() => {});
+        }
+      }
+      if (!keywords.length) {
+        keywords = (Array.isArray(job?.missingKeywords) ? job.missingKeywords : []).slice(0, 8);
+      }
+      const injected = keywords.length
+        ? injectKeywordsIntoDocx(uploadedFile.buffer, keywords)
+        : { ok: true, buffer: uploadedFile.buffer, inserted: [] };
+      if (injected.ok) {
+        return {
+          aiSkipped: false,
+          pdf: injected.buffer,
+          pdfFilename,
+          content: injected.inserted.length
+            ? `Original resume preserved. Keywords added to Skills section: ${injected.inserted.join(', ')}`
+            : 'Original resume preserved (no new keywords required).',
+          keywordsMatched: injected.inserted,
+          jdUsed: jd,
+          usedAI,
+        };
+      }
+      // Skills section not detected — never risk the document; return it unchanged.
+      return {
+        aiSkipped: false,
+        pdf: uploadedFile.buffer,
+        pdfFilename,
+        content: `Original resume preserved (Skills section not detected: ${injected.reason || 'unknown'}).`,
+        keywordsMatched: [],
+        jdUsed: jd,
+        usedAI: false,
+      };
+    }
+
     let keywordsAdded = [];
     let structured = null;
     if (client && budgetOk) {
@@ -385,4 +493,4 @@ ${jd}`;
   };
 }
 
-module.exports = { buildTailoredResume, safeSlug, loadProfileContext, dedupeMerge };
+module.exports = { buildTailoredResume, safeSlug, loadProfileContext, dedupeMerge, pickMasterResume };

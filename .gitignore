@@ -4,4 +4,5 @@ node_modules/
 dist/
 *.log
 server/uploads/*
+server/__tmp-*
 suggestion.md

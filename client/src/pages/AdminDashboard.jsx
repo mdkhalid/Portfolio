@@ -835,10 +835,17 @@ export default function AdminDashboard() {
   const downloadGeneratedResume = async (id, filename) => {
     try {
       const res = await API.get(`/api/resume/generated/${id}/pdf`, { responseType: 'blob' })
+      // Prefer the server-provided filename (Content-Disposition) so the
+      // extension always matches the actual content (.docx vs .pdf).
+      let name = filename
+      if (!name) {
+        const cd = res.headers?.['content-disposition'] || ''
+        name = (cd.match(/filename="?([^";]+)"?/) || [])[1] || 'resume.pdf'
+      }
       const url = URL.createObjectURL(res.data)
       const a = document.createElement('a')
       a.href = url
-      a.download = filename || 'resume.pdf'
+      a.download = name
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)

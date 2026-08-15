@@ -62,6 +62,25 @@ function splitParagraphs(xml) {
 const styleOf = (paragraphXml) =>
   (paragraphXml.match(/<w:pStyle\s+w:val="([^"]+)"/) || [])[1] || '';
 
+/**
+ * Re-pack the docx with an updated document.xml, PRESERVING the original
+ * entry order. Word is strict about OOXML packaging: [Content_Types].xml
+ * must stay the first entry. adm-zip's writers sort entries alphabetically,
+ * which makes Word reject the file as corrupt — jszip keeps insertion order.
+ */
+async function repack(zip, updatedXml) {
+  const JSZip = require('jszip');
+  const out = new JSZip();
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory) continue; // file entries only, like Word writes
+    const data = entry.entryName === DOCX_ENTRY
+      ? Buffer.from(updatedXml, 'utf8')
+      : entry.getData();
+    out.file(entry.entryName, data, { binary: true, createFolders: false });
+  }
+  return out.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
 /** rPr (run properties) of the first run that contains visible text. */
 function firstTextRunRpr(paragraphXml) {
   const runMatch = paragraphXml.match(/<w:r(?:\s[^>]*)?>(?=[\s\S]*?<w:t(?:\s[^>]*)?>)[\s\S]*?<\/w:r>/);
@@ -113,9 +132,9 @@ function extractDocxText(buffer) {
  *
  * @param {Buffer} docxBuffer - original .docx bytes (never modified in place)
  * @param {string[]} keywords - candidate keywords (max 8 used)
- * @returns {{ ok: boolean, buffer?: Buffer, inserted?: string[], reason?: string }}
+ * @returns {Promise<{ ok: boolean, buffer?: Buffer, inserted?: string[], reason?: string }>}
  */
-function injectKeywordsIntoDocx(docxBuffer, keywords = []) {
+async function injectKeywordsIntoDocx(docxBuffer, keywords = []) {
   try {
     const wanted = [...new Set(keywords.map((k) => String(k || '').trim()).filter(Boolean))].slice(0, 8);
     if (!wanted.length) return { ok: true, buffer: docxBuffer, inserted: [] };
@@ -173,13 +192,11 @@ function injectKeywordsIntoDocx(docxBuffer, keywords = []) {
       newXml = updated;
       // Replace the paragraph in place instead of inserting after it.
       const nextXml = xml.slice(0, para.start) + updated + xml.slice(para.end);
-      zip.updateFile(DOCX_ENTRY, Buffer.from(nextXml, 'utf8'));
-      return { ok: true, buffer: Buffer.from(zip.toBuffer()), inserted: missing };
+      return { ok: true, buffer: await repack(zip, nextXml), inserted: missing };
     }
 
     const nextXml = xml.slice(0, insertAt) + newXml + xml.slice(insertAt);
-    zip.updateFile(DOCX_ENTRY, Buffer.from(nextXml, 'utf8'));
-    return { ok: true, buffer: Buffer.from(zip.toBuffer()), inserted: missing };
+    return { ok: true, buffer: await repack(zip, nextXml), inserted: missing };
   } catch (err) {
     console.error('[resumeDocx] keyword injection failed:', err?.message || err);
     return { ok: false, reason: err?.message || 'injection error' };

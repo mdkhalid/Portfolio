@@ -296,7 +296,7 @@ async function buildTailoredResume(job, { userId, skipOnBudgetExceeded = false }
         keywords = (Array.isArray(job?.missingKeywords) ? job.missingKeywords : []).slice(0, 8);
       }
       const injected = keywords.length
-        ? injectKeywordsIntoDocx(uploadedFile.buffer, keywords)
+        ? await injectKeywordsIntoDocx(uploadedFile.buffer, keywords)
         : { ok: true, buffer: uploadedFile.buffer, inserted: [] };
       if (injected.ok) {
         return {

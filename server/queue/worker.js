@@ -369,6 +369,9 @@ async function runStep(applicationId, key) {
           await adapter.login({ cookies: cookieHeader, cookieOrigin: SITE_META[site]?.homeUrl || job.url });
         } else if (creds?.email && creds?.password) {
           await adapter.login({ email: creds.email, password: creds.password });
+          // Persist the fresh session the password login created so future runs
+          // reuse it (and the sliding keep-alive can maintain it).
+          require('../services/sessionRefresh').captureCookiesFromContext(app.userId, site).catch(() => {});
         }
 
         if (typeof adapter.submitApplication === 'function') {
@@ -408,6 +411,9 @@ async function runStep(applicationId, key) {
           throw new Error(`No submit support for ${site} yet — application not submitted.`);
         }
         lastSubmitAt.set(site, Date.now());
+        // Sliding session keep-alive: replay the stored session and persist
+        // the fresh cookie jar so the site login survives for months.
+        require('../services/sessionRefresh').refreshSiteCookies(app.userId, site).catch(() => {});
       } finally {
         releaseSiteSlot(site);
       }

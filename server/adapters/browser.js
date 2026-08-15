@@ -138,6 +138,42 @@ async function closeBrowser() {
 }
 
 /**
+ * Launch a DEDICATED visible (headed) browser for interactive login. The user
+ * completes login (CAPTCHA/OTP/SSO included) in the window; the caller then
+ * harvests the session cookies. Independent of the shared headless instance.
+ * @param {string} [startUrl] - page to open immediately
+ * @returns {Promise<{ browser: import('puppeteer').Browser, page: import('puppeteer').Page }>}
+ */
+async function launchInteractiveBrowser(startUrl) {
+  if (!_puppeteer) _puppeteer = require('puppeteer');
+  const browser = await _puppeteer.launch({
+    headless: false,
+    args: [...LAUNCH_ARGS, '--start-maximized'],
+    defaultViewport: null,
+  });
+  const page = (await browser.pages())[0] || (await browser.newPage());
+  await page.setUserAgent(
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'
+  );
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    delete navigator.__proto__.webdriver;
+  });
+  if (startUrl) {
+    await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+  }
+  return { browser, page };
+}
+
+/** Convert Puppeteer cookies into a raw "Cookie" request header string. */
+function cookiesToHeader(cookies) {
+  return (cookies || [])
+    .filter((c) => c && c.name)
+    .map((c) => `${c.name}=${c.value}`)
+    .join('; ');
+}
+
+/**
  * Try to restore a logged-in session from a raw Cookie header string.
  * Injects the cookies for `originUrl`, loads the site, and returns whether
  * `checkLoggedIn(page)` reports an active session. `checkLoggedIn` defaults
@@ -300,4 +336,4 @@ function confirmApplied(state) {
   return { applied: true };
 }
 
-module.exports = { getBrowser, newPage, withPage, safeText, safeAttr, delay, setCookiesFromHeader, loginWithCookies, closeBrowser, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied, safeClick };
+module.exports = { getBrowser, newPage, withPage, safeText, safeAttr, delay, setCookiesFromHeader, loginWithCookies, closeBrowser, launchInteractiveBrowser, cookiesToHeader, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied, safeClick };

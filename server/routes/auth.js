@@ -79,7 +79,7 @@ router.post(
 
     const secrets = getJwtSecrets();
     const token = jwt.sign({ id: admin._id.toString() }, secrets[0], {
-      expiresIn: '7d',
+      expiresIn: '90d',
       algorithm: 'HS256',
     });
     res.json({ token, username: admin.username });

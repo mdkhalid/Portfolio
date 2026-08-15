@@ -200,6 +200,44 @@ router.post('/:name/test', asyncHandler(async (req, res) => {
   }
 }));
 
+/**
+ * POST /:name/browser-login — assisted login: opens a visible Chrome window
+ * on the site's login page, waits for the user to log in manually, then
+ * captures the session cookies (encrypted), enables the site, and marks it
+ * connected. No DevTools cookie pasting needed.
+ */
+router.post('/:name/browser-login', asyncHandler(async (req, res) => {
+  const name = str(req.params, 'name', { min: 1, max: 50 }).toLowerCase();
+  await assertKnownSite(req.adminId, name);
+
+  const { interactiveLogin } = require('../services/browserLogin');
+  const result = await interactiveLogin(name);
+  if (!result.ok) {
+    throw new AppError(result.reason || 'Interactive login failed', 408, 'LOGIN_TIMEOUT');
+  }
+
+  const encrypted = encrypt({ value: result.cookieHeader });
+  const existing = await UserJobSite.findOne({ userId: req.adminId, name }).select('+cookies +credentials');
+  let doc;
+  if (existing) {
+    existing.cookies = encrypted;
+    existing.cookieUpdatedAt = new Date();
+    existing.enabled = true;
+    existing.status = 'connected';
+    doc = await existing.save();
+  } else {
+    doc = await UserJobSite.create({
+      userId: req.adminId,
+      name,
+      cookies: encrypted,
+      cookieUpdatedAt: new Date(),
+      enabled: true,
+      status: 'connected',
+    });
+  }
+  res.json({ ...toSafeSite(doc), message: `Logged in — ${result.cookieCount} session cookies captured. Site enabled.` });
+}));
+
 router.delete('/:name', asyncHandler(async (req, res) => {
   const name = str(req.params, 'name', { min: 1, max: 50 }).toLowerCase();
   await assertKnownSite(req.adminId, name);

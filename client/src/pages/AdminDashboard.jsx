@@ -5,7 +5,7 @@ import { useTheme } from '../context/ThemeContext'
 import { useApiAuth } from '../lib/api'
 import { motion } from 'framer-motion'
 import { io } from 'socket.io-client'
-import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, BookOpen, Phone, PhoneCall, MessagesSquare, Send, MessageCircle, Users, Globe, RefreshCw, Loader2, Filter, Search, ChevronLeft, ChevronRight, CheckSquare, Square, Target, Zap, Briefcase as BriefcaseIcon, ExternalLink, EyeOff, ListTodo, History, RotateCcw, Bell, CheckCheck, PauseCircle, PlayCircle, UserCheck, XCircle, Banknote, Star, Upload } from 'lucide-react'
+import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, BookOpen, Phone, PhoneCall, MessagesSquare, Send, MessageCircle, Users, Globe, RefreshCw, Loader2, Filter, Search, ChevronLeft, ChevronRight, CheckSquare, Square, Target, Zap, Briefcase as BriefcaseIcon, ExternalLink, EyeOff, ListTodo, History, RotateCcw, Bell, CheckCheck, PauseCircle, PlayCircle, UserCheck, XCircle, Banknote, Star, Upload, LogIn } from 'lucide-react'
 import EditModal from '../features/admin/components/EditModal'
 import ProfileForm from '../features/admin/components/ProfileForm'
 
@@ -54,6 +54,7 @@ export default function AdminDashboard() {
   const [showCredsPassword, setShowCredsPassword] = useState(false)
   const [credsSaving, setCredsSaving] = useState(false)
   const [testingSite, setTestingSite] = useState(null)
+  const [browserLoginSite, setBrowserLoginSite] = useState(null)
   const [fetching, setFetching] = useState(false)
   const [fetchResult, setFetchResult] = useState(null)
   const [addSiteModal, setAddSiteModal] = useState(false)
@@ -359,6 +360,18 @@ export default function AdminDashboard() {
       showToast(err.response?.data?.error || 'Connection failed', 'error')
       await refreshJobSites()
     } finally { setTestingSite(null) }
+  }
+
+  const browserLogin = async (name) => {
+    setBrowserLoginSite(name)
+    showToast('Opening browser — log in there, this may take up to 4 minutes…', 'info')
+    try {
+      const { data } = await API.post('/api/job-sites/' + name + '/browser-login', {}, { timeout: 5 * 60 * 1000 })
+      showToast(data.message || 'Logged in — site enabled', 'success')
+      await refreshJobSites()
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Browser login failed', 'error')
+    } finally { setBrowserLoginSite(null) }
   }
 
   const removeJobSite = async (name) => {
@@ -1607,6 +1620,17 @@ export default function AdminDashboard() {
                         <button onClick={() => testJobSite(site.name)} disabled={testingSite === site.name || (!site.credentials?.email && !site.hasCookies)}
                           className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-emerald-400' : 'hover:bg-gray-200 text-emerald-600') + ' disabled:opacity-40'}>
                           <TestIcon size={16} className={testingSite === site.name ? 'animate-spin' : ''} />
+                        </button>
+                      )
+                    })()}
+                    {/* Assisted browser login */}
+                    {(() => {
+                      const LoginIcon = browserLoginSite === site.name ? Loader2 : LogIn
+                      return (
+                        <button onClick={() => browserLogin(site.name)} disabled={browserLoginSite !== null}
+                          title="Open a browser window to log in — session is captured automatically"
+                          className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-fuchsia-400' : 'hover:bg-gray-200 text-fuchsia-600') + ' disabled:opacity-40'}>
+                          <LoginIcon size={16} className={browserLoginSite === site.name ? 'animate-spin' : ''} />
                         </button>
                       )
                     })()}

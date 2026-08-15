@@ -25,7 +25,7 @@ async function login({ email, password, cookies, cookieOrigin }) {
     // credentials there's no point falling through to a doomed password login
     // that would only surface a confusing Puppeteer selector-timeout error.
     if (!email || !password) {
-      throw new Error('Indeed session cookie is invalid or expired — re-paste a fresh cookie in the Job Sites tab.');
+      throw new Error('Indeed session cookie is invalid or expired — use the Login via Browser button in the Job Sites tab to reconnect.');
     }
   }
 

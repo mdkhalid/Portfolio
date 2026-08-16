@@ -33,7 +33,7 @@ async function login({ email, password, cookies, cookieOrigin }) {
         return !(url.includes('/login') || loggedOut);
       });
       return isLoggedIn;
-    });
+    }, 'naukri');
     if (ok) return { ok: true, via: 'cookies' };
     // Cookie present but didn't authenticate → it's expired/invalid. Without
     // credentials there's no point falling through to a doomed password login
@@ -79,7 +79,7 @@ async function login({ email, password, cookies, cookieOrigin }) {
       throw new Error(errText || 'Naukri login failed — check credentials, complete CAPTCHA on the site, or paste a session cookie.');
     }
     return { ok: true, via: 'password' };
-  });
+  }, 'naukri');
 }
 
 /**
@@ -131,7 +131,7 @@ async function searchJobs({ query, location = '', pageCount = 1, maxJobs = 50 })
       }
     }
     return jobs;
-  });
+  }, 'naukri');
 }
 
 /** Fetch the full job description for a Naukri job URL. Accepts a URL string or { url }. */
@@ -142,7 +142,7 @@ async function fetchJobDescription(input) {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await delay(2000);
     return await page.$eval('.job-desc, [data-qa="jobDescription"], [class*=jobDesc], [class*=job-desc]', (el) => el.textContent.trim()).catch(() => '');
-  });
+  }, 'naukri');
 }
 
 /**
@@ -212,7 +212,7 @@ async function submitApplication({ url, credentials, resume, resumeFilename, fie
     // — check the button text/state, not just its presence.
     const state = await readApplyState(page, '.apply-button, button[class*="apply"], a[class*="apply"]');
     return { ok: true, ...confirmApplied(state), via: 'submitApplication' };
-  });
+  }, 'naukri');
 }
 
 module.exports = { login, searchJobs, fetchJobDescription, submitApplication, detectApplyFields };

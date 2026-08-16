@@ -12,6 +12,7 @@ const LOGIN_URLS = {
   naukri: 'https://www.naukri.com/nlogin/login',
   indeed: 'https://secure.indeed.com/account/login',
   workatastartup: 'https://www.workatastartup.com/login',
+  wellfound: 'https://wellfound.com/login',
 };
 
 const POLL_MS = 4000;
@@ -53,13 +54,34 @@ function browserAlive(browser) {
   }
 }
 
+// Sites that need longer to log in manually (rate limits / Cloudflare waits).
+const LONG_LOGIN_SITES = new Set(['wellfound']);
+
+/** True when the page is a rate-limit / bot-challenge interstitial, not the site. */
+async function isBlockPage(page) {
+  try {
+    const text = await page.evaluate(() => (document.body && document.body.innerText || '').slice(0, 3000));
+    return /too many requests|rate limit|429|checking your browser|verify you are human|just a moment|attention required/i.test(text);
+  } catch {
+    return false;
+  }
+}
+
 /** Site-specific "is the user logged in now?" check on the current page. */
 async function detectLoggedIn(page, site) {
   try {
     if (onLoginUrl(page.url())) return false;
+    // A 429 "too many requests" or Cloudflare challenge page is NOT a logged-in
+    // page — harvesting cookies from it produces a bogus session header.
+    if (await isBlockPage(page)) return false;
     if (site === 'naukri') {
       // Naukri keeps a visible Login button in the header while logged out.
       const loggedOut = await page.$('.loginBtn, [data-testid="login-button"], a[href*="nlogin/login"]');
+      return !loggedOut;
+    }
+    if (site === 'wellfound') {
+      // Logged-out pages show Log In / Sign Up links in the header nav.
+      const loggedOut = await page.$('header a[href*="/login"], header a[href*="/signup"], nav a[href*="/login"]');
       return !loggedOut;
     }
     // Generic: off the login URL and page has a body → best-effort success.
@@ -75,20 +97,33 @@ async function detectLoggedIn(page, site) {
  * @param {{ timeoutMs?: number, startUrl?: string }} [opts]
  * @returns {Promise<{ ok: boolean, cookieHeader?: string, cookieCount?: number, reason?: string }>}
  */
-async function interactiveLogin(site, { timeoutMs = DEFAULT_TIMEOUT_MS, startUrl } = {}) {
+async function interactiveLogin(site, { timeoutMs, startUrl } = {}) {
   if (_busy) return { ok: false, reason: 'Another browser login is already in progress.' };
   _busy = true;
+  // Rate-limited sites (Cloudflare "too many requests") need room to cool down
+  // inside the window while the user waits and refreshes manually.
+  const limit = timeoutMs || (LONG_LOGIN_SITES.has(site) ? 10 * 60 * 1000 : DEFAULT_TIMEOUT_MS);
   const meta = SITE_META[site] || {};
   const openUrl = startUrl || LOGIN_URLS[site] || meta.homeUrl;
   if (!openUrl) return { ok: false, reason: 'No site URL configured for ' + site };
 
   let browser = null;
   try {
-    const session = await launchInteractiveBrowser(openUrl);
+    const session = await launchInteractiveBrowser(openUrl, { site });
     browser = session.browser;
     const page = session.page;
 
-    const deadline = Date.now() + timeoutMs;
+    // The window opened but the login page never loaded (profile lock, network,
+    // site down). Waiting would just stare at a blank window — bail with the
+    // actual navigation error so the toast explains what went wrong.
+    if (session.navError) {
+      return {
+        ok: false,
+        reason: `The login page did not load (${session.navError}). Try the Login via Browser button again — stale browser processes are cleaned up automatically.`,
+      };
+    }
+
+    const deadline = Date.now() + limit;
     while (Date.now() < deadline) {
       await delay(POLL_MS);
       // If the browser window was closed by the user, stop waiting.
@@ -115,7 +150,7 @@ async function interactiveLogin(site, { timeoutMs = DEFAULT_TIMEOUT_MS, startUrl
         }
       }
     }
-    return { ok: false, reason: 'Timed out waiting for login — try again and complete login within 4 minutes.' };
+    return { ok: false, reason: `Timed out waiting for login — try again and complete login within ${Math.round(limit / 60000)} minutes.` };
   } catch (err) {
     return { ok: false, reason: err?.message || 'Interactive login failed' };
   } finally {

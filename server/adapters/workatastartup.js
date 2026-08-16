@@ -25,7 +25,7 @@ async function login({ email, password, cookies, cookieOrigin }) {
         return !(onAuthPage || hasPasswordField);
       });
       return isLoggedIn;
-    });
+    }, 'workatastartup');
     if (ok) return { ok: true, via: 'cookies' };
     // Stale cookie — fall back to a password login if credentials exist.
     if (!email || !password) {
@@ -75,7 +75,7 @@ async function login({ email, password, cookies, cookieOrigin }) {
       throw new Error('YC login failed — check your credentials, complete any CAPTCHA, or paste a session cookie instead.');
     }
     return { ok: true, via: 'password' };
-  });
+  }, 'workatastartup');
 }
 
 /**
@@ -142,7 +142,7 @@ async function searchJobs({ query, location = '', maxJobs = 50 }) {
       }
     }
     return jobs;
-  });
+  }, 'workatastartup');
 }
 
 /** Fetch the full job description for a Work at a Startup job URL. */
@@ -161,7 +161,7 @@ async function fetchJobDescription(input) {
       const slice = lines.slice(Math.max(start, 0), end === -1 ? lines.length : end);
       return slice.join(' ').replace(/\s+/g, ' ').trim();
     });
-  });
+  }, 'workatastartup');
 }
 
 /** Work at a Startup applies via the YC single application — manual apply only. */

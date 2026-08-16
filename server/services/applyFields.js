@@ -15,6 +15,25 @@ function slugify(s) {
     .slice(0, 80);
 }
 
+/**
+ * Map dynamic questions/labels to cross-platform canonical semantic keys.
+ */
+function toCanonicalKey(label = '', key = '') {
+  const text = `${label} ${key}`.toLowerCase();
+  if (/notice|how soon|availability|join|start date/i.test(text)) return 'notice_period';
+  if (/sponsor|visa|work auth|authorized to work|eligible to work/i.test(text)) return 'work_authorization';
+  if (/expected (salary|ctc|pay|compensation)|salary expectation|target salary/i.test(text)) return 'expected_ctc';
+  if (/current (salary|ctc|pay|compensation)/i.test(text)) return 'current_ctc';
+  if (/relocate|willing to relocate|relocation/i.test(text)) return 'willing_to_relocate';
+  if (/total (years of )?exp|years of experience|overall exp/i.test(text)) return 'years_of_experience';
+  if (/gender|pronoun/i.test(text)) return 'gender';
+  if (/linkedin/i.test(text)) return 'linkedin_url';
+  if (/github/i.test(text)) return 'github_url';
+  if (/portfolio|website/i.test(text)) return 'portfolio_url';
+  if (/headline|summary|about you|tell us about/i.test(text)) return 'about_summary';
+  return slugify(label || key);
+}
+
 function resolveLabel(el) {
   if (el.id) {
     const forLabel = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
@@ -162,18 +181,29 @@ function profileFieldMap(profile = {}) {
 /**
  * Resolve answers for the detected fields, in priority order:
  *   1. learned knowledge base (ApplyField, per user+site)
- *   2. candidate profile
- *   3. AI (only for non-PII fields), guarded by the AI budget
+ *   2. canonical cross-site memory (same semantic question answered on ANY site)
+ *   3. candidate profile
+ *   4. AI (only for non-PII fields), guarded by the AI budget
  * Fields that still have no value become `waitingFields` (user attention).
  *
  * Returns { fieldValues, fieldMeta, waitingFields, usedAI }.
  */
 async function resolveFieldValues({ userId, site, detected = [], jobTitle = '' }) {
-  const [profile, saved] = await Promise.all([
+  // Fetch site-specific AND all-site learned answers in one pass so a value
+  // learned on Indeed can auto-fill the same semantic question on Naukri.
+  const [profile, saved, allLearned] = await Promise.all([
     Profile.findOne().lean().catch(() => null),
     ApplyField.find({ userId, site }).lean().catch(() => []),
+    ApplyField.find({ userId, canonicalKey: { $ne: '' } }).lean().catch(() => []),
   ]);
   const savedByKey = new Map(saved.map((s) => [s.key, s]));
+  const learnedByCanonical = new Map();
+  for (const row of allLearned) {
+    if (!row.canonicalKey || !row.value) continue;
+    const prev = learnedByCanonical.get(row.canonicalKey);
+    // Prefer the most-used answer for the canonical concept.
+    if (!prev || (row.timesUsed || 0) > (prev.timesUsed || 0)) learnedByCanonical.set(row.canonicalKey, row);
+  }
   const profileMap = profileFieldMap(profile || {});
 
   const fieldValues = {};
@@ -186,6 +216,14 @@ async function resolveFieldValues({ userId, site, detected = [], jobTitle = '' }
     if (learned?.value) {
       fieldValues[f.key] = learned.value;
       fieldMeta[f.key] = { ...f, source: 'saved' };
+      continue;
+    }
+    // Cross-site memory: same question asked with a different label elsewhere.
+    const canonical = toCanonicalKey(f.label, f.key);
+    const crossSite = learnedByCanonical.get(canonical);
+    if (crossSite?.value) {
+      fieldValues[f.key] = crossSite.value;
+      fieldMeta[f.key] = { ...f, source: 'saved', canonicalKey: canonical, learnedFrom: crossSite.site };
       continue;
     }
     const pf = profileMap[f.key] || profileMap[f.type];
@@ -291,13 +329,16 @@ ${fieldList}`;
 
 /**
  * Learn resolved values into the knowledge base after a successful submit, so
- * future applications on the same site auto-fill (fully automatic).
+ * future applications on ANY site auto-fill (fully automatic). Each answer is
+ * saved with both the site-specific key and a canonical semantic key, enabling
+ * cross-site reuse of answers to equivalent questions.
  */
 async function learnFieldValues({ userId, site, fieldValues = {}, fieldMeta = {} }) {
   let learned = 0;
   for (const [key, value] of Object.entries(fieldValues)) {
     if (!value) continue;
     const meta = fieldMeta[key] || {};
+    const canonicalKey = meta.canonicalKey || toCanonicalKey(meta.label || '', key);
     try {
       await ApplyField.updateOne(
         { userId, site, key },
@@ -309,6 +350,7 @@ async function learnFieldValues({ userId, site, fieldValues = {}, fieldMeta = {}
             options: meta.options || [],
             value,
             source: meta.source || 'ai',
+            canonicalKey,
           },
           $inc: { timesUsed: 1 },
         },
@@ -356,6 +398,7 @@ async function detectApplyFormFields({ url, applySelectors = [], waitAfterClick 
 
 module.exports = {
   slugify,
+  toCanonicalKey,
   detectFields,
   fillFields,
   profileFieldMap,

@@ -352,10 +352,13 @@ async function runStep(applicationId, key) {
           ? await GeneratedResume.findById(app.resumeId).lean().catch(() => null)
           : null;
 
-        // Applying on automated sites (Naukri/Indeed/YC) requires a logged-in
-        // session. Without saved credentials or a session cookie the browser run
-        // is doomed — surface a clear, retryable reason instead.
-        if (!cookieHeader && !(creds?.email && creds?.password)) {
+        // Applying on automated sites needs a logged-in session: a saved cookie
+        // header, stored credentials, or a persistent browser profile created
+        // by the interactive "Login via Browser" flow (Wellfound et al.).
+        const fs = require('fs');
+        const { getProfileDir } = require('../adapters/browser');
+        const hasProfile = fs.existsSync(getProfileDir(site));
+        if (!cookieHeader && !(creds?.email && creds?.password) && !hasProfile) {
           throw new Error(
             `Login required for ${site} — no saved credentials or session cookie. Add them in the Job Sites tab, then retry.`
           );

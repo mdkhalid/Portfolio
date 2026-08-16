@@ -364,9 +364,9 @@ export default function AdminDashboard() {
 
   const browserLogin = async (name) => {
     setBrowserLoginSite(name)
-    showToast('Opening browser — log in there, this may take up to 4 minutes…', 'info')
+    showToast('Opening browser — log in there, this may take up to 10 minutes (longer if the site shows a rate-limit page)…', 'info')
     try {
-      const { data } = await API.post('/api/job-sites/' + name + '/browser-login', {}, { timeout: 5 * 60 * 1000 })
+      const { data } = await API.post('/api/job-sites/' + name + '/browser-login', {}, { timeout: 11 * 60 * 1000 })
       showToast(data.message || 'Logged in — site enabled', 'success')
       await refreshJobSites()
     } catch (err) {
@@ -1937,6 +1937,7 @@ export default function AdminDashboard() {
             <option value="naukri">Naukri</option>
             <option value="indeed">Indeed</option>
             <option value="workatastartup">Work at a Startup</option>
+            <option value="wellfound">Wellfound</option>
             <option value="linkedin">LinkedIn</option>
           </select>
           <select value={jobAppsFilters.status} onChange={e => handleFilterChange('status', e.target.value)}
@@ -2235,6 +2236,7 @@ export default function AdminDashboard() {
             <option value="naukri">Naukri</option>
             <option value="indeed">Indeed</option>
             <option value="workatastartup">Work at a Startup</option>
+            <option value="wellfound">Wellfound</option>
             <option value="linkedin">LinkedIn</option>
           </select>
           <select value={trackingFilters.status} onChange={e => handleTrackingFilterChange('status', e.target.value)}

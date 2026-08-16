@@ -1,8 +1,11 @@
 node_modules/
 .commandcode/
+.kimchi/
+.zcode/
 .env
 dist/
 *.log
 server/uploads/*
 server/__tmp-*
+server/data/browser_profiles/*
 suggestion.md

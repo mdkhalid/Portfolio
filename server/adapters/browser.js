@@ -1,36 +1,114 @@
-let _browserPromise = null;
+const path = require('path');
+const fs = require('fs');
+const { execFile } = require('child_process');
+
 let _puppeteer = null;
+// One headless browser per profile key ('default' = ephemeral, no userDataDir).
+const _browserPromises = new Map();
+// Back-compat alias for callers that only track the shared default browser.
+let _browserPromise = null;
 
 const LAUNCH_ARGS = [
   '--no-sandbox',
   '--disable-setuid-sandbox',
   '--disable-dev-shm-usage',
   '--lang=en-US',
+  '--no-first-run',
+  '--no-default-browser-check',
   '--disable-blink-features=AutomationControlled',
   '--disable-features=IsolateOrigins,site-per-process',
 ];
 
-async function getBrowser() {
-  if (!_browserPromise) {
+// Sites with aggressive bot protection (Cloudflare/DataDome). Their clearance
+// cookies are bound to the browser fingerprint that earned them, and headless
+// Chrome has a different fingerprint — so these sites run in a REAL (headed)
+// Chrome parked off-screen. Logged-in sessions earned in the interactive
+// login window then survive in the headless worker.
+const HEADED_SITES = new Set(['wellfound']);
+
+/** Get or create a persistent user data directory for a specific job site. */
+function getProfileDir(site = 'default') {
+  const safeSite = String(site || 'default').toLowerCase().replace(/[^a-z0-9_-]+/g, '_');
+  const dir = path.join(__dirname, '..', 'data', 'browser_profiles', safeSite);
+  try {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  } catch {
+    // best-effort
+  }
+  return dir;
+}
+
+/**
+ * Force-kill stray Chrome processes still holding a site's persistent profile
+ * (left behind by a crashed server or a killed login window). Chrome locks the
+ * profile directory per process, so a stale lock makes the NEXT launch open a
+ * window that never loads any page. Scoped strictly to processes whose command
+ * line references the profile directory; best-effort, never throws.
+ */
+function killProfileProcesses(site) {
+  const dir = getProfileDir(site);
+  return new Promise((resolve) => {
+    const finish = () => resolve();
+    if (process.platform === 'win32') {
+      const safeDir = dir.replace(/'/g, "''");
+      const script =
+        `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | ` +
+        `Where-Object { $_.CommandLine -like '*${safeDir}*' } | ` +
+        `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
+      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 15000 }, () => finish());
+    } else {
+      execFile('pkill', ['-f', dir], { timeout: 15000 }, () => finish());
+    }
+  });
+}
+
+// Sites with an interactive login window currently open (profile in use by
+// the user, not by stray processes) — protects them from cleanup kills.
+const _interactiveSites = new Set();
+
+async function getBrowser(site) {
+  const key = site ? String(site).toLowerCase() : 'default';
+  if (!_browserPromises.has(key)) {
     // Lazy-require so requiring the adapters never pulls in puppeteer's ESM
     // entry (jest/CommonJS contexts that never launch a browser stay clean).
     if (!_puppeteer) {
       _puppeteer = require('puppeteer');
     }
-    _browserPromise = _puppeteer.launch({
+    if (site && !_interactiveSites.has(key)) {
+      // A crashed/killed server can leave headless Chrome holding the profile
+      // lock; clear it so this fresh launch actually works.
+      await killProfileProcesses(site);
+      await delay(500);
+    }
+    const launchOptions = {
       headless: 'new',
       args: LAUNCH_ARGS,
       defaultViewport: { width: 1366, height: 768 },
-    });
-    _browserPromise.catch(() => {
-      _browserPromise = null;
+    };
+    if (site) {
+      launchOptions.userDataDir = getProfileDir(site);
+      if (HEADED_SITES.has(key)) {
+        // Real Chrome (matches the interactive-login fingerprint), hidden
+        // off-screen so the user never sees it flash during auto-apply.
+        launchOptions.headless = false;
+        launchOptions.args = [...LAUNCH_ARGS, '--window-position=-32000,-32000', '--window-size=1366,768'];
+      }
+    }
+    const promise = _puppeteer.launch(launchOptions);
+    _browserPromises.set(key, promise);
+    if (key === 'default') _browserPromise = promise;
+    promise.catch(() => {
+      _browserPromises.delete(key);
+      if (key === 'default') _browserPromise = null;
     });
   }
-  return _browserPromise;
+  return _browserPromises.get(key);
 }
 
-async function newPage() {
-  const browser = await getBrowser();
+async function newPage(site) {
+  const browser = await getBrowser(site);
   const page = await browser.newPage();
   await page.setUserAgent(
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'
@@ -45,8 +123,8 @@ async function newPage() {
 }
 
 /** Shortcut: create a page, run fn(page), always close the page. */
-async function withPage(fn) {
-  const page = await newPage();
+async function withPage(fn, site) {
+  const page = await newPage(site);
   try {
     return await fn(page);
   } finally {
@@ -130,28 +208,64 @@ async function setCookiesFromHeader(page, cookieHeader, originUrl) {
 }
 
 async function closeBrowser() {
-  if (_browserPromise) {
-    const b = await _browserPromise;
-    _browserPromise = null;
-    await b.close().catch(() => {});
+  const promises = [..._browserPromises.values()];
+  _browserPromises.clear();
+  _browserPromise = null;
+  for (const promise of promises) {
+    const b = await promise.catch(() => null);
+    if (b) await b.close().catch(() => {});
   }
+}
+
+/**
+ * Close only the headless browser holding a given site's persistent profile,
+ * releasing the Chrome profile-directory lock before an interactive login on
+ * the same site. Browsers for other sites keep running untouched.
+ */
+async function closeBrowserForSite(site) {
+  const key = site ? String(site).toLowerCase() : 'default';
+  const promise = _browserPromises.get(key);
+  if (!promise) return;
+  _browserPromises.delete(key);
+  if (key === 'default') _browserPromise = null;
+  const b = await promise.catch(() => null);
+  if (b) await b.close().catch(() => {});
 }
 
 /**
  * Launch a DEDICATED visible (headed) browser for interactive login. The user
  * completes login (CAPTCHA/OTP/SSO included) in the window; the caller then
  * harvests the session cookies. Independent of the shared headless instance.
+ * Any stray Chrome process still holding this site's persistent profile is
+ * killed first — a stale lock makes the new window open but never load pages.
  * @param {string} [startUrl] - page to open immediately
- * @returns {Promise<{ browser: import('puppeteer').Browser, page: import('puppeteer').Page }>}
+ * @param {{ site?: string }} [opts]
+ * @returns {Promise<{ browser: import('puppeteer').Browser, page: import('puppeteer').Page, navError: string | null }>}
  */
-async function launchInteractiveBrowser(startUrl) {
+async function launchInteractiveBrowser(startUrl, { site } = {}) {
+  // Release this site's profile lock only (other sites keep their sessions).
+  if (site) {
+    await closeBrowserForSite(site);
+    await killProfileProcesses(site);
+    await delay(1000); // let the OS release file locks
+  }
+
   if (!_puppeteer) _puppeteer = require('puppeteer');
-  const browser = await _puppeteer.launch({
+  const launchOptions = {
     headless: false,
     args: [...LAUNCH_ARGS, '--start-maximized'],
     defaultViewport: null,
-  });
+  };
+  if (site) {
+    launchOptions.userDataDir = getProfileDir(site);
+  }
+  const browser = await _puppeteer.launch(launchOptions);
   const page = (await browser.pages())[0] || (await browser.newPage());
+  if (site) {
+    const key = String(site).toLowerCase();
+    _interactiveSites.add(key);
+    browser.once('disconnected', () => _interactiveSites.delete(key));
+  }
   await page.setUserAgent(
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'
   );
@@ -159,10 +273,22 @@ async function launchInteractiveBrowser(startUrl) {
     Object.defineProperty(navigator, 'webdriver', { get: () => false });
     delete navigator.__proto__.webdriver;
   });
+  let navError = null;
   if (startUrl) {
-    await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+    // A swallowed navigation failure leaves a blank window the user can't do
+    // anything with — retry once, then report why the page never loaded.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        navError = null;
+        break;
+      } catch (err) {
+        navError = err?.message || String(err);
+        await delay(2000);
+      }
+    }
   }
-  return { browser, page };
+  return { browser, page, navError };
 }
 
 /** Convert Puppeteer cookies into a raw "Cookie" request header string. */
@@ -171,6 +297,39 @@ function cookiesToHeader(cookies) {
     .filter((c) => c && c.name)
     .map((c) => `${c.name}=${c.value}`)
     .join('; ');
+}
+
+/**
+ * Navigate with rate-limit awareness. Wellfound and other Cloudflare-fronted
+ * sites answer burst traffic with HTTP 429; Puppeteer's goto does NOT throw on
+ * 4xx/5xx, so callers would scrape an error page and report misleading
+ * failures ("cookie not accepted"). This waits out the throttle (honoring
+ * Retry-After, bounded) and retries a couple of times with growing backoff.
+ * Returns the final response (or null when navigation itself failed).
+ */
+async function gotoWithBackoff(page, url, { timeout = 40000, retries = 2, waitUntil = 'domcontentloaded' } = {}) {
+  let waitMs = 20000;
+  let resp = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    resp = await page.goto(url, { waitUntil, timeout }).catch(() => null);
+    const status = resp ? resp.status() : 0;
+    if (status !== 429 && status !== 403 && status !== 503) return resp;
+    if (attempt === retries) break;
+    const retryAfter = Number(resp?.headers?.()['retry-after']) || 0;
+    waitMs = Math.min(Math.max(retryAfter * 1000, waitMs), 60000);
+    console.warn(`[browser] HTTP ${status} from ${url} — backing off ${Math.round(waitMs / 1000)}s (attempt ${attempt + 1}/${retries})`);
+    await delay(waitMs);
+    waitMs *= 2;
+  }
+  return resp;
+}
+
+/** Human-readable error for a throttled/blocked response, or null when fine. */
+function blockError(resp) {
+  const status = resp ? resp.status() : 0;
+  if (status === 429) return 'The site is rate limiting requests (HTTP 429) — wait a few minutes and retry.';
+  if (status === 403 || status === 503) return 'The site blocked the request (bot protection) — use the Login via Browser button to restore the session.';
+  return null;
 }
 
 /**
@@ -184,6 +343,19 @@ function cookiesToHeader(cookies) {
  * "did not authenticate" message.
  */
 async function loginWithCookies(page, cookieHeader, originUrl, checkLoggedIn) {
+  // With persistent profiles the browser may already hold a valid session —
+  // injecting a stale cookie header over it could break it, so check first.
+  if (typeof checkLoggedIn === 'function') {
+    try {
+      await page.goto(originUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+      await delay(1500);
+      if (await checkLoggedIn(page)) return true;
+    } catch (err) {
+      if (err instanceof Error && /(auth page|login page|login form)/i.test(err.message)) {
+        // fall through to cookie injection below
+      }
+    }
+  }
   const set = await setCookiesFromHeader(page, cookieHeader, originUrl);
   if (!set) return false;
   await page.goto(originUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
@@ -336,4 +508,4 @@ function confirmApplied(state) {
   return { applied: true };
 }
 
-module.exports = { getBrowser, newPage, withPage, safeText, safeAttr, delay, setCookiesFromHeader, loginWithCookies, closeBrowser, launchInteractiveBrowser, cookiesToHeader, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied, safeClick };
+module.exports = { getBrowser, getProfileDir, killProfileProcesses, newPage, withPage, safeText, safeAttr, delay, setCookiesFromHeader, loginWithCookies, closeBrowser, closeBrowserForSite, launchInteractiveBrowser, cookiesToHeader, gotoWithBackoff, blockError, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied, safeClick };

@@ -12,8 +12,9 @@ const VALUE_SOURCE = ['saved', 'profile', 'ai', 'user', 'manual'];
 const applyFieldSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    site: { type: String, required: true },
+    site: { type: String, default: 'global' },
     key: { type: String, required: true }, // normalized field key, e.g. 'years_of_experience'
+    canonicalKey: { type: String, default: '', index: true }, // semantic concept e.g. 'notice_period', 'sponsorship'
     label: { type: String, default: '' },
     type: { type: String, enum: FIELD_TYPE, default: 'text' },
     selector: { type: String, default: '' },
@@ -25,7 +26,8 @@ const applyFieldSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// One learned field per user + site + key.
-applyFieldSchema.index({ userId: 1, site: 1, key: 1 }, { unique: true });
+// Learned field per user + site + key.
+applyFieldSchema.index({ userId: 1, site: 1, key: 1 });
+applyFieldSchema.index({ userId: 1, canonicalKey: 1 });
 
 module.exports = mongoose.model('ApplyField', applyFieldSchema);

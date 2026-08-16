@@ -83,10 +83,13 @@ const jobFetchLimiter = createLimiter({
   legacyHeaders: false,
 });
 
-// Job site credential save/test: 20 per 15 minutes per IP
+// Job site credential save/test/login: 60 per 15 minutes per IP. GETs (site
+// list refresh) are skipped — they're cheap and the UI refetches them often,
+// which previously starved the bucket during one-time site setup flows.
 const jobSiteLimiter = createLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 60,
+  skip: (req) => req.method === 'GET',
   message: { error: 'Too many requests. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,

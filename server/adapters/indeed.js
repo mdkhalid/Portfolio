@@ -19,7 +19,7 @@ async function login({ email, password, cookies, cookieOrigin }) {
         return !(url.includes('login') || loggedOut);
       });
       return isLoggedIn;
-    });
+    }, 'indeed');
     if (ok) return { ok: true, via: 'cookies' };
     // Cookie present but didn't authenticate → it's expired/invalid. Without
     // credentials there's no point falling through to a doomed password login
@@ -49,7 +49,7 @@ async function login({ email, password, cookies, cookieOrigin }) {
       throw new Error('Indeed login failed — SSO/CAPTCHA required. Log in manually, then paste your session cookie.');
     }
     return { ok: true, via: 'password' };
-  });
+  }, 'indeed');
 }
 
 /**
@@ -110,7 +110,7 @@ async function searchJobs({ query, location = '', pageCount = 1, maxJobs = 50 })
       }
     }
     return jobs;
-  });
+  }, 'indeed');
 }
 
 /** Fetch the full job description for an Indeed job URL. Accepts a URL string or { url }. */
@@ -121,7 +121,7 @@ async function fetchJobDescription(input) {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await delay(1500);
     return await safeText(page, '#jobDescriptionText, [data-testid="jobDescriptionText"]');
-  });
+  }, 'indeed');
 }
 
 /**
@@ -184,7 +184,7 @@ async function submitApplication({ url, credentials, resume, resumeFilename, fie
     // button with success text or disables it on the modal.
     const state = await readApplyState(page, 'button[data-testid="applyButton"], #indeedApplyButton, button[class*="apply"]');
     return { ok: true, ...confirmApplied(state), via: 'submitApplication' };
-  });
+  }, 'indeed');
 }
 
 module.exports = { login, searchJobs, fetchJobDescription, submitApplication, detectApplyFields };

@@ -2,17 +2,20 @@ const naukriAdapter = require('./naukri');
 const indeedAdapter = require('./indeed');
 const genericAdapter = require('./generic');
 const workatastartupAdapter = require('./workatastartup');
+const wellfoundAdapter = require('./wellfound');
 
 const SITES = {
   naukri: naukriAdapter,
   indeed: indeedAdapter,
   workatastartup: workatastartupAdapter,
+  wellfound: wellfoundAdapter,
 };
 
 const SITE_META = {
   naukri: { label: 'Naukri', requiresLogin: true, homeUrl: 'https://www.naukri.com' },
   indeed: { label: 'Indeed', requiresLogin: true, homeUrl: 'https://www.indeed.com' },
   workatastartup: { label: 'Work at a Startup', requiresLogin: true, homeUrl: 'https://www.workatastartup.com' },
+  wellfound: { label: 'Wellfound', requiresLogin: true, homeUrl: 'https://wellfound.com' },
 };
 
 function getAdapter(name) {

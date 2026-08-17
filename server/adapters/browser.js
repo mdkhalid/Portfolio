@@ -49,13 +49,17 @@ function getProfileDir(site = 'default') {
  */
 function killProfileProcesses(site) {
   const dir = getProfileDir(site);
+  // Also match the dedicated interactive-login subdir — without it, a stuck
+  // login window would survive a "clean up the profile" kill.
+  const interactiveDir = path.join(dir, 'interactive-login');
   return new Promise((resolve) => {
     const finish = () => resolve();
     if (process.platform === 'win32') {
       const safeDir = dir.replace(/'/g, "''");
+      const safeInteractive = interactiveDir.replace(/'/g, "''");
       const script =
         `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | ` +
-        `Where-Object { $_.CommandLine -like '*${safeDir}*' } | ` +
+        `Where-Object { $_.CommandLine -like '*${safeDir}*' -or $_.CommandLine -like '*${safeInteractive}*' } | ` +
         `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
       execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 15000 }, () => finish());
     } else {
@@ -244,10 +248,21 @@ async function closeBrowserForSite(site) {
  */
 async function launchInteractiveBrowser(startUrl, { site } = {}) {
   // Release this site's profile lock only (other sites keep their sessions).
+  // The worker's off-screen headed browser (HEADED_SITES, e.g. Wellfound) holds
+  // a lock on the shared profile dir; if it is still alive the interactive
+  // window would open a blank, non-navigating window because it can't acquire
+  // the same user-data-dir. We must fully release that lock first.
   if (site) {
     await closeBrowserForSite(site);
     await killProfileProcesses(site);
-    await delay(1000); // let the OS release file locks
+    // Wait until Chrome actually releases the SingletonLock on disk (closing is
+    // async and the OS can lag a beat, especially on Windows) — launching too
+    // early is exactly what produced a blank login window before.
+    const lockPath = path.join(getProfileDir(site), 'SingletonLock');
+    for (let i = 0; i < 30; i++) {
+      if (!fs.existsSync(lockPath)) break;
+      await delay(400);
+    }
   }
 
   if (!_puppeteer) _puppeteer = require('puppeteer');
@@ -257,6 +272,10 @@ async function launchInteractiveBrowser(startUrl, { site } = {}) {
     defaultViewport: null,
   };
   if (site) {
+    // Reuse the SHARED profile dir so the session the user earns here lands
+    // directly in the worker's persistent profile (Cloudflare clearance tokens
+    // are fingerprint-bound, so they must live in the same browser profile the
+    // worker reuses). We only get here after the worker's lock is fully released.
     launchOptions.userDataDir = getProfileDir(site);
   }
   const browser = await _puppeteer.launch(launchOptions);

@@ -79,54 +79,93 @@ async function login({ email, password, cookies, cookieOrigin }) {
 
 /**
  * Search jobs on Wellfound.
+ *
+ * Wellfound's keyword search is a client-side react-select form — the
+ * `?keyword=` URL param is NOT honored by the server, so we type the query and
+ * click the Search button, then scrape the rendered job cards.
  */
 async function searchJobs({ query, location, pageCount = 1, maxJobs = 30 } = {}) {
   return withPage(async (page) => {
-    const q = encodeURIComponent(query || 'software engineer');
-    const searchUrl = `${BASE}/jobs?keyword=${q}`;
-    const resp = await gotoWithBackoff(page, searchUrl, { timeout: 40000 });
+    const resp = await gotoWithBackoff(page, `${BASE}/jobs`, { timeout: 40000 });
     const blocked = blockError(resp);
     if (blocked) throw new Error('Wellfound: ' + blocked);
     await delay(3000);
+
+    const q = String(query || '').trim();
+    if (q) {
+      // Logged-in Wellfound renders a global search box (#search); the public
+      // react-select "Job title" input is a fallback for the logged-out view.
+      const input = await page.$('#search, input[id^="react-select-"]').catch(() => null);
+      if (input) {
+        await input.click({ clickCount: 3 }).catch(() => {});
+        await page.keyboard.type(q, { delay: 25 }).catch(() => {});
+        await delay(400);
+        // Press Enter to run the global search (no visible Search button in the
+        // logged-in header) or click Search if the public form is shown.
+        await page.keyboard.press('Enter').catch(() => {});
+        await page.evaluate(() => {
+          const btn = Array.from(document.querySelectorAll('button')).find(
+            (b) => (b.textContent || '').trim() === 'Search'
+          );
+          if (btn) btn.click();
+        }).catch(() => {});
+        await delay(4000);
+      }
+    }
 
     // Auto-scroll gently to load dynamic job cards (fewer, slower scrolls —
     // Wellfound's rate limiter watches bursty automation patterns).
     for (let s = 0; s < 2; s++) {
       await page.evaluate(() => window.scrollBy(0, 900));
-      await delay(2000);
+      await delay(1500);
     }
 
     const jobs = await page.evaluate((base) => {
       const results = [];
-      const cards = Array.from(document.querySelectorAll('[data-test="JobSearchResult"], div[class*="styles_jobResult"], div[class*="styles_result"]'));
-      
-      for (const card of cards) {
-        const titleEl = card.querySelector('a[href*="/jobs/"], h2, h3, a[class*="styles_title"]');
-        const companyEl = card.querySelector('a[href*="/company/"], h4, [class*="styles_company"]');
-        const locationEl = card.querySelector('[class*="styles_location"], span[class*="styles_meta"]');
-        const salaryEl = card.querySelector('[class*="styles_compensation"], span[class*="styles_salary"]');
+      const seen = new Set();
 
-        const title = titleEl ? titleEl.textContent.trim() : '';
-        let url = titleEl && titleEl.getAttribute('href') ? titleEl.getAttribute('href') : '';
-        if (url && !url.startsWith('http')) {
-          url = base + (url.startsWith('/') ? '' : '/') + url;
+      // Wellfound renders job cards as <a href="/jobs/<id>-<slug>"> with the
+      // real fields inside specific styled spans. The company is a separate
+      // preceding card, so we remember the last clean company name seen.
+      const anchors = Array.from(document.querySelectorAll('a'));
+      let lastCompany = '';
+
+      for (const link of anchors) {
+        const href = link.getAttribute('href') || '';
+
+        if (href.startsWith('/company/')) {
+          const t = (link.textContent || '').replace(/\s+/g, ' ').trim();
+          // Only the clean "Company" text link (not the promo card with
+          // description/employee count) becomes the active company.
+          if (t && t.length <= 60 && !/promoted|employees|actively hiring|top \d+%|responds/i.test(t)) {
+            lastCompany = t;
+          }
+          continue;
         }
 
-        const company = companyEl ? companyEl.textContent.trim() : '';
-        const loc = locationEl ? locationEl.textContent.trim() : '';
-        const salary = salaryEl ? salaryEl.textContent.trim() : '';
+        if (!/^\/jobs\/\d+/.test(href) || seen.has(href)) continue;
+        seen.add(href);
 
-        if (title && url) {
-          results.push({
-            title,
-            company: company || 'Startup',
-            location: loc || 'Remote',
-            salary,
-            url,
-            site: 'wellfound',
-            postedDate: new Date(),
-          });
-        }
+        const title = link.querySelector('.styles_title__xpQDw')
+          ? link.querySelector('.styles_title__xpQDw').textContent.replace(/\s+/g, ' ').trim()
+          : (link.textContent || '').replace(/\s+/g, ' ').trim();
+
+        if (!title) continue;
+
+        const locEls = link.querySelectorAll('.styles_location__O9Z62');
+        const location = Array.from(locEls).map((el) => (el.textContent || '').trim()).join(', ') || 'Remote';
+        const salaryEl = link.querySelector('.styles_compensation__3JnvU');
+        const salary = salaryEl ? (salaryEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
+
+        results.push({
+          title,
+          company: lastCompany || 'Startup',
+          location,
+          salary,
+          url: href.startsWith('http') ? href : base + href,
+          site: 'wellfound',
+          postedDate: new Date(),
+        });
       }
       return results;
     }, BASE);
@@ -167,7 +206,7 @@ async function submitApplication({ url, credentials, resume, resumeFilename, fie
     if (blocked) throw new Error('Wellfound: ' + blocked);
     await delay(2500);
 
-    const applyBtn = await page.$('button[data-test="ApplyButton"], button[class*="styles_applyButton"], a[data-test="ApplyButton"]');
+    const applyBtn = await page.$('button[data-test="JobApplicationApplyButton"], button[data-test="ApplyButton"], button[class*="styles_applyButton"], a[data-test="ApplyButton"]');
     if (!applyBtn) {
       // Fallback: click a visible button whose text contains "Apply".
       const clicked = await clickButtonByText(page, ['apply now', 'apply']);

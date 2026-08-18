@@ -206,7 +206,7 @@ async function submitApplication({ url, credentials, resume, resumeFilename, fie
     if (blocked) throw new Error('Wellfound: ' + blocked);
     await delay(2500);
 
-    const applyBtn = await page.$('button[data-test="JobApplicationApplyButton"], button[data-test="ApplyButton"], button[class*="styles_applyButton"], a[data-test="ApplyButton"]');
+    const applyBtn = await page.$('button[class*="styles_applyButton"], button[data-test="JobApplicationApplyButton"], button[data-test="ApplyButton"], a[data-test="ApplyButton"]');
     if (!applyBtn) {
       // Fallback: click a visible button whose text contains "Apply".
       const clicked = await clickButtonByText(page, ['apply now', 'apply']);

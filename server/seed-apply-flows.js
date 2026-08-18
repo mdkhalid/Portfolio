@@ -1,0 +1,92 @@
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+const mongoose = require('mongoose');
+const ApplyFlow = require('./models/ApplyFlow');
+
+const FLOWS = [
+  {
+    site: 'naukri',
+    label: 'Naukri',
+    steps: [
+      { key: 'login', label: 'Log in (cookie then password form)', kind: 'login', order: 0 },
+      { key: 'search', label: 'Search jobs by keyword/location', kind: 'search', order: 1 },
+      { key: 'fetch_jd', label: 'Fetch job description', kind: 'fetch_jd', order: 2 },
+      { key: 'detect_fields', label: 'Detect apply form fields', kind: 'detect_fields', order: 3 },
+      { key: 'upload_resume', label: 'Upload tailored resume', kind: 'upload_resume', order: 4 },
+      { key: 'fill_fields', label: 'Fill detected fields', kind: 'fill_fields', order: 5 },
+      { key: 'submit', label: 'Submit application', kind: 'submit', order: 6 },
+      { key: 'confirm', label: 'Confirm "Applied" label', kind: 'confirm', order: 7 },
+    ],
+  },
+  {
+    site: 'indeed',
+    label: 'Indeed',
+    steps: [
+      { key: 'login', label: 'Log in (cookie then password/SSO)', kind: 'login', order: 0 },
+      { key: 'search', label: 'Search jobs by keyword/location', kind: 'search', order: 1 },
+      { key: 'fetch_jd', label: 'Fetch job description', kind: 'fetch_jd', order: 2 },
+      { key: 'detect_fields', label: 'Detect apply form fields', kind: 'detect_fields', order: 3 },
+      { key: 'apply_wizard', label: 'Walk apply wizard (Continue/Next up to 6 steps)', kind: 'fill_fields', order: 4 },
+      { key: 'upload_resume', label: 'Upload tailored resume', kind: 'upload_resume', order: 5 },
+      { key: 'submit', label: 'Submit application', kind: 'submit', order: 6 },
+      { key: 'confirm', label: 'Confirm success/disabled button', kind: 'confirm', order: 7, branch: 'External redirect -> manual apply' },
+    ],
+  },
+  {
+    site: 'workatastartup',
+    label: 'Work at a Startup',
+    manualApply: true,
+    manualApplyReason: 'YC applications go through the Work at a Startup profile form — apply in the browser.',
+    steps: [
+      { key: 'login', label: 'YC SSO two-step login (username -> password)', kind: 'login', order: 0 },
+      { key: 'search', label: 'Search jobs with client-side keyword filter', kind: 'search', order: 1 },
+      { key: 'fetch_jd', label: 'Fetch job description', kind: 'fetch_jd', order: 2 },
+      { key: 'manual_apply', label: 'Manual apply only (YC single application)', kind: 'manual_apply', order: 3 },
+    ],
+  },
+  {
+    site: 'wellfound',
+    label: 'Wellfound',
+    steps: [
+      { key: 'login', label: 'Log in (cookie -> persistent profile -> password, Cloudflare)', kind: 'login', order: 0 },
+      { key: 'search', label: 'Search jobs with rate-limit backoff', kind: 'search', order: 1 },
+      { key: 'fetch_jd', label: 'Fetch job description', kind: 'fetch_jd', order: 2 },
+      { key: 'apply_modal', label: 'Open apply modal', kind: 'detect_fields', order: 3 },
+      { key: 'fill_pitch', label: 'Fill note/pitch textarea', kind: 'fill_fields', order: 4 },
+      { key: 'upload_resume', label: 'Upload tailored resume', kind: 'upload_resume', order: 5 },
+      { key: 'submit', label: 'Send application', kind: 'submit', order: 6 },
+      { key: 'confirm', label: 'Confirm application state', kind: 'confirm', order: 7 },
+    ],
+  },
+  {
+    site: 'generic',
+    label: 'Custom site',
+    manualApply: true,
+    manualApplyReason: 'Custom sites have no auto-apply — add jobs manually and apply in the browser.',
+    steps: [
+      { key: 'login', label: 'Log in (cookie then password form)', kind: 'login', order: 0 },
+      { key: 'manual_apply', label: 'Manual apply only', kind: 'manual_apply', order: 1 },
+    ],
+  },
+];
+
+const seed = async () => {
+  await mongoose.connect(process.env.MONGODB_URI);
+  console.log('Connected to MongoDB');
+
+  for (const flow of FLOWS) {
+    await ApplyFlow.updateOne(
+      { site: flow.site },
+      { $set: flow },
+      { upsert: true }
+    );
+    console.log(`Upserted apply flow: ${flow.site}`);
+  }
+
+  await mongoose.connection.close();
+  console.log('Apply flow seed complete');
+};
+
+seed().catch((err) => {
+  console.error('Apply flow seed failed:', err);
+  process.exit(1);
+});

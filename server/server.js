@@ -135,6 +135,8 @@ app.use('/api/auth', authLimiter, require('./routes/auth'));
 
 app.get('/api/activity', auth, require('./routes/activity').getRecent);
 
+app.get('/api/apply-flows', auth, require('./routes/apply-flows'));
+
 app.use('/api/job-sites', auth, csrfProtection, jobSiteLimiter, require('./routes/job-sites'));
 app.get('/api/jobs', auth, require('./routes/jobs').list);
 app.get('/api/jobs/manual', auth, require('./routes/jobs').manualList);

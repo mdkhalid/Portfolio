@@ -9,6 +9,7 @@ const { decrypt } = require('../utils/credentials');
 const { getAdapter, isAutomatedSite, SITE_META } = require('../adapters');
 const { buildTailoredResume } = require('../services/resumeGenerate');
 const { resolveFieldValues, learnFieldValues } = require('../services/applyFields');
+const { getApplyFlow } = require('../services/applyFlow');
 const { notify } = require('../services/notifications');
 const { getQueue } = require('./index');
 
@@ -333,6 +334,27 @@ async function runStep(applicationId, key) {
     case 'submit': {
       const site = job.site || 'unknown';
       const adapter = getAdapter(site);
+      const flow = await getApplyFlow(site).catch(() => null);
+      if (flow) {
+        await Application.updateOne(
+          { _id: applicationId },
+          { $push: { timeline: { event: 'Apply flow loaded', details: `${flow.label || site} (${(flow.steps || []).length} steps)`, timestamp: new Date() } } }
+        ).catch(() => {});
+      }
+      // Stored flow declares this provider manual-only → route without attempting an automated submit.
+      if (flow?.manualApply) {
+        const reason = flow.manualApplyReason || `No automation for ${site} — apply manually.`;
+        await Application.updateOne(
+          { _id: applicationId },
+          { $set: { status: 'not_applied', notAppliedReason: 'manual_skip', needsManualApply: true, manualApplyReason: reason } }
+        );
+        await Job.updateOne(
+          { _id: app.jobId },
+          { $set: { needsManualApply: true, manualApplyReason: reason } }
+        );
+        await markStep(application, key, { status: 'done', finishedAt: new Date() });
+        break;
+      }
       const siteDoc = await UserJobSite.findOne({ userId: app.userId, name: site }).select('+credentials +cookies').lean();
 
       // Enforce rate limit + per-site concurrency before hitting the site.

@@ -383,8 +383,13 @@ async function runStep(applicationId, key) {
         const creds = siteDoc?.credentials ? decrypt(siteDoc.credentials) : null;
         const cookieHeader = siteDoc?.cookies ? decrypt(siteDoc.cookies)?.value : null;
         const resume = app.resumeId
-          ? await GeneratedResume.findById(app.resumeId).lean().catch(() => null)
+          ? await GeneratedResume.findById(app.resumeId).select('+pdf').lean().catch(() => null)
           : null;
+
+        // The resume PDF buffer is stored with select:false; a findById without
+        // the explicit +pdf projection above returns `pdf` undefined, which made
+        // adapters silently upload nothing and the provider fall back to the
+        // candidate's already-attached profile resume.
 
         // Applying on automated sites needs a logged-in session: a saved cookie
         // header, stored credentials, or a persistent browser profile created
@@ -479,6 +484,14 @@ async function runStep(applicationId, key) {
         { _id: app.jobId },
         { $set: { status: 'applied', applied: true, appliedAt: new Date(), appliedVia: 'system' } }
       );
+      // Emit a final progress payload with the terminal status — markStep's
+      // last emit still reported 'running', so the UI never learned the
+      // application actually succeeded until a manual refresh.
+      const finishedApp = await Application.findById(applicationId).lean().catch(() => null);
+      if (finishedApp) {
+        const finishedJob = await Job.findById(app.jobId).select('title').lean().catch(() => null);
+        emitProgress({ ...finishedApp, jobTitle: finishedJob?.title || job.title });
+      }
       notify({
         userId: app.userId,
         type: 'apply_success',

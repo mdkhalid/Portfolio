@@ -251,6 +251,7 @@ export default function AdminDashboard() {
         showToast(data.title + (data.body ? ' — ' + data.body : ''), 'warning')
       } else if (data.type === 'apply_success') {
         showToast(data.title, 'success')
+        if (activeTab === 'job-apps') refreshJobApps()
       } else if (data.type === 'batch_complete') {
         showToast(data.title + (data.body ? ' — ' + data.body : ''), 'info')
       } else if (data.type === 'pipeline_paused' || data.type === 'ai_budget') {
@@ -261,7 +262,7 @@ export default function AdminDashboard() {
     })
 
     return () => { socket.disconnect() }
-  }, [token, showToast])
+  }, [token, showToast, activeTab, refreshJobApps])
 
   const refreshActivities = useCallback(async () => {
     setActivitiesLoading(true)
@@ -529,6 +530,9 @@ export default function AdminDashboard() {
         }))
       }
       showToast(`Matched ${ids.length} jobs`, 'success')
+      // Reload from the server so the persisted matchScore/keywords are the
+      // source of truth (the local map above is an optimistic preview).
+      await refreshJobApps()
     } catch (err) {
       showToast('Matching failed', 'error')
     } finally { setMatchingJobs(false) }

@@ -103,19 +103,21 @@ function appLabel(app, job) {
 }
 
 /**
- * When the last active application of a batch reaches a terminal state, emit a
- * single batch_complete notification. Terminal = no queued/running/pending apps left.
+ * When the last actively-processing application of a batch reaches a terminal
+ * state, emit a single batch_complete notification. "Active" = queued/running;
+ * pending apps (awaiting user input) are terminal from the pipeline's view and
+ * are reported as "need input" instead of blocking the summary forever.
  */
 async function maybeNotifyBatchComplete(batchId) {
   if (!batchId) return;
   try {
-    const apps = await Application.find({ batchId }).select('userId status').lean();
+    const apps = await Application.find({ batchId }).select('userId status waitingFields').lean();
     if (!apps.length) return;
-    const nonTerminal = apps.some((a) => ['queued', 'running', 'pending'].includes(a.status));
-    if (nonTerminal) return;
+    const stillActive = apps.some((a) => ['queued', 'running'].includes(a.status));
+    if (stillActive) return;
     const applied = apps.filter((a) => a.status === 'applied').length;
     const failed = apps.filter((a) => ['failed', 'not_applied'].includes(a.status)).length;
-    const needInput = apps.filter((a) => a.status === 'pending').length;
+    const needInput = apps.filter((a) => a.status === 'pending' || (Array.isArray(a.waitingFields) && a.waitingFields.length > 0)).length;
     const canceled = apps.filter((a) => a.status === 'canceled').length;
     await notify({
       userId: apps[0].userId,

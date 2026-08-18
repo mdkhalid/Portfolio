@@ -15,7 +15,7 @@ const { decrypt } = require('../utils/credentials');
 const { getAdapter, SITE_META, isAutomatedSite } = require('../adapters');
 const { buildDedupeKey, parsePostedDate } = require('../services/jobDedupe');
 const { getAIClient } = require('../ai/client');
-const { sanitizeForAI } = require('../utils/security');
+const { sanitizeForAI, sanitizeJdForAI } = require('../utils/security');
 
 const MAX_FETCH_JOBS = 100;
 
@@ -323,7 +323,7 @@ CANDIDATE PROFILE:
 ${profileText.slice(0, 6000)}
 
 JOB DESCRIPTION:
-${(job.description || jd).slice(0, 4000)}`;
+${sanitizeJdForAI(job.description || jd, 4000)}`;
 
       const completion = await client.chat.completions.create({
         model,

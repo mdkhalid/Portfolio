@@ -6,6 +6,7 @@ const Application = require('../models/Application');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const { getAIClient } = require('../ai/client');
 const { str } = require('../middleware/validate');
+const { sanitizeJdForAI } = require('../utils/security');
 const { checkAICost, recordAICost } = require('../services/aiCost');
 const { buildTailoredResume } = require('../services/resumeGenerate');
 
@@ -39,7 +40,7 @@ router.post('/optimize', asyncHandler(async (req, res) => {
 Return up to 8 suggestions that a candidate should add to their resume to improve the match score. Include missing tech skills, tools, frameworks, or domain-specific terms.
 
 JOB DESCRIPTION:
-${(job.description || job.title).slice(0, 4000)}`;
+${sanitizeJdForAI(job.description || job.title, 4000)}`;
 
   const completion = await client.chat.completions.create({
     model,
@@ -91,7 +92,7 @@ Role: ${job.title}
 Company: ${job.company}
 Location: ${job.location || 'N/A'}
 Job Description:
-${(job.description || '').slice(0, 3500)}`;
+${sanitizeJdForAI(job.description || '', 3500)}`;
 
   const completion = await client.chat.completions.create({
     model,

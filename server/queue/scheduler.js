@@ -8,6 +8,17 @@ let _timer = null;
 let _digestTimer = null;
 
 /**
+ * Resolve the job-fetch schedule. Accepts a standard 5-field cron expression
+ * (e.g. "0 9 * * *") via JOB_FETCH_SCHEDULE. Falls back to a fixed 24h interval
+ * for legacy/unparseable values so the pipeline still runs.
+ */
+function getFetchSchedule() {
+  const raw = String(env.JOB_FETCH_SCHEDULE || '').trim();
+  if (raw && /^(\S+\s+){4}\S+$/.test(raw)) return { type: 'cron', expr: raw };
+  return { type: 'interval', ms: 24 * 60 * 60 * 1000 };
+}
+
+/**
  * Daily scheduled refresh: re-runs the job fetch for every user with enabled
  * sites, and marks stale jobs as expired based on each user's settings.
  * (Runs once shortly after boot too, so devs see results without waiting.)
@@ -51,8 +62,28 @@ async function tick() {
 /** Start the daily scheduler; also runs one tick shortly after boot. */
 function startScheduler() {
   if (_timer) return _timer;
-  _timer = setInterval(tick, 24 * 60 * 60 * 1000);
-  _timer.unref();
+
+  const schedule = getFetchSchedule();
+  if (schedule.type === 'cron') {
+    let cron = null;
+    try {
+      cron = require('node-cron');
+    } catch {
+      console.warn('[scheduler] node-cron unavailable — falling back to 24h interval');
+    }
+    if (cron && cron.validate(schedule.expr)) {
+      _timer = cron.schedule(schedule.expr, () => {
+        tick().catch((err) => console.error('[scheduler] tick failed:', err?.message || err));
+      });
+    } else {
+      _timer = setInterval(tick, 24 * 60 * 60 * 1000);
+      _timer.unref();
+    }
+  } else {
+    _timer = setInterval(tick, schedule.ms);
+    _timer.unref();
+  }
+
   // Email digests go out a few times a day so users aren't waiting a full 24h.
   _digestTimer = setInterval(() => {
     const { sendDailyDigests } = require('../services/notifications');
@@ -61,7 +92,7 @@ function startScheduler() {
   _digestTimer.unref();
   setTimeout(tick, 5000).unref();
   console.log(
-    `[scheduler] job fetch + stale expiry scheduled daily (cron "${env.JOB_FETCH_SCHEDULE}" documented)`
+    `[scheduler] job fetch scheduled: ${schedule.type === 'cron' ? `cron "${schedule.expr}"` : `${Math.round(schedule.ms / 60000)}m interval`}`
   );
   return _timer;
 }
@@ -77,4 +108,4 @@ function stopScheduler() {
   }
 }
 
-module.exports = { startScheduler, stopScheduler, runStaleExpiry, runScheduledFetch, tick };
+module.exports = { startScheduler, stopScheduler, runStaleExpiry, runScheduledFetch, tick, getFetchSchedule };

@@ -8,7 +8,7 @@ const Certification = require('../models/Certification');
 const Resume = require('../models/Resume');
 const { PDFParse } = require('pdf-parse');
 const { getAIClient } = require('../ai/client');
-const { sanitizeForAI } = require('../utils/security');
+const { sanitizeForAI, sanitizeJdForAI } = require('../utils/security');
 const { checkAICost, recordAICost } = require('./aiCost');
 const { buildResumePdf, appendKeywordsToResumePdf } = require('./resumePdf');
 const { extractDocxText, injectKeywordsIntoDocx } = require('./resumeDocx');
@@ -128,7 +128,7 @@ async function getUploadedResumeFile() {
  * Returns null on any failure so callers fall back to the DB profile context.
  */
 async function structureAndTailorFromText(resumeText, job, { client, model }) {
-  const jd = String(job?.description || job?.title || '').slice(0, 4000);
+  const jd = sanitizeJdForAI(String(job?.description || job?.title || ''), 4000);
   const prompt = `You are converting a candidate's resume into structured JSON for an ATS-friendly PDF. Preserve the candidate's ORIGINAL resume EXACTLY.
 
 CRITICAL RULES:
@@ -211,7 +211,7 @@ ${jd}`;
  * (AI never touches layout or content, it only suggests terms).
  */
 async function suggestMissingKeywords(resumeText, job, { client, model }) {
-  const jd = String(job?.description || job?.title || '').slice(0, 4000);
+  const jd = sanitizeJdForAI(String(job?.description || job?.title || ''), 4000);
   if (!client || jd.length < 30) return [];
   const prompt = `You are an ATS keyword analyst. Compare the candidate's resume against the job description.
 
@@ -260,7 +260,7 @@ async function buildTailoredResume(job, { userId, skipOnBudgetExceeded = false }
   const ctx = await loadProfileContext();
   const baseSummary = ctx.profile?.summary || '';
   const baseSkills = ctx.skills.slice();
-  const jd = String(job?.description || job?.title || '').slice(0, 4000);
+  const jd = sanitizeJdForAI(String(job?.description || job?.title || ''), 4000);
 
   const { client, model } = await getAIClient('ats');
   const costCheck = await checkAICost(userId, { purpose: 'generate_resume' });

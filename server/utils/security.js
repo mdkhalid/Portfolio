@@ -76,6 +76,15 @@ const sanitizeForAI = (input, options = {}) => {
   return input.trim();
 };
 
+/**
+ * Sanitize scraped/external job-description text before it is interpolated into
+ * an AI prompt. Long-form content is not checked for short prompt-injection
+ * phrases (they false-positive on legitimate JD text), but obfuscation is still
+ * stripped and the value is bounded to `maxLen` (default 4000).
+ */
+const sanitizeJdForAI = (input, maxLen = 4000) =>
+  sanitizeForAI(input, { checkInjection: false, maxLen });
+
 const sha256 = (input) =>
   crypto.createHash('sha256').update(String(input)).digest('hex').slice(0, 32);
 
@@ -107,6 +116,7 @@ const envInt = (name, def) => {
 
 module.exports = {
   sanitizeForAI,
+  sanitizeJdForAI,
   sha256,
   isPathSafe,
   redactEmail,

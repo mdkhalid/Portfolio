@@ -28,8 +28,8 @@ function setupSocket(server, onIO) {
   let adminCount = 0;
 
   io.on('connection', async (socket) => {
-    const role = socket.handshake.query.role || 'visitor';
-    const visitorId = socket.handshake.query.visitorId || socket.id;
+    const role = socket.handshake.auth?.role || socket.handshake.query?.role || 'visitor';
+    const visitorId = socket.handshake.query?.visitorId || socket.id;
 
     if (role === 'admin') {
       // Admin connections must present a valid JWT (same token used for the REST admin API)

@@ -213,3 +213,148 @@ Dependency order: Phase 1 → Phase 2 → Phase 3. Phase 1 is independent and ca
 **Verify:**
 - After 1–2 real applies, a new application on the same/another provider fills more fields automatically than today.
 - Manual interruption occurs only for missing PII or genuinely unknown answers.
+
+---
+
+## Job Subsystem — Deep-Review Findings (fix later)
+
+A full end-to-end read of the job fetch → match → apply → track → notify flow surfaced these additional gaps. They are ordered by impact and grouped for phased work below.
+
+### 16. Cancel is racy — a running application can still submit
+
+- **Where:** `server/queue/worker.js` (queue process loop + `runStep` + `markStep`)
+- **What's wrong:**
+  - `queue.process` loads `app` once, then loops `if (app.status === 'canceled') break` against that **stale** object.
+  - `runStep` re-fetches the doc but never checks for `canceled`.
+  - `markStep` unconditionally sets `status: 'running'` on each step, so it can flip a just-canceled application back to `running`.
+- **Impact:** `POST /api/applications/:id/cancel` and `POST /api/jobs/apply/batch/:batchId/cancel` are not reliably honored — a canceled job can still proceed to `submit` and apply on the provider.
+- **Fix:**
+  - Re-check `status === 'canceled'` inside `runStep` (and before `submit`).
+  - `markStep` must not overwrite `canceled`/terminal status with `running`.
+
+### 17. `sanitizeForAI` truncates long documents to 2000 chars
+
+- **Where:** `server/utils/security.js:70-72`
+- **What's wrong:** `sanitizeForAI` always does `input.slice(0, 2000)`, even when callers pass `{ checkInjection: false }` for long-form content.
+- **Impact:**
+  - Uploaded resume text passed for structuring (`resumeGenerate.js:96`) and matching (`jobs.js:393`) is truncated — a multi-page resume only reaches the AI as its first 2000 characters.
+  - This breaks the "preserve the original resume verbatim" resume-structuring feature and weakens ATS matching.
+- **Fix:** Make the truncation limit a parameter (e.g. `maxLen`) and let long-form callers pass a higher bound (or `0` for no truncation).
+
+### 18. `retryApplication` ignores `needsManualApply` and stale field state
+
+- **Where:** `server/routes/jobs.js:930-971`
+- **What's wrong:**
+  - Re-queues a `failed`/`not_applied`/`canceled` application without checking `job.needsManualApply`.
+  - Never resets `app.needsManualApply`, `manualApplyReason`, `detectedFields`, or `waitingFields`.
+- **Impact:** A job already routed to Manual Apply (external employer redirect / custom site) can be auto-submitted again on retry, and stale waiting-field state carries into the new attempt.
+- **Fix:** On retry, if `job.needsManualApply` (or `!isAutomatedSite`) → reject with a clear "manual apply" error; otherwise reset the manual-apply and field-staging state before queueing.
+
+---
+
+### 19. `JOB_FETCH_SCHEDULE` is parsed and logged but never used
+
+- **Where:** `server/config/env.js:36`, `server/queue/scheduler.js:64`
+- **What's wrong:** The cron value is read into env and printed as `cron "..." documented`, but the scheduler hardcodes `setInterval(tick, 24h)`.
+- **Impact:** The documented `JOB_FETCH_SCHEDULE` env var has no effect.
+- **Fix:** Either honor a real cron expression (node-cron) or remove/rename the env var and stop implying it is configurable. Update `.env.example` and `README.md` accordingly.
+
+### 20. Scraped job descriptions are injected into AI prompts unsanitized
+
+- **Where:** `server/routes/jobs.js:326`, `server/services/resumeGenerate.js:159`, `server/routes/resume-ai.js`
+- **What's wrong:** External JD text is passed to AI prompts via `.slice(...)` with no `sanitizeForAI`.
+- **Impact:** A malicious/compromised job posting can carry prompt-injection content into the matcher, resume builder, and cover-letter generator.
+- **Fix:** Sanitize JD text (with `checkInjection: false` + a larger max length) before interpolating into prompts.
+
+### 21. Batch-complete notification always reports `needInput: 0`
+
+- **Where:** `server/queue/worker.js:109-132`
+- **What's wrong:** `maybeNotifyBatchComplete` returns early while any app is `pending`, then computes `needInput = apps.filter(status === 'pending').length` — which is always 0 by the time the terminal notification fires.
+- **Impact:** The "X need input" figure in the batch-complete notification is always wrong.
+- **Fix:** Compute `needInput` from `waitingFields.length > 0` (or capture it before the early return) instead of counting `pending` apps post-termination.
+
+---
+
+### 22. Duplicate `getUploadedResumeText` with divergent behavior
+
+- **Where:** `server/routes/jobs.js:373-398` vs `server/services/resumeGenerate.js:80-102`
+- **What's wrong:** Two separate implementations. `jobs.js` is PDF-only and picks a different resume (regex label match); `resumeGenerate.js` handles PDF + DOCX and uses `pickMasterResume`.
+- **Impact:** Matcher and resume builder can base decisions on different master resumes.
+- **Fix:** Extract a single shared helper (or reuse `resumeGenerate.getUploadedResumeText`) and delete the duplicate.
+
+### 23. Dead `$or` clause in `buildFewShotContext`
+
+- **Where:** `server/services/applyFields.js:290-295`
+- **What's wrong:** `{ 'fieldValues.0': { $exists: true } }` never matches — `fieldValues` is a Mongoose Map, not an array. Only `detectedFields.0` actually matches.
+- **Impact:** No functional bug, but the query is misleading and the unused branch suggests intent that isn't implemented.
+- **Fix:** Remove the dead clause (or match `fieldValues` via a Map-specific query if that is the intent).
+
+### 24. `match` uses `$in: [null, undefined]`
+
+- **Where:** `server/routes/jobs.js:229`
+- **What's wrong:** `undefined` in `$in` is ignored by Mongoose; the filter only works because the schema defaults `matchScore` to `null`.
+- **Impact:** Fragile/latent — relies on a schema default rather than an explicit "unmatched" state.
+- **Fix:** Use `{ $in: [null] }` (or `$exists: false`) explicitly.
+
+### 25. `mapNotAppliedReason` has a duplicated regex alternative
+
+- **Where:** `server/queue/worker.js:28`
+- **What's wrong:** `/sign ?in|sign ?in/` lists the same pattern twice.
+- **Impact:** Cosmetic only.
+- **Fix:** Collapse to `/sign ?in/`.
+
+### 26. `AiUsage.purpose` comment is stale
+
+- **Where:** `server/models/AiUsage.js:6`
+- **What's wrong:** Comment lists `match | resume | cover_letter | optimize`, but code also records `generate_resume` and `prepare_application`.
+- **Impact:** Misleading documentation only.
+- **Fix:** Update the comment (or add a `PURPOSE` enum for real validation).
+
+---
+
+## Development Phases — Job Subsystem Fixes
+
+Dependency order: Phase 4 (correctness) → Phase 5 (reliability) → Phase 6 (cleanup).
+
+### Phase 4 — Correctness: cancel, resume truncation, retry
+
+**Goal:** Stop the pipeline from doing the wrong thing (submitting canceled jobs, truncating resumes, re-submitting manual jobs).
+
+**Scope:**
+- Item 16 — fix cancel race in `worker.js` (`runStep`/`markStep`/process loop).
+- Item 17 — make `sanitizeForAI` truncation configurable; raise it for long-form resume text.
+- Item 18 — guard `retryApplication` against manual-apply jobs and reset stale field state.
+
+**Verify:**
+- Cancel a running job mid-`prepare_application` → it does not reach `submit`.
+- Upload a >2000-char resume → the matcher/resume-builder see full text.
+- Retry a job flagged `needsManualApply` → rejected with a clear error, not re-submitted.
+
+### Phase 5 — Reliability: scheduler cron, JD sanitization, batch counts
+
+**Goal:** Make documented behavior match reality and harden external input.
+
+**Scope:**
+- Item 19 — honor `JOB_FETCH_SCHEDULE` (node-cron) or stop claiming it is configurable; fix docs.
+- Item 20 — sanitize scraped JD text before AI prompts.
+- Item 21 — fix `needInput` count in batch-complete notification.
+
+**Verify:**
+- `JOB_FETCH_SCHEDULE` actually changes the fetch schedule (or docs no longer claim it does).
+- A JD with prompt-injection patterns is sanitized before reaching the model.
+- A batch with waiting applications reports a correct `needInput` figure.
+
+### Phase 6 — Cleanup: dead code + docs
+
+**Goal:** Remove duplication and stale comments without changing behavior.
+
+**Scope:**
+- Item 22 — consolidate duplicate `getUploadedResumeText`.
+- Item 23 — remove dead `$or` branch.
+- Item 24 — fix `$in: [null, undefined]`.
+- Item 25 — collapse duplicate regex.
+- Item 26 — fix stale `AiUsage` purpose comment.
+
+**Verify:**
+- Full server test suite passes.
+- No change in match/resume/apply behavior after the consolidation.

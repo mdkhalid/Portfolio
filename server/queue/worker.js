@@ -144,8 +144,11 @@ async function markStep(app, key, patch) {
   if (patch.status === 'running') {
     application.progress.currentStep = key;
     // Reflect "actively working" so the live panel + Tracking show 'running'
-    // instead of 'queued' while the worker is mid-step.
-    application.status = 'running';
+    // instead of 'queued' while the worker is mid-step. Never resurrect a
+    // canceled application — once canceled it must stay terminal.
+    if (application.status !== 'canceled') {
+      application.status = 'running';
+    }
   }
   application.lastAction = step?.label || key;
   if (patch.status !== prevStatus) {
@@ -166,6 +169,9 @@ async function markStep(app, key, patch) {
 async function runStep(applicationId, key) {
   const app = await Application.findById(applicationId).exec();
   if (!app) throw new Error('Application not found');
+  // Re-check cancellation on the fresh document — the process loop's cached
+  // copy may be stale, and a cancel can land between steps.
+  if (app.status === 'canceled') return { canceled: true };
   const job = await Job.findById(app.jobId).exec();
   if (!job) throw new Error('Job record not found');
 
@@ -332,6 +338,10 @@ async function runStep(applicationId, key) {
     }
 
     case 'submit': {
+      // Final cancellation gate: a cancel can land while prior steps run.
+      const current = await Application.findById(applicationId).select('status').lean();
+      if (!current || current.status === 'canceled') return { canceled: true };
+
       const site = job.site || 'unknown';
       const adapter = getAdapter(site);
       const flow = await getApplyFlow(site).catch(() => null);
@@ -551,9 +561,9 @@ async function startWorker() {
       if (app.status === 'canceled') break;
       try {
         const result = await runStep(applicationId, key);
-        // Stop the chain when a step needs user input or was skipped —
-        // don't let submit run on a not_applied/pending application.
-        if (result?.waiting || result?.skipped) break;
+        // Stop the chain when a step needs user input, was skipped, or was
+        // canceled — don't let submit run on a not_applied/pending/canceled app.
+        if (result?.waiting || result?.skipped || result?.canceled) break;
       } catch (err) {
         const a = await Application.findById(applicationId).exec();
         if (a) {

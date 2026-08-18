@@ -22,7 +22,7 @@ exports.uploadMiddleware = upload.single('resume');
 exports.score = asyncHandler(async (req, res) => {
   if (!req.file) throw new AppError('Resume file (PDF) is required', 400, 'MISSING_FILE');
   const jobDescriptionRaw = str(req.body, 'jobDescription', { min: 20, max: 10000 });
-  const jobDescription = sanitizeForAI(jobDescriptionRaw, { checkInjection: false });
+  const jobDescription = sanitizeForAI(jobDescriptionRaw, { checkInjection: false, maxLen: 10000 });
 
   validateFileType(req.file.buffer, ['pdf'], 'resume PDF');
 

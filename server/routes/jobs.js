@@ -390,7 +390,7 @@ async function getUploadedResumeText() {
     const parsed = await parser.getText();
     parser.destroy();
 
-    return parsed?.text ? sanitizeForAI(parsed.text, { checkInjection: false }) : '';
+    return parsed?.text ? sanitizeForAI(parsed.text, { checkInjection: false, maxLen: 0 }) : '';
   } catch (err) {
     console.error('Failed to parse uploaded resume PDF for matching:', err.message);
     return '';
@@ -941,6 +941,11 @@ exports.retryApplication = asyncHandler(async (req, res) => {
   if (job.status === 'applied') {
     throw new AppError('Job is already applied and cannot be retried', 400, 'ALREADY_APPLIED');
   }
+  // Never auto-resubmit a job that was routed to manual apply (external
+  // employer redirect, custom site, or a stored manual-only apply flow).
+  if (job.needsManualApply || !isAutomatedSite(job.site)) {
+    throw new AppError('This job requires manual application and cannot be auto-retried', 400, 'MANUAL_APPLY_ONLY');
+  }
 
   const settings = await UserSettings.findOne({ userId: req.adminId }).lean();
   if (settings?.pipelinePaused) {
@@ -951,6 +956,11 @@ exports.retryApplication = asyncHandler(async (req, res) => {
   app.status = 'queued';
   app.batchId = batchId;
   app.notAppliedReason = null;
+  app.needsManualApply = false;
+  app.manualApplyReason = '';
+  app.detectedFields = [];
+  app.waitingFields = [];
+  app.fieldValues = new Map();
   app.progress = {
     currentStep: '',
     steps: [],

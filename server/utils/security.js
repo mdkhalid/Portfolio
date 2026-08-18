@@ -48,7 +48,7 @@ function hasObfuscation(input) {
 const sanitizeForAI = (input, options = {}) => {
   if (typeof input !== 'string') return '';
 
-  const { checkInjection = true } = options;
+  const { checkInjection = true, maxLen = 2000 } = options;
   const normalized = normalizeInput(input);
 
   if (hasObfuscation(input)) {
@@ -67,8 +67,11 @@ const sanitizeForAI = (input, options = {}) => {
     }
   }
 
-  if (input.length > 2000) {
-    input = input.slice(0, 2000);
+  // Truncate to the requested bound. Pass maxLen: 0 to disable truncation for
+  // long-form source documents (uploaded resume text) that the caller already
+  // bounds before sending to the model.
+  if (maxLen > 0 && input.length > maxLen) {
+    input = input.slice(0, maxLen);
   }
   return input.trim();
 };

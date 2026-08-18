@@ -88,13 +88,13 @@ async function getUploadedResumeText() {
     const dataBuffer = fs.readFileSync(fullPath);
     if (/\.docx$/i.test(fileName)) {
       const text = extractDocxText(dataBuffer);
-      return text.trim().length >= 200 ? sanitizeForAI(text, { checkInjection: false }) : '';
+      return text.trim().length >= 200 ? sanitizeForAI(text, { checkInjection: false, maxLen: 0 }) : '';
     }
     const parser = new PDFParse({ data: dataBuffer, verbosity: 0 });
     const parsed = await parser.getText();
     parser.destroy();
     const text = parsed?.text || '';
-    return text.trim().length >= 200 ? sanitizeForAI(text, { checkInjection: false }) : '';
+    return text.trim().length >= 200 ? sanitizeForAI(text, { checkInjection: false, maxLen: 0 }) : '';
   } catch (err) {
     console.error('[resumeGenerate] failed to parse uploaded resume:', err?.message || err);
     return '';

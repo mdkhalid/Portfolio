@@ -7,15 +7,15 @@ const Experience = require('../models/Experience');
 const Education = require('../models/Education');
 const Certification = require('../models/Certification');
 const Project = require('../models/Project');
-const Resume = require('../models/Resume');
 const Activity = require('../models/Activity');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const { strArray, str, int } = require('../middleware/validate');
 const { decrypt } = require('../utils/credentials');
 const { getAdapter, SITE_META, isAutomatedSite } = require('../adapters');
 const { buildDedupeKey, parsePostedDate } = require('../services/jobDedupe');
+const { getUploadedResumeText } = require('../services/resumeGenerate');
 const { getAIClient } = require('../ai/client');
-const { sanitizeForAI, sanitizeJdForAI } = require('../utils/security');
+const { sanitizeJdForAI } = require('../utils/security');
 
 const MAX_FETCH_JOBS = 100;
 
@@ -226,7 +226,7 @@ exports.match = asyncHandler(async (req, res) => {
   if (jobIds && jobIds.length) {
     filter._id = { $in: jobIds };
   } else {
-    filter.matchScore = { $in: [null, undefined] };
+    filter.matchScore = null;
   }
 
   const jobs = await Job.find(filter).limit(limit).lean();
@@ -365,37 +365,6 @@ ${sanitizeJdForAI(job.description || jd, 4000)}`;
 
   res.json({ matched: results.length, jobs: results });
 });
-
-const fs = require('fs');
-const path = require('path');
-const { PDFParse } = require('pdf-parse');
-
-async function getUploadedResumeText() {
-  try {
-    const resumes = await Resume.find().sort({ order: 1 }).lean();
-    if (!resumes || !resumes.length) return '';
-
-    // Pick domestic/default resume (e.g. first resume or labeled 'domestic'/'default')
-    const chosen = resumes.find(r => /domestic|main|primary/i.test(r.label)) || resumes[0];
-    if (!chosen || !chosen.fileUrl) return '';
-
-    // fileUrl is typically /uploads/filename.pdf
-    const fileName = path.basename(chosen.fileUrl);
-    const fullPath = path.join(__dirname, '..', 'uploads', fileName);
-
-    if (!fs.existsSync(fullPath)) return '';
-
-    const dataBuffer = fs.readFileSync(fullPath);
-    const parser = new PDFParse({ data: dataBuffer, verbosity: 0 });
-    const parsed = await parser.getText();
-    parser.destroy();
-
-    return parsed?.text ? sanitizeForAI(parsed.text, { checkInjection: false, maxLen: 0 }) : '';
-  } catch (err) {
-    console.error('Failed to parse uploaded resume PDF for matching:', err.message);
-    return '';
-  }
-}
 
 function buildProfileText(profile, skills, experiences, education, certifications, projects) {
   const parts = [];

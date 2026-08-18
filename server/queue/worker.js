@@ -25,7 +25,7 @@ const STEP_LABELS = {
 /** Map a raw apply error to a stable, filterable `notAppliedReason` enum. */
 function mapNotAppliedReason(err) {
   const msg = String(err?.message || err || '').toLowerCase();
-  if (/login|credential|cookie|authenticate|not logged|sign ?in|sign ?in|session/i.test(msg)) return 'login_failed';
+  if (/login|credential|cookie|authenticate|not logged|sign ?in|session/i.test(msg)) return 'login_failed';
   if (/captcha|blocked|recaptcha|automated|bot detection/i.test(msg)) return 'blocked_or_captcha';
   if (/expired|closed|no longer accepting|not accepting|filled/i.test(msg)) return 'job_expired';
   if (/missing|provide|required/i.test(msg)) return 'missing_info';

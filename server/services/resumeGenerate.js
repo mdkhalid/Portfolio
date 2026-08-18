@@ -493,4 +493,4 @@ ${jd}`;
   };
 }
 
-module.exports = { buildTailoredResume, safeSlug, loadProfileContext, dedupeMerge, pickMasterResume };
+module.exports = { buildTailoredResume, safeSlug, loadProfileContext, dedupeMerge, pickMasterResume, getUploadedResumeText };

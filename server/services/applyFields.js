@@ -291,7 +291,7 @@ async function buildFewShotContext(userId, limit = 8) {
   const prior = await Application.find({
     userId,
     status: { $in: ['applied', 'queued', 'running', 'pending', 'passed'] },
-    $or: [{ 'fieldValues.0': { $exists: true } }, { 'detectedFields.0': { $exists: true } }],
+    'detectedFields.0': { $exists: true },
   })
     .sort({ updatedAt: -1 })
     .limit(limit)

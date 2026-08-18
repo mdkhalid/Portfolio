@@ -225,45 +225,6 @@ export default function AdminDashboard() {
     return () => { socket.disconnect() }
   }, [activeTab, token, logout, navigate, showToast])
 
-  // Live apply progress via socket
-  useEffect(() => {
-    if (!token) return
-    const socket = io(window.location.origin, { auth: { token, role: 'admin' } })
-    applySocketRef.current = socket
-
-    socket.on('apply:progress', (data) => {
-      setApplyProgress(prev => {
-        const idx = prev.findIndex(p => p.applicationId === data.applicationId)
-        if (idx >= 0) {
-          const next = [...prev]
-          next[idx] = data
-          return next
-        }
-        return [...prev, data]
-      })
-    })
-
-    // In-app notifications arrive over the same admin socket connection.
-    socket.on('notify:inapp', (data) => {
-      setNotifications(prev => [data, ...prev].slice(0, 50))
-      if (!data.read) setNotificationCount(c => c + 1)
-      if (data.type === 'apply_failed' || data.type === 'needs_input') {
-        showToast(data.title + (data.body ? ' — ' + data.body : ''), 'warning')
-      } else if (data.type === 'apply_success') {
-        showToast(data.title, 'success')
-        if (activeTab === 'job-apps') refreshJobApps()
-      } else if (data.type === 'batch_complete') {
-        showToast(data.title + (data.body ? ' — ' + data.body : ''), 'info')
-      } else if (data.type === 'pipeline_paused' || data.type === 'ai_budget') {
-        showToast(data.title, 'warning')
-      } else if (data.type === 'pipeline_resumed') {
-        showToast(data.title, 'success')
-      }
-    })
-
-    return () => { socket.disconnect() }
-  }, [token, showToast, activeTab, refreshJobApps])
-
   const refreshActivities = useCallback(async () => {
     setActivitiesLoading(true)
     try {
@@ -460,6 +421,47 @@ export default function AdminDashboard() {
       showToast('Failed to load jobs', 'error')
     } finally { setJobAppsLoading(false) }
   }, [jobAppsFilters, jobApps.page, showToast])
+
+  // Live apply progress via socket. Declared after refreshJobApps so the
+  // callback reference is initialized before this effect's dependency array is
+  // evaluated (referencing it earlier caused a TDZ white-screen on /admin).
+  useEffect(() => {
+    if (!token) return
+    const socket = io(window.location.origin, { auth: { token, role: 'admin' } })
+    applySocketRef.current = socket
+
+    socket.on('apply:progress', (data) => {
+      setApplyProgress(prev => {
+        const idx = prev.findIndex(p => p.applicationId === data.applicationId)
+        if (idx >= 0) {
+          const next = [...prev]
+          next[idx] = data
+          return next
+        }
+        return [...prev, data]
+      })
+    })
+
+    // In-app notifications arrive over the same admin socket connection.
+    socket.on('notify:inapp', (data) => {
+      setNotifications(prev => [data, ...prev].slice(0, 50))
+      if (!data.read) setNotificationCount(c => c + 1)
+      if (data.type === 'apply_failed' || data.type === 'needs_input') {
+        showToast(data.title + (data.body ? ' — ' + data.body : ''), 'warning')
+      } else if (data.type === 'apply_success') {
+        showToast(data.title, 'success')
+        if (activeTab === 'job-apps') refreshJobApps()
+      } else if (data.type === 'batch_complete') {
+        showToast(data.title + (data.body ? ' — ' + data.body : ''), 'info')
+      } else if (data.type === 'pipeline_paused' || data.type === 'ai_budget') {
+        showToast(data.title, 'warning')
+      } else if (data.type === 'pipeline_resumed') {
+        showToast(data.title, 'success')
+      }
+    })
+
+    return () => { socket.disconnect() }
+  }, [token, showToast, activeTab, refreshJobApps])
 
   const handleFilterChange = (key, value) => {
     setJobAppsFilters(prev => ({ ...prev, [key]: value }))

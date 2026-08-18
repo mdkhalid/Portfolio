@@ -358,7 +358,7 @@ async function runStep(applicationId, key) {
       const siteDoc = await UserJobSite.findOne({ userId: app.userId, name: site }).select('+credentials +cookies').lean();
 
       // Enforce rate limit + per-site concurrency before hitting the site.
-      const settings = await UserSettings.findOne().lean().catch(() => null);
+      const settings = await UserSettings.findOne({ userId: app.userId }).lean().catch(() => null);
       const rateDelayMs = Math.max(0, settings?.applyRateDelayMs || 15000);
       const siteConcurrency = Math.max(1, settings?.siteConcurrency || 1);
 

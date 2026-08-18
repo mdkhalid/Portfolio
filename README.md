@@ -42,11 +42,16 @@ The site includes a classic portfolio layout, a bento-grid layout, an AI resume 
     ├── middleware/          # auth, csrf, rate limiting, security, sanitize, validate
     ├── models/              # Mongoose models (Profile, Project, Article, ...)
     ├── routes/              # REST endpoints
+    ├── controllers/         # CRUD controller factories (shared/base) + per-resource controllers
+    ├── services/            # applyFields, resume*, sessionRefresh, jobDedupe, notifications, ...
+    ├── adapters/            # Per-site job automation (naukri, indeed, workatastartup, wellfound, generic)
+    ├── queue/               # Bull/Redis apply worker + scheduler (in-memory fallback)
     ├── socket/              # Live-chat Socket.io server
     ├── ai/                  # OpenAI/Groq client
     ├── seed.js              # Full seed (clears + reseeds demo data)
     ├── seed-postmortems.js  # Idempotent postmortem seed
-    └── seed-article-solid.js# Idempotent article seed
+    ├── seed-article-solid.js# Idempotent article seed
+    └── seed-apply-flows.js  # Idempotent per-provider apply-flow seed
 ```
 
 ---
@@ -83,7 +88,7 @@ cd ../client
 npm run dev
 ```
 
-Then open **http://localhost:5173**. Admin dashboard: **http://localhost:5173/admin** (seed credentials: `admin` / `admin123`). There is no UI to change the password — update the `Admin` document directly in MongoDB (bcrypt-hashed) before any public deployment.
+Then open **http://localhost:5173**. Admin dashboard: **http://localhost:5173/admin** (seed credentials: `admin` / `admin123`). Use **Change Password** in the dashboard header before any public deployment — it rehashes the password and invalidates all existing sessions.
 
 The Vite dev server proxies `/api`, `/uploads`, and `/socket.io` to `http://localhost:5000`, so no extra CORS setup is needed locally.
 
@@ -119,7 +124,7 @@ Three seed scripts exist. All load `server/.env` themselves, so run them from `s
 | `node seed-postmortems.js` | Upserts 3 postmortem articles (by slug) | ✅ Idempotent |
 | `node seed-article-solid.js` | Upserts 1 SOLID-principles article (by slug) | ✅ Idempotent |
 
-After the destructive seed, recreate the admin account or update credentials directly in the database — the seed always sets `admin` / `admin123`.
+After the destructive seed, the admin account is reset to `admin` / `admin123` — change the password from the dashboard before exposing the site.
 
 ---
 
@@ -153,7 +158,7 @@ Server tests use **Jest + Supertest** (`server/__tests__/routes.test.js`) and hi
 cd server && npx jest --forceExit
 ```
 
-(`--forceExit` is required — the open Mongoose connection keeps Jest from exiting otherwise. All 20 tests currently pass.)
+(`--forceExit` is required — the open Mongoose connection keeps Jest from exiting otherwise. All 42 tests currently pass.)
 
 Client lint:
 
@@ -208,8 +213,53 @@ Then start: `npm start` (in `server/`).
 - [ ] `MONGODB_URI` and a strong `JWT_SECRET` are set
 - [ ] `CLIENT_URL` is your real origin (no trailing slash)
 - [ ] Seeded once (or loaded via the admin dashboard)
-- [ ] Admin password changed from `admin123` (no UI — update the `Admin` document directly in MongoDB)
+- [ ] Admin password changed from `admin123` (use **Change Password** in the dashboard header)
 - [ ] HTTPS is terminated at the proxy and `TRUST_PROXY` is correct
+
+---
+
+## Job automation
+
+The admin dashboard includes a job-search + automated-apply subsystem (the "Job Sites", "Job Applications", "Tracking", and "Manual Apply" tabs). It fetches jobs from supported providers, matches them against the profile, optionally generates a tailored resume, and applies — or routes the job to the Manual Apply list when a provider cannot be automated.
+
+**Supported providers** (in `server/adapters/`):
+
+| Provider | Search | JD fetch | Auto-apply |
+| --- | --- | --- | --- |
+| `naukri` | ✅ | ✅ | ✅ (cookie → password login, resume upload, field fill, submit) |
+| `indeed` | ✅ | ✅ | ✅ (cookie → password/SSO login, apply wizard; external employer redirects become manual) |
+| `workatastartup` | ✅ (client-side keyword filter) | ✅ | ❌ manual (YC single application) |
+| `wellfound` | ✅ (rate-limit backoff) | ✅ | ✅ (cookie → persistent profile → password login, pitch + fields + resume) |
+| `generic` (custom site) | ❌ | ❌ | ❌ manual |
+
+**How a job flows through the system:**
+
+1. **Fetch** — `POST /api/jobs/fetch` searches enabled sites and upserts results into `Job` (deduped by `dedupeKey`).
+2. **Match** — `POST /api/jobs/match` scores jobs against the profile using AI (`AiUsage` tracks spend against `UserSettings` budgets).
+3. **Queue** — `POST /api/jobs/apply` enqueues selected jobs into the Bull/Redis queue (`server/queue/`). If `REDIS_URL` is unset, the queue falls back to an in-memory implementation so local runs work without Redis.
+4. **Worker** (`server/queue/worker.js`) walks each application through four steps:
+   - `fetch_jd` — fetch the full job description (login fallback only if needed).
+   - `generate_resume` — build a tailored ATS-friendly resume.
+   - `prepare_application` — detect + resolve apply-form fields (learned values → canonical cross-site memory → profile → AI few-shot).
+   - `submit` — call the provider adapter, confirm submission, and route failures/manual-only providers appropriately.
+5. **Scheduler** (`server/queue/scheduler.js`) periodically re-runs the pipeline for configured sites.
+6. **Manual apply** — jobs with `needsManualApply` (custom sites, external redirects, YC) are applied in the browser and marked applied via the Manual Apply tab.
+
+**Session + credentials:**
+
+- Job-site credentials and session cookies are encrypted with AES-256-GCM using `JOB_CREDENTIALS_KEY`.
+- `POST /api/job-sites/:name/browser-login` opens a visible Chrome window for interactive login (CAPTCHA/OTP/SSO), then harvests cookies.
+- `server/services/sessionRefresh.js` replays stored sessions after successful submits to keep them alive indefinitely.
+
+**Relevant environment variables:**
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `JOB_CREDENTIALS_KEY` | ✅ for site creds/cookies | Secret (≥ 32 chars) used to encrypt job-site credentials and session cookies |
+| `REDIS_URL` | — | Redis connection string; when absent the queue uses an in-memory fallback |
+| `JOB_*` | — | Per-site/worker tuning (see `server/.env.example` and `server/config/env.js` for the current set) |
+
+The provider-specific apply steps are also stored in the `ApplyFlow` collection (seeded by `node seed-apply-flows.js`) so they are inspectable via `GET /api/apply-flows` and reusable as LLM context.
 
 ---
 

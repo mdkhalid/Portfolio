@@ -11,7 +11,7 @@ const blocklistItemSchema = new mongoose.Schema(
 
 const userSettingsSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true, unique: true },
     blocklist: [blocklistItemSchema],
     maxApplyPerBatch: { type: Number, default: 20, min: 1, max: 500 },
     aiDailyBudget: { type: Number, default: 100, min: 0 },

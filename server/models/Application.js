@@ -59,7 +59,7 @@ const timelineEventSchema = new mongoose.Schema(
 
 const applicationSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true, index: true },
     jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job', required: true },
     site: { type: String, required: true },
     resumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'GeneratedResume', default: null },

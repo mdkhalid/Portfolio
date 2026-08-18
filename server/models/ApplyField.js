@@ -11,7 +11,7 @@ const VALUE_SOURCE = ['saved', 'profile', 'ai', 'ai_fewshot', 'user', 'manual'];
  */
 const applyFieldSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true, index: true },
     site: { type: String, default: 'global' },
     key: { type: String, required: true }, // normalized field key, e.g. 'years_of_experience'
     canonicalKey: { type: String, default: '', index: true }, // semantic concept e.g. 'notice_period', 'sponsorship'

@@ -10,6 +10,9 @@ const profileSchema = new mongoose.Schema({
   title: { type: String, default: 'Senior Solution Architect' },
   summary: { type: String, default: '' },
   avatar: { type: String, default: '' },
+  avatarUrl: { type: String, default: '' },
+  calendlyUrl: { type: String, default: '' },
+  availabilityStatus: { type: String, default: '' },
   experienceYears: { type: Number, default: 18 },
   visibleSections: {
     type: Object,

@@ -21,14 +21,16 @@ export default function ChatWidget() {
     if (!open) return
     if (socketRef.current?.connected) return
 
+    let visitorId = localStorage.getItem('visitorId')
+    if (!visitorId) {
+      visitorId = crypto.randomUUID()
+      localStorage.setItem('visitorId', visitorId)
+    }
+
     const socket = io(window.location.origin, {
-      query: { role: 'visitor', visitorId: localStorage.getItem('visitorId') || crypto.randomUUID() },
+      query: { role: 'visitor', visitorId },
     })
     socketRef.current = socket
-
-    if (!localStorage.getItem('visitorId')) {
-      localStorage.setItem('visitorId', socket.id)
-    }
 
     socket.on('connect', () => setConnected(true))
     socket.on('disconnect', () => setConnected(false))

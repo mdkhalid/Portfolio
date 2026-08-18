@@ -28,13 +28,15 @@ export default function LiveChatPage() {
   }, [messages])
 
   useEffect(() => {
-    socket = io(window.location.origin, {
-      query: { role: 'visitor', visitorId: localStorage.getItem('visitorId') || crypto.randomUUID() },
-    })
-
-    if (!localStorage.getItem('visitorId')) {
-      localStorage.setItem('visitorId', socket.auth?.visitorId || socket.id)
+    let visitorId = localStorage.getItem('visitorId')
+    if (!visitorId) {
+      visitorId = crypto.randomUUID()
+      localStorage.setItem('visitorId', visitorId)
     }
+
+    socket = io(window.location.origin, {
+      query: { role: 'visitor', visitorId },
+    })
 
     socket.on('connect', () => setConnected(true))
     socket.on('disconnect', () => setConnected(false))

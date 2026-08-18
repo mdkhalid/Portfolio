@@ -10,6 +10,11 @@ const projectSchema = new mongoose.Schema({
   techStack: [String],
   bullets: [String],
   order: { type: Number, default: 0 },
+  current: { type: Boolean, default: false },
+  githubUrl: { type: String, default: '' },
+  liveUrl: { type: String, default: '' },
+  demoUrl: { type: String, default: '' },
+  videoUrl: { type: String, default: '' },
 });
 
 module.exports = mongoose.model('Project', projectSchema);

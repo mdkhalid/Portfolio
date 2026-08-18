@@ -28,7 +28,7 @@ exports.getBySlug = asyncHandler(async (req, res) => {
 });
 
 exports.getAllAdmin = asyncHandler(async (req, res) => {
-  const items = await Article.find().sort({ createdAt: -1 }).select('-content');
+  const items = await Article.find().sort({ createdAt: -1 });
   res.json(items);
 });
 

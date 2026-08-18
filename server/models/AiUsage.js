@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const aiUsageSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true, index: true },
     // Purpose bucket: 'match' | 'resume' | 'cover_letter' | 'optimize'
     purpose: { type: String, required: true, index: true },
     jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job', default: null },

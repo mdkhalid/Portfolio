@@ -5,7 +5,7 @@ const APPLIED_VIA = ['system', 'imported', 'manual'];
 
 const jobSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true, index: true },
     title: { type: String, required: true, maxlength: 200, trim: true },
     company: { type: String, required: true, maxlength: 200, trim: true },
     location: { type: String, default: '', maxlength: 200, trim: true },

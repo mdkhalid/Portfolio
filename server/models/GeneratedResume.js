@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const generatedResumeSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true, index: true },
     jobId: { type: mongoose.Schema.Types.ObjectId, ref: 'Job', required: true },
     applicationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Application', default: null },
     content: { type: String, default: '' },

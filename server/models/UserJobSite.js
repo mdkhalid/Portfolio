@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const userJobSiteSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true, index: true },
     name: { type: String, required: true, maxlength: 50 },
     // Custom (user-added) sites get a display label + base URL; built-ins use SITE_META.
     label: { type: String, default: '', maxlength: 100 },

@@ -5,6 +5,7 @@ const adminSchema = new mongoose.Schema({
   password: { type: String, required: true },
   failedAttempts: { type: Number, default: 0 },
   lockedUntil: { type: Date, default: null },
+  tokenVersion: { type: Number, default: 0 },
 });
 
 adminSchema.virtual('isLocked').get(function () {

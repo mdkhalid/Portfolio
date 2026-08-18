@@ -1,6 +1,7 @@
 const { Server } = require('socket.io');
 const ChatSession = require('../models/ChatSession');
 const { verifyJwt } = require('../middleware/auth');
+const Admin = require('../models/Admin');
 
 const MAX_ACTIVE = 3;
 
@@ -26,7 +27,7 @@ function setupSocket(server, onIO) {
   let adminConnected = false;
   let adminCount = 0;
 
-  io.on('connection', (socket) => {
+  io.on('connection', async (socket) => {
     const role = socket.handshake.query.role || 'visitor';
     const visitorId = socket.handshake.query.visitorId || socket.id;
 
@@ -35,6 +36,12 @@ function setupSocket(server, onIO) {
       const token = socket.handshake.auth?.token;
       const decoded = verifyJwt(token);
       if (!decoded) {
+        socket.emit('auth_error', { error: 'Unauthorized' });
+        socket.disconnect(true);
+        return;
+      }
+      const admin = await Admin.findById(decoded.id).select('tokenVersion').lean().catch(() => null);
+      if (!admin || (admin.tokenVersion || 0) !== (decoded.tv || 0)) {
         socket.emit('auth_error', { error: 'Unauthorized' });
         socket.disconnect(true);
         return;

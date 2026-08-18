@@ -5,7 +5,7 @@ import { useTheme } from '../context/ThemeContext'
 import { useApiAuth } from '../lib/api'
 import { motion } from 'framer-motion'
 import { io } from 'socket.io-client'
-import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, BookOpen, Phone, PhoneCall, MessagesSquare, Send, MessageCircle, Users, Globe, RefreshCw, Loader2, Filter, Search, ChevronLeft, ChevronRight, CheckSquare, Square, Target, Zap, Briefcase as BriefcaseIcon, ExternalLink, EyeOff, ListTodo, History, RotateCcw, Bell, CheckCheck, PauseCircle, PlayCircle, UserCheck, XCircle, Banknote, Star, Upload, LogIn } from 'lucide-react'
+import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, BookOpen, Phone, PhoneCall, MessagesSquare, Send, MessageCircle, Users, Globe, RefreshCw, Loader2, Filter, Search, ChevronLeft, ChevronRight, CheckSquare, Square, Target, Zap, Briefcase as BriefcaseIcon, ExternalLink, EyeOff, ListTodo, History, RotateCcw, Bell, CheckCheck, PauseCircle, PlayCircle, UserCheck, XCircle, Banknote, Star, Upload, LogIn, KeyRound } from 'lucide-react'
 import EditModal from '../features/admin/components/EditModal'
 import ProfileForm from '../features/admin/components/ProfileForm'
 
@@ -55,6 +55,9 @@ export default function AdminDashboard() {
   const [credsSaving, setCredsSaving] = useState(false)
   const [testingSite, setTestingSite] = useState(null)
   const [browserLoginSite, setBrowserLoginSite] = useState(null)
+  const [passwordModal, setPasswordModal] = useState(false)
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' })
+  const [passwordSaving, setPasswordSaving] = useState(false)
   const [fetching, setFetching] = useState(false)
   const [fetchResult, setFetchResult] = useState(null)
   const [addSiteModal, setAddSiteModal] = useState(false)
@@ -909,6 +912,33 @@ export default function AdminDashboard() {
 
   const handleLogout = () => { logout(); navigate('/admin') }
 
+  const changePassword = async () => {
+    if (passwordForm.newPassword.length < 8) {
+      showToast('New password must be at least 8 characters', 'error')
+      return
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      showToast('New passwords do not match', 'error')
+      return
+    }
+    setPasswordSaving(true)
+    try {
+      const { data } = await API.post('/api/auth/change-password', {
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+      })
+      showToast(data.message || 'Password changed', 'success')
+      setPasswordModal(false)
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
+      logout()
+      navigate('/admin')
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Failed to change password', 'error')
+    } finally {
+      setPasswordSaving(false)
+    }
+  }
+
   const saveItem = async (collection, item, id) => {
     setSaving(true)
     try {
@@ -1720,6 +1750,55 @@ export default function AdminDashboard() {
                   className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">
                   {credsSaving ? <Loader2 size={14} className="animate-spin" /> : null}
                   Save & Enable
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Change Password Modal */}
+        {passwordModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setPasswordModal(false)}>
+            <div className={'w-full max-w-md p-6 rounded-2xl border shadow-2xl ' + (dark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}
+              onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold">Change Password</h3>
+                <button onClick={() => setPasswordModal(false)} className={'p-1.5 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700' : 'hover:bg-gray-200')}>
+                  <X size={18} />
+                </button>
+              </div>
+              <p className={'text-sm mb-4 ' + (dark ? 'text-gray-400' : 'text-gray-500')}>
+                Changing your password signs you out of all sessions. You'll need to log in again.
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className={'text-sm font-medium ' + (dark ? 'text-gray-300' : 'text-gray-700')}>Current Password</label>
+                  <input type="password" value={passwordForm.currentPassword}
+                    onChange={e => setPasswordForm(f => ({ ...f, currentPassword: e.target.value }))}
+                    className={'w-full mt-1 px-3 py-2 rounded-xl border outline-none text-sm ' + (dark ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400')} />
+                </div>
+                <div>
+                  <label className={'text-sm font-medium ' + (dark ? 'text-gray-300' : 'text-gray-700')}>New Password</label>
+                  <input type="password" value={passwordForm.newPassword}
+                    onChange={e => setPasswordForm(f => ({ ...f, newPassword: e.target.value }))}
+                    className={'w-full mt-1 px-3 py-2 rounded-xl border outline-none text-sm ' + (dark ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400')} />
+                </div>
+                <div>
+                  <label className={'text-sm font-medium ' + (dark ? 'text-gray-300' : 'text-gray-700')}>Confirm New Password</label>
+                  <input type="password" value={passwordForm.confirmPassword}
+                    onChange={e => setPasswordForm(f => ({ ...f, confirmPassword: e.target.value }))}
+                    className={'w-full mt-1 px-3 py-2 rounded-xl border outline-none text-sm ' + (dark ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400')} />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-5">
+                <button onClick={() => setPasswordModal(false)}
+                  className={'px-4 py-2 rounded-xl text-sm font-medium cursor-pointer ' + (dark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
+                  Cancel
+                </button>
+                <button onClick={changePassword} disabled={passwordSaving}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all disabled:opacity-50 cursor-pointer">
+                  {passwordSaving ? <Loader2 size={14} className="animate-spin" /> : null}
+                  Change Password
                 </button>
               </div>
             </div>
@@ -2965,6 +3044,9 @@ export default function AdminDashboard() {
             </div>
             <button onClick={toggle} className={'p-2 rounded-full cursor-pointer ' + (dark ? 'bg-gray-800 text-yellow-400' : 'bg-gray-100 text-gray-600')}>
               {dark ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <button onClick={() => setPasswordModal(true)} className={'flex items-center gap-2 px-3 py-2 rounded-lg text-sm cursor-pointer ' + (dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
+              <KeyRound size={16} /> Change Password
             </button>
             <button onClick={handleLogout} className={'flex items-center gap-2 px-3 py-2 rounded-lg text-sm cursor-pointer ' + (dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
               <LogOut size={16} /> Logout

@@ -78,11 +78,39 @@ router.post(
     }
 
     const secrets = getJwtSecrets();
-    const token = jwt.sign({ id: admin._id.toString() }, secrets[0], {
-      expiresIn: '90d',
+    const token = jwt.sign({ id: admin._id.toString(), tv: admin.tokenVersion || 0 }, secrets[0], {
+      expiresIn: '365d',
       algorithm: 'HS256',
     });
     res.json({ token, username: admin.username });
+  })
+);
+
+router.post(
+  '/change-password',
+  require('../middleware/auth'),
+  require('../middleware/csrf').csrfProtection,
+  asyncHandler(async (req, res) => {
+    const currentPassword = str(req.body, 'currentPassword', { min: 8, max: 200 });
+    const newPassword = str(req.body, 'newPassword', { min: 8, max: 200 });
+
+    const admin = await Admin.findById(req.adminId);
+    if (!admin) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+
+    const match = await bcrypt.compare(currentPassword, admin.password);
+    if (!match) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    admin.password = await bcrypt.hash(newPassword, 10);
+    admin.tokenVersion = (admin.tokenVersion || 0) + 1;
+    admin.failedAttempts = 0;
+    admin.lockedUntil = null;
+    await admin.save();
+
+    res.json({ message: 'Password changed. Please log in again.' });
   })
 );
 

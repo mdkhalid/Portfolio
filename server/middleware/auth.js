@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const Admin = require('../models/Admin');
 
 function getJwtSecrets() {
   const current = process.env.JWT_SECRET;
@@ -27,7 +28,7 @@ function verifyJwt(token) {
   return null;
 }
 
-const authMiddleware = (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'No token provided' });
@@ -37,6 +38,17 @@ const authMiddleware = (req, res, next) => {
   const decoded = verifyJwt(token);
   if (!decoded) {
     return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+
+  // A token signed before the last password change carries a stale tv and must
+  // not authenticate, even though its signature and expiry are still valid.
+  try {
+    const admin = await Admin.findById(decoded.id).select('tokenVersion').lean();
+    if (!admin || (admin.tokenVersion || 0) !== (decoded.tv || 0)) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+  } catch (err) {
+    return next(err);
   }
 
   req.adminId = decoded.id;

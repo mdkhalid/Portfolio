@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const FIELD_TYPE = ['text', 'textarea', 'select', 'radio', 'email', 'tel', 'number', 'url', 'date'];
-const VALUE_SOURCE = ['saved', 'profile', 'ai', 'user', 'manual'];
+const VALUE_SOURCE = ['saved', 'profile', 'ai', 'ai_fewshot', 'user', 'manual'];
 
 /**
  * Knowledge base of apply-form fields the pipeline has seen, keyed by

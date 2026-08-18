@@ -1,5 +1,6 @@
 const Profile = require('../models/Profile');
 const ApplyField = require('../models/ApplyField');
+const Application = require('../models/Application');
 const { getAIClient } = require('../ai/client');
 const { checkAICost, recordAICost } = require('./aiCost');
 const { withPage, delay } = require('../adapters/browser');
@@ -246,14 +247,19 @@ async function resolveFieldValues({ userId, site, detected = [], jobTitle = '' }
     const costCheck = await checkAICost(userId, { purpose: 'prepare_application' });
     if (client && costCheck.allowed) {
       try {
-        const answers = await aiAnswerFields({ client, model, fields: aiCandidates, profile, jobTitle });
+        const fewShot = await buildFewShotContext(userId);
+        const answers = await aiAnswerFields({ client, model, fields: aiCandidates, profile, jobTitle, fewShot });
         usedAI = true;
         recordAICost({ userId, purpose: 'prepare_application' }).catch(() => {});
         for (const f of aiCandidates) {
           const a = answers[f.key];
           if (a?.value) {
             fieldValues[f.key] = a.value;
-            fieldMeta[f.key] = { ...f, source: 'ai' };
+            // Mark answers reused from a prior apply distinctly from fresh AI.
+            const source = fewShot.some((p) => p.value === a.value && (p.key === f.key || p.label === f.label))
+              ? 'ai_fewshot'
+              : 'ai';
+            fieldMeta[f.key] = { ...f, source };
           } else {
             waitingFields.push({ ...f, value: '', suggestion: a?.suggestion || '' });
           }
@@ -275,9 +281,45 @@ async function resolveFieldValues({ userId, site, detected = [], jobTitle = '' }
   return { fieldValues, fieldMeta, waitingFields, usedAI };
 }
 
+/**
+ * Build a compact few-shot context from the candidate's prior applications:
+ * for each field that was actually answered, pair the semantic key with the
+ * value. Reuses the most recent successful/queued applies so the model can
+ * answer the same question the same way across providers.
+ */
+async function buildFewShotContext(userId, limit = 8) {
+  const prior = await Application.find({
+    userId,
+    status: { $in: ['applied', 'queued', 'running', 'pending', 'passed'] },
+    $or: [{ 'fieldValues.0': { $exists: true } }, { 'detectedFields.0': { $exists: true } }],
+  })
+    .sort({ updatedAt: -1 })
+    .limit(limit)
+    .lean()
+    .catch(() => []);
+
+  const seen = new Map();
+  for (const app of prior) {
+    const values = app.fieldValues instanceof Map
+      ? Object.fromEntries(app.fieldValues)
+      : (app.fieldValues || {});
+    const detected = app.detectedFields || [];
+    for (const f of detected) {
+      const value = values[f.key];
+      if (value && !seen.has(f.key)) {
+        seen.set(f.key, { key: f.key, label: f.label || f.key, value });
+      }
+    }
+  }
+  return [...seen.values()];
+}
+
 /** One AI call producing a value (and optional suggestion) per unresolved field. */
-async function aiAnswerFields({ client, model, fields, profile, jobTitle }) {
+async function aiAnswerFields({ client, model, fields, profile, jobTitle, fewShot = [] }) {
   const fieldList = fields.map((f) => `- key: ${f.key}\n  label: ${f.label}\n  type: ${f.type}${f.options?.length ? '\n  options: ' + f.options.join(', ') : ''}`).join('\n');
+  const fewShotText = fewShot.length
+    ? fewShot.map((f) => `- ${f.key} (${f.label}): ${f.value}`).join('\n')
+    : '(none — answer from profile only)';
   const prompt = `You are filling in a job application form for the candidate described below. Only provide TRUE, defensible answers derived from the candidate's profile and the job title. For every field give a value; if you genuinely cannot answer a field, set "value": "" and give a short "suggestion" describing what the candidate should provide.
 
 CRITICAL RULES:
@@ -296,6 +338,9 @@ Current title: ${profile?.title || ''}
 Location: ${profile?.location || ''}
 Years of experience: ${profile?.experienceYears ?? ''}
 Summary: ${(profile?.summary || '').slice(0, 600)}
+
+PREVIOUS ANSWERS (reuse when the semantic question matches):
+${fewShotText}
 
 JOB TITLE: ${jobTitle || 'unknown'}
 
@@ -404,6 +449,7 @@ module.exports = {
   profileFieldMap,
   resolveFieldValues,
   aiAnswerFields,
+  buildFewShotContext,
   learnFieldValues,
   detectApplyFormFields,
 };

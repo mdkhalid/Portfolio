@@ -15,6 +15,11 @@ const { getQueue } = require('./index');
 
 const STEPS = ['fetch_jd', 'generate_resume', 'prepare_application', 'submit'];
 
+// Providers whose apply form has no resume upload (e.g. Wellfound uses the
+// resume already stored on the candidate's profile). Generating a tailored
+// resume for these sites wastes AI budget and the file is never attached.
+const RESUME_FREE_SITES = new Set(['wellfound']);
+
 const STEP_LABELS = {
   fetch_jd: 'Fetching job description',
   generate_resume: 'Preparing ATS-friendly resume',
@@ -223,6 +228,14 @@ async function runStep(applicationId, key) {
     }
 
     case 'generate_resume': {
+      // Wellfound (and any other resume-free provider) has no upload field in
+      // its apply flow — it uses the resume already stored on the profile. Skip
+      // generation entirely and do not burn AI budget on a file that's unused.
+      if (RESUME_FREE_SITES.has(job.site)) {
+        await markStep(application, key, { status: 'skipped', finishedAt: new Date() });
+        break;
+      }
+
       // Prefer a tailored resume already attached to the job (from
       // POST /api/resume/generate). Fall back to generating one here.
       if (job.resumeId) {

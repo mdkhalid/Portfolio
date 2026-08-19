@@ -506,10 +506,10 @@ exports.manualList = asyncHandler(async (req, res) => {
   const filter = { userId: req.adminId, needsManualApply: true };
 
   const status = String(req.query.status || '');
-  if (status) {
+  if (status && status !== 'all') {
     const valid = ['new', 'not_applied', 'pending'];
-    if (!valid.includes(status)) throw new AppError('Invalid status filter', 400, 'INVALID_STATUS');
-    filter.status = status;
+    // Ignore unknown status values instead of 400ing — keeps the list view usable.
+    if (valid.includes(status)) filter.status = status;
   }
   const site = String(req.query.site || '');
   if (site) filter.site = site;
@@ -848,9 +848,9 @@ exports.listApplications = asyncHandler(async (req, res) => {
   const site = String(req.query.site || '');
   if (site) filter.site = site;
   const status = String(req.query.status || '');
-  if (status) {
-    if (!TRACKING_STATUSES.includes(status)) throw new AppError('Invalid status filter', 400, 'INVALID_STATUS');
-    filter.status = status;
+  if (status && status !== 'all') {
+    // Ignore unknown status values instead of 400ing — keeps the list view usable.
+    if (TRACKING_STATUSES.includes(status)) filter.status = status;
   }
   const via = String(req.query.via || '');
   if (via) filter.appliedVia = via;

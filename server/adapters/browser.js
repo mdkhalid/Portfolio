@@ -72,8 +72,23 @@ function killProfileProcesses(site) {
 // the user, not by stray processes) — protects them from cleanup kills.
 const _interactiveSites = new Set();
 
+function _evictBrowser(key) {
+  _browserPromises.delete(key);
+  if (key === 'default') _browserPromise = null;
+}
+
 async function getBrowser(site) {
   const key = site ? String(site).toLowerCase() : 'default';
+  // A cached browser may have launched fine but then crashed/disconnected
+  // silently (OOM, OS reclaim, profile lock). A dead-but-resolved promise would
+  // otherwise be returned forever, so every page opened on it throws
+  // "Connection closed." Evict it here so the next call relaunches a live one.
+  if (_browserPromises.has(key)) {
+    const existing = await _browserPromises.get(key).catch(() => null);
+    if (existing && typeof existing.isConnected === 'function' && !existing.isConnected()) {
+      _evictBrowser(key);
+    }
+  }
   if (!_browserPromises.has(key)) {
     // Lazy-require so requiring the adapters never pulls in puppeteer's ESM
     // entry (jest/CommonJS contexts that never launch a browser stay clean).
@@ -103,10 +118,14 @@ async function getBrowser(site) {
     const promise = _puppeteer.launch(launchOptions);
     _browserPromises.set(key, promise);
     if (key === 'default') _browserPromise = promise;
-    promise.catch(() => {
-      _browserPromises.delete(key);
-      if (key === 'default') _browserPromise = null;
-    });
+    promise
+      .then((b) => {
+        // If Chrome dies at runtime, drop it from the cache so the next
+        // getBrowser() call relaunches a fresh instance instead of returning
+        // the dead one (which would keep throwing "Connection closed").
+        b.on('disconnected', () => _evictBrowser(key));
+      })
+      .catch(() => _evictBrowser(key));
   }
   return _browserPromises.get(key);
 }

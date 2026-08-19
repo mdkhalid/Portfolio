@@ -56,6 +56,28 @@ function isManualApplyFailure(err) {
   return /employer site|redirected to an employer|no apply button|apply manually|complete the application manually|is not automated|no automation/i.test(msg);
 }
 
+/**
+ * Errors that mean the headless browser process died (not a site/login problem).
+ * When one of these surfaces from login/submit we close the cached browser for
+ * the site and retry once — the next getBrowser() relaunches a live instance.
+ */
+const BROWSER_DISCONNECT_RE = /connection closed|target closed|protocol error|execution context (was |is )?destroyed|browser has been closed|browser is not connected|navigator is not connected|websocket/i;
+
+async function withBrowserRetry(site, fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    const msg = String(err?.message || '');
+    if (BROWSER_DISCONNECT_RE.test(msg)) {
+      console.warn(`[worker] browser disconnected during ${site} submit — retrying once with a fresh browser`);
+      try { require('../adapters/browser').closeBrowserForSite(site); } catch {}
+      await sleep(1200);
+      return await fn();
+    }
+    throw err;
+  }
+}
+
 const lastSubmitAt = new Map();
 const siteSlots = new Map();
 
@@ -421,16 +443,21 @@ async function runStep(applicationId, key) {
           // so cookies are bound to the correct domain. A failed cookie login
           // now throws a clear "cookie expired" error instead of silently
           // submitting an unauthenticated (logged-out) application.
-          await adapter.login({ cookies: cookieHeader, cookieOrigin: SITE_META[site]?.homeUrl || job.url });
+          await withBrowserRetry(site, () =>
+            adapter.login({ cookies: cookieHeader, cookieOrigin: SITE_META[site]?.homeUrl || job.url })
+          );
         } else if (creds?.email && creds?.password) {
-          await adapter.login({ email: creds.email, password: creds.password });
+          await withBrowserRetry(site, () =>
+            adapter.login({ email: creds.email, password: creds.password })
+          );
           // Persist the fresh session the password login created so future runs
           // reuse it (and the sliding keep-alive can maintain it).
           require('../services/sessionRefresh').captureCookiesFromContext(app.userId, site).catch(() => {});
         }
 
         if (typeof adapter.submitApplication === 'function') {
-          const result = await adapter.submitApplication({
+          const result = await withBrowserRetry(site, () =>
+            adapter.submitApplication({
             url: job.url,
             credentials: { email: creds?.email, password: creds?.password },
             cookie: cookieHeader || null,
@@ -439,7 +466,7 @@ async function runStep(applicationId, key) {
             resumeFilename: resume?.pdfFilename || '',
             fields: app.fieldValues ? Object.fromEntries(app.fieldValues) : {},
             detected: app.detectedFields || [],
-          });
+          }));
           if (result?.error) throw new Error(result.error);
 
           // The adapter didn't throw, but it may report the application was

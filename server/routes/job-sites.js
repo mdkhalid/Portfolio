@@ -176,12 +176,16 @@ router.put('/:name', asyncHandler(async (req, res) => {
   const name = str(req.params, 'name', { min: 1, max: 50 }).toLowerCase();
   await assertKnownSite(req.adminId, name);
 
-  const email = str(req.body, 'email', { min: 3, max: 254, optional: true });
+  const emailRaw = str(req.body, 'email', { min: 3, max: 254, optional: true });
   const password = str(req.body, 'password', { min: 6, max: 200, optional: true });
   const enabled = bool(req.body, 'enabled', { optional: true });
 
   const existing = await UserJobSite.findOne({ userId: req.adminId, name }).select('+credentials +cookies');
   const prev = existing ? decrypt(existing.credentials) || {} : {};
+  // A masked value (e.g. "jo***@gmail.com") is a display-only placeholder the
+  // client must never send back, or it would overwrite the real credential.
+  // Treat it as "keep existing".
+  const email = emailRaw && !String(emailRaw).includes('*') ? emailRaw : (prev.email || emailRaw || '');
   const creds = {
     email: email !== undefined ? email : prev.email || '',
     password: password !== undefined ? password : prev.password || '',

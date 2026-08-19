@@ -356,8 +356,9 @@ export default function AdminDashboard() {
   }
 
   const toggleSite = async (name, enabled) => {
-    const site = jobSites.find(s => s.name === name)
-    const ok = await saveJobSite(name, { email: site?.credentials?.email || '', enabled })
+    // Send ONLY the enabled flag — the stored email/password are masked on the
+    // client, so including them would overwrite the real values with "jo***@…".
+    const ok = await saveJobSite(name, { enabled })
     if (!ok) await refreshJobSites()
   }
 
@@ -1799,7 +1800,7 @@ export default function AdminDashboard() {
                       <span className={'absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ' + (site.enabled ? 'translate-x-5' : '')} />
                     </button>
                     {/* Edit */}
-                    <button onClick={() => { setCredsModal({ name: site.name, label: site.label }); setCredsForm({ email: '', password: '' }); setCookiesForm('') }}
+                      <button onClick={() => { setCredsModal({ name: site.name, label: site.label, email: site.credentials?.email || '' }); setCredsForm({ email: '', password: '' }); setCookiesForm('') }}
                       className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-200 text-blue-600')}>
                       <Edit3 size={16} />
                     </button>
@@ -1859,6 +1860,11 @@ export default function AdminDashboard() {
                     autoComplete="off"
                     name={'email-' + credsModal.name}
                     className={'w-full mt-1 px-3 py-2 rounded-xl border outline-none text-sm ' + (dark ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400')} />
+                  {credsModal.email ? (
+                    <p className={'text-xs mt-1 ' + (dark ? 'text-emerald-400' : 'text-emerald-600')}>Currently stored: {credsModal.email} (leave blank to keep)</p>
+                  ) : (
+                    <p className={'text-xs mt-1 ' + (dark ? 'text-gray-500' : 'text-gray-400')}>Leave blank to keep existing</p>
+                  )}
                 </div>
                 <div>
                   <label className={'text-sm font-medium ' + (dark ? 'text-gray-300' : 'text-gray-700')}>Password</label>
@@ -1894,7 +1900,12 @@ export default function AdminDashboard() {
                   Cancel
                 </button>
                 <button onClick={async () => {
-                  const ok = await saveJobSite(credsModal.name, { email: credsForm.email, password: credsForm.password, enabled: true })
+                  // Only send fields the user actually entered — a blank field
+                  // means "keep existing", so we never overwrite stored creds.
+                  const payload = { enabled: true };
+                  if (String(credsForm.email || '').trim()) payload.email = String(credsForm.email).trim();
+                  if (String(credsForm.password || '')) payload.password = credsForm.password;
+                  const ok = await saveJobSite(credsModal.name, payload)
                   if (ok && cookiesForm) {
                     try {
                       await API.put('/api/job-sites/' + credsModal.name + '/cookies', { cookies: cookiesForm })

@@ -29,8 +29,8 @@ async function login({ email, password, cookies, cookieOrigin }) {
     const ok = await withPage(async (page) => {
       const isLoggedIn = await loginWithCookies(page, cookies, cookieOrigin, async (p) => {
         const url = p.url();
-        const loggedOut = await p.$('.loginBtn, [data-testid="login-button"], a[href*="nlogin/login"]');
-        return !(url.includes('/login') || loggedOut);
+        const loggedOut = await p.$('a#login_Layer, a[href*="/nLogin/Login"], a[href*="nlogin/login"], .loginBtn, [data-testid="login-button"]');
+        return !(/\/login|\/nlogin|\/nLogin/i.test(url) || loggedOut);
       });
       return isLoggedIn;
     }, 'naukri');
@@ -70,8 +70,8 @@ async function login({ email, password, cookies, cookieOrigin }) {
     const url = page.url();
     // Check for actual login failure — Naukri shows error messages in specific containers.
     // Don't use broad [class*=error] which matches analytics/form-hint elements.
-    const hasLoginError = await page.$('.errStrip, .nI-gNb-errorMsg, .error-msg, [data-testid="login-error"]');
-    const stillOnLogin = url.includes('/login') || url.includes('/nlogin');
+    const hasLoginError = await page.$('.commonErrorMsg, .errStrip, .nI-gNb-errorMsg, .error-msg, [data-testid="login-error"]');
+    const stillOnLogin = /\/login|\/nlogin/i.test(url);
     if (stillOnLogin || hasLoginError) {
       const errText = hasLoginError
         ? await hasLoginError.evaluate(el => el.innerText).catch(() => '')

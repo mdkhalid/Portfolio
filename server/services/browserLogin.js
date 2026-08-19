@@ -18,7 +18,10 @@ const LOGIN_URLS = {
 const POLL_MS = 4000;
 const DEFAULT_TIMEOUT_MS = 4 * 60 * 1000;
 
-let _busy = false;
+// One interactive login per site at a time — different sites can log in
+// concurrently (each has its own Chrome profile), but a second attempt on the
+// SAME site would kill the first window's profile lock.
+const _busySites = new Set();
 
 const onLoginUrl = (url) => /login|signin|sign-in|nlogin|account\/login|auth/i.test(String(url || ''));
 
@@ -76,7 +79,7 @@ async function detectLoggedIn(page, site) {
     if (await isBlockPage(page)) return false;
     if (site === 'naukri') {
       // Naukri keeps a visible Login button in the header while logged out.
-      const loggedOut = await page.$('.loginBtn, [data-testid="login-button"], a[href*="nlogin/login"]');
+      const loggedOut = await page.$('a#login_Layer, a[href*="/nLogin/Login"], a[href*="nlogin/login"], .loginBtn, [data-testid="login-button"]');
       return !loggedOut;
     }
     if (site === 'wellfound') {
@@ -98,8 +101,9 @@ async function detectLoggedIn(page, site) {
  * @returns {Promise<{ ok: boolean, cookieHeader?: string, cookieCount?: number, reason?: string }>}
  */
 async function interactiveLogin(site, { timeoutMs, startUrl } = {}) {
-  if (_busy) return { ok: false, reason: 'Another browser login is already in progress.' };
-  _busy = true;
+  const key = String(site || '').toLowerCase();
+  if (_busySites.has(key)) return { ok: false, reason: 'A browser login for this site is already in progress.' };
+  _busySites.add(key);
   // Rate-limited sites (Cloudflare "too many requests") need room to cool down
   // inside the window while the user waits and refreshes manually.
   const limit = timeoutMs || (LONG_LOGIN_SITES.has(site) ? 10 * 60 * 1000 : DEFAULT_TIMEOUT_MS);
@@ -154,7 +158,7 @@ async function interactiveLogin(site, { timeoutMs, startUrl } = {}) {
   } catch (err) {
     return { ok: false, reason: err?.message || 'Interactive login failed' };
   } finally {
-    _busy = false;
+    _busySites.delete(key);
     if (browser) await browser.close().catch(() => {});
   }
 }

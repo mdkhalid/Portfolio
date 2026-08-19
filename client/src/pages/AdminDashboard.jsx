@@ -54,7 +54,7 @@ export default function AdminDashboard() {
   const [showCredsPassword, setShowCredsPassword] = useState(false)
   const [credsSaving, setCredsSaving] = useState(false)
   const [testingSite, setTestingSite] = useState(null)
-  const [browserLoginSite, setBrowserLoginSite] = useState(null)
+  const [browserLoginSites, setBrowserLoginSites] = useState([])
   const [passwordModal, setPasswordModal] = useState(false)
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' })
   const [passwordSaving, setPasswordSaving] = useState(false)
@@ -328,7 +328,7 @@ export default function AdminDashboard() {
   }
 
   const browserLogin = async (name) => {
-    setBrowserLoginSite(name)
+    setBrowserLoginSites(prev => prev.includes(name) ? prev : [...prev, name])
     showToast('Opening browser — log in there, this may take up to 10 minutes (longer if the site shows a rate-limit page)…', 'info')
     try {
       const { data } = await API.post('/api/job-sites/' + name + '/browser-login', {}, { timeout: 11 * 60 * 1000 })
@@ -336,7 +336,9 @@ export default function AdminDashboard() {
       await refreshJobSites()
     } catch (err) {
       showToast(err.response?.data?.error || 'Browser login failed', 'error')
-    } finally { setBrowserLoginSite(null) }
+    } finally {
+      setBrowserLoginSites(prev => prev.filter(s => s !== name))
+    }
   }
 
   const removeJobSite = async (name) => {
@@ -1668,12 +1670,12 @@ export default function AdminDashboard() {
                     })()}
                     {/* Assisted browser login */}
                     {(() => {
-                      const LoginIcon = browserLoginSite === site.name ? Loader2 : LogIn
+                      const LoginIcon = browserLoginSites.includes(site.name) ? Loader2 : LogIn
                       return (
-                        <button onClick={() => browserLogin(site.name)} disabled={browserLoginSite !== null}
+                        <button onClick={() => browserLogin(site.name)} disabled={browserLoginSites.includes(site.name)}
                           title="Open a browser window to log in — session is captured automatically"
                           className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-fuchsia-400' : 'hover:bg-gray-200 text-fuchsia-600') + ' disabled:opacity-40'}>
-                          <LoginIcon size={16} className={browserLoginSite === site.name ? 'animate-spin' : ''} />
+                          <LoginIcon size={16} className={browserLoginSites.includes(site.name) ? 'animate-spin' : ''} />
                         </button>
                       )
                     })()}
@@ -1709,6 +1711,8 @@ export default function AdminDashboard() {
                   <input type="email" value={credsForm.email}
                     onChange={e => setCredsForm(f => ({ ...f, email: e.target.value }))}
                     placeholder="your@email.com"
+                    autoComplete="off"
+                    name={'email-' + credsModal.name}
                     className={'w-full mt-1 px-3 py-2 rounded-xl border outline-none text-sm ' + (dark ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400')} />
                 </div>
                 <div>
@@ -1717,6 +1721,8 @@ export default function AdminDashboard() {
                     <input type={showCredsPassword ? 'text' : 'password'} value={credsForm.password}
                       onChange={e => setCredsForm(f => ({ ...f, password: e.target.value }))}
                       placeholder="Leave blank to keep existing"
+                      autoComplete="new-password"
+                      name={'password-' + credsModal.name}
                       className={'w-full pr-10 px-3 py-2 rounded-xl border outline-none text-sm ' + (dark ? 'bg-gray-900 border-gray-600 text-white placeholder-gray-500' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400')} />
                     <button type="button" onClick={() => setShowCredsPassword(v => !v)}
                       className={'absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer ' + (dark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')}>

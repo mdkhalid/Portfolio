@@ -391,6 +391,20 @@ export default function AdminDashboard() {
     } finally { setFetching(false) }
   }
 
+  // Jobs persist in MongoDB across restarts, but if the actionable list is
+  // empty while automated sites are enabled (fresh DB, first run, or a fetch
+  // that failed before) fetch once automatically so no manual click is needed.
+  const autoFetchedRef = useRef(false)
+  useEffect(() => {
+    if (activeTab !== 'job-apps') return
+    if (autoFetchedRef.current) return
+    if (fetching || jobAppsLoading) return
+    if (jobApps.items.length > 0) return
+    if (!jobSites.some(s => s.enabled && !s.custom)) return
+    autoFetchedRef.current = true
+    fetchJobs()
+  }, [activeTab, fetching, jobAppsLoading, jobApps.items.length, jobSites])
+
   // Log in to every configured site AT ONCE using each site's own stored
   // credentials / session cookie. All logins run concurrently on the server;
   // if a site needs a CAPTCHA/SSO/OTP, a browser window opens automatically and
@@ -471,6 +485,22 @@ export default function AdminDashboard() {
         }
         return [...prev, data]
       })
+      // Live-update the matching card so the list reflects apply progress
+      // without needing a manual refresh.
+      if (activeTab === 'job-apps' && data.jobId) {
+        setJobApps(prev => {
+          const idx = prev.items.findIndex(item => item._id === data.jobId)
+          if (idx < 0) return prev
+          if (data.status === 'applied' && jobAppsFilters.status === '') {
+            const items = [...prev.items]
+            items.splice(idx, 1)
+            return { ...prev, items, total: Math.max(0, prev.total - 1) }
+          }
+          const items = [...prev.items]
+          items[idx] = { ...items[idx], status: data.status, applied: data.status === 'applied', appliedAt: data.status === 'applied' ? new Date().toISOString() : items[idx].appliedAt }
+          return { ...prev, items }
+        })
+      }
     })
 
     // In-app notifications arrive over the same admin socket connection.
@@ -484,6 +514,7 @@ export default function AdminDashboard() {
         if (activeTab === 'job-apps') refreshJobApps()
       } else if (data.type === 'batch_complete') {
         showToast(data.title + (data.body ? ' — ' + data.body : ''), 'info')
+        if (activeTab === 'job-apps') refreshJobApps()
       } else if (data.type === 'pipeline_paused' || data.type === 'ai_budget') {
         showToast(data.title, 'warning')
       } else if (data.type === 'pipeline_resumed') {
@@ -529,7 +560,15 @@ export default function AdminDashboard() {
         const { data } = await API.post('/api/jobs/match', { jobIds: [job._id] })
         if (data.jobs?.[0]) {
           const matched = data.jobs[0]
-          setJobDetailPanel({ ...job, matchScore: matched.score, matchedKeywords: matched.matched, missingKeywords: matched.missing, reasoning: matched.reasoning })
+          const updated = { ...job, matchScore: matched.score, matchedKeywords: matched.matched, missingKeywords: matched.missing, reasoning: matched.reasoning }
+          setJobDetailPanel(updated)
+          // Reflect the score on the card in the list too so it updates live.
+          setJobApps(prev => ({
+            ...prev,
+            items: prev.items.map(item => item._id === job._id
+              ? { ...item, matchScore: matched.score, matchedKeywords: matched.matched, missingKeywords: matched.missing }
+              : item)
+          }))
         } else {
           setJobDetailPanel(job)
         }
@@ -571,25 +610,38 @@ export default function AdminDashboard() {
     } finally { setMatchingJobs(false) }
   }
 
-  const handleBulkAction = async (action) => {
-    const selectedItems = jobApps.items.filter(item => selectedJobs.has(item._id))
-    const ids = action === 'apply'
-      ? selectedItems.filter(i => i.status !== 'applied').map(i => i._id)
-      : selectedItems.filter(i => i.status !== 'passed').map(i => i._id)
+  const handleBulkAction = async (action, target) => {
+    const newStatus = action === 'apply' ? 'applied' : 'passed'
+    let ids = []
+    if (target) {
+      // Single job coming from the detail panel — it is not necessarily
+      // selected via a checkbox, so resolve the ids from the target directly.
+      const alreadyDone = action === 'apply' ? target.status === 'applied' : target.status === 'passed'
+      if (!alreadyDone) ids = [target._id]
+    } else {
+      const selectedItems = jobApps.items.filter(item => selectedJobs.has(item._id))
+      ids = action === 'apply'
+        ? selectedItems.filter(i => i.status !== 'applied').map(i => i._id)
+        : selectedItems.filter(i => i.status !== 'passed').map(i => i._id)
+    }
     if (!ids.length) return
     try {
-      const newStatus = action === 'apply' ? 'applied' : 'passed'
       await Promise.all(ids.map(id => API.put('/api/jobs/' + id, { status: newStatus })))
-      setJobApps(prev => ({
-        ...prev,
-        items: prev.items.map(item => ids.includes(item._id) ? { ...item, status: newStatus, applied: action === 'apply' } : item)
-      }))
-      setSelectedJobs(new Set())
-      if (action === 'apply') {
-        showToast(`${ids.length} jobs marked as applied`, 'success')
-      } else {
-        showToast(`${ids.length} jobs marked as passed`, 'success')
-      }
+      setJobApps(prev => {
+        const items = prev.items
+          .map(item => ids.includes(item._id)
+            ? { ...item, status: newStatus, applied: action === 'apply', appliedAt: action === 'apply' ? new Date().toISOString() : item.appliedAt }
+            : item)
+          // Applied/passed jobs move off the actionable queue.
+          .filter(item => !(ids.includes(item._id) && jobAppsFilters.status === ''))
+        return { ...prev, items }
+      })
+      setSelectedJobs(prev => {
+        const next = new Set(prev)
+        ids.forEach(id => next.delete(id))
+        return next
+      })
+      showToast(`${ids.length} job${ids.length > 1 ? 's' : ''} marked as ${newStatus}`, 'success')
     } catch (err) {
       showToast('Action failed', 'error')
     }
@@ -2101,7 +2153,8 @@ export default function AdminDashboard() {
           </select>
           <select value={jobAppsFilters.status} onChange={e => handleFilterChange('status', e.target.value)}
             className={'px-3 py-2 rounded-xl border outline-none text-sm cursor-pointer ' + (dark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-700')}>
-            <option value="">All Status</option>
+            <option value="">Actionable (New/Pending/Not Applied)</option>
+            <option value="all">All Status</option>
             <option value="new">New</option>
             <option value="pending">Pending</option>
             <option value="applied">Applied</option>
@@ -2356,13 +2409,13 @@ export default function AdminDashboard() {
                 {/* Actions */}
                 <div className="flex gap-2">
                   {jobDetailPanel.status !== 'applied' && (
-                    <button onClick={() => { handleBulkAction('apply'); closeJobDetail() }}
+                    <button onClick={() => { handleBulkAction('apply', jobDetailPanel); closeJobDetail() }}
                       className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-emerald-500 hover:bg-emerald-600 transition-all cursor-pointer">
                       <Zap size={16} /> Mark Applied
                     </button>
                   )}
                   {jobDetailPanel.status !== 'passed' && (
-                    <button onClick={() => { handleBulkAction('pass'); closeJobDetail() }}
+                    <button onClick={() => { handleBulkAction('pass', jobDetailPanel); closeJobDetail() }}
                       className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-red-500 hover:bg-red-600 transition-all cursor-pointer">
                       Pass
                     </button>

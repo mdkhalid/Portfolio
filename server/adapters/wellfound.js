@@ -1,4 +1,4 @@
-const { withPage, delay, loginWithCookies, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied, safeClick, gotoWithBackoff, blockError } = require('./browser');
+const { withPage, delay, loginWithCookies, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied, safeClick, gotoWithBackoff, blockError, ensureLoggedIn } = require('./browser');
 const { detectFields, fillFields } = require('../services/applyFields');
 
 const BASE = 'https://wellfound.com';
@@ -44,37 +44,42 @@ async function login({ email, password, cookies, cookieOrigin }) {
   }
 
   return withPage(async (page) => {
-    const resp = await gotoWithBackoff(page, `${BASE}/login`, { timeout: 35000 });
-    const blocked = blockError(resp);
-    if (blocked) throw new Error('Wellfound: ' + blocked);
-    await delay(3000);
-
-    const emailSel = '#user_email, input[name="user[email]"], input[type="email"]';
-    const pwSel = '#user_password, input[name="user[password]"], input[type="password"]';
-
-    const hasForm = await page.$(emailSel);
-    if (!hasForm) {
-      throw new Error('Wellfound login requires Cloudflare or SSO verification. Use the "Login via Browser" button to connect.');
-    }
-
-    await page.type(emailSel, email, { delay: 20 });
-    await page.type(pwSel, password, { delay: 20 });
-
-    const submitBtn = await page.$('input[type="submit"], button[type="submit"], form button');
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
-      submitBtn ? safeClick(page, submitBtn, 'login submit') : page.keyboard.press('Enter'),
-    ]);
-    await delay(3000);
-
-    const url = page.url();
-    const hasError = await page.$('.flash-error, [data-test="error-message"], .alert-danger');
-    if (url.includes('/login') || hasError) {
-      const msg = hasError ? await hasError.evaluate((el) => el.innerText).catch(() => '') : '';
-      throw new Error(msg || 'Wellfound login failed — use the "Login via Browser" button to solve CAPTCHA/SSO.');
-    }
+    await wellfoundPasswordLogin(page, email, password);
     return { ok: true, via: 'password' };
   }, 'wellfound');
+}
+
+/** Fill and submit the Wellfound email/password form on `page`. Throws on failure. */
+async function wellfoundPasswordLogin(page, email, password) {
+  const resp = await gotoWithBackoff(page, `${BASE}/login`, { timeout: 35000 });
+  const blocked = blockError(resp);
+  if (blocked) throw new Error('Wellfound: ' + blocked);
+  await delay(3000);
+
+  const emailSel = '#user_email, input[name="user[email]"], input[type="email"]';
+  const pwSel = '#user_password, input[name="user[password]"], input[type="password"]';
+
+  const hasForm = await page.$(emailSel);
+  if (!hasForm) {
+    throw new Error('Wellfound login requires Cloudflare or SSO verification. Use the "Login via Browser" button to connect.');
+  }
+
+  await page.type(emailSel, email, { delay: 20 });
+  await page.type(pwSel, password, { delay: 20 });
+
+  const submitBtn = await page.$('input[type="submit"], button[type="submit"], form button');
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
+    submitBtn ? safeClick(page, submitBtn, 'login submit') : page.keyboard.press('Enter'),
+  ]);
+  await delay(3000);
+
+  const url = page.url();
+  const hasError = await page.$('.flash-error, [data-test="error-message"], .alert-danger');
+  if (url.includes('/login') || hasError) {
+    const msg = hasError ? await hasError.evaluate((el) => el.innerText).catch(() => '') : '';
+    throw new Error(msg || 'Wellfound login failed — use the "Login via Browser" button to solve CAPTCHA/SSO.');
+  }
 }
 
 /**
@@ -197,7 +202,7 @@ async function fetchJobDescription({ url }) {
 /**
  * Submit application on Wellfound.
  */
-async function submitApplication({ url, credentials, resume, resumeFilename, fields = {}, detected = [] }) {
+async function submitApplication({ url, credentials, cookie, cookieOrigin, resume, resumeFilename, fields = {}, detected = [] }) {
   if (!url) throw new Error('No job URL provided for Wellfound application');
 
   return withPage(async (page) => {
@@ -205,6 +210,23 @@ async function submitApplication({ url, credentials, resume, resumeFilename, fie
     const blocked = blockError(resp);
     if (blocked) throw new Error('Wellfound: ' + blocked);
     await delay(2500);
+
+    // Cloudflare-fronted profile sessions can lapse between login and submit —
+    // verify and restore in place (cookie first, then the saved profile/password)
+    // instead of failing the application on a stale session.
+    const auth = await ensureLoggedIn(page, {
+      checkLoggedIn: isLoggedInPage,
+      cookie,
+      cookieOrigin,
+      passwordLogin: () => wellfoundPasswordLogin(page, credentials?.email || '', credentials?.password || ''),
+    });
+    if (!auth) {
+      throw new Error('Login required — use the "Login via Browser" button on the Job Sites tab to reconnect Wellfound, then retry.');
+    }
+    if (auth !== 'session') {
+      await gotoWithBackoff(page, url, { timeout: 40000 }).catch(() => {});
+      await delay(2000);
+    }
 
     const applyBtn = await page.$('button[class*="styles_applyButton"], button[data-test="JobApplicationApplyButton"], button[data-test="ApplyButton"], a[data-test="ApplyButton"]');
     if (!applyBtn) {

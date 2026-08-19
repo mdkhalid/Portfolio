@@ -179,9 +179,16 @@ exports.list = asyncHandler(async (req, res) => {
 
   const site = req.query.site;
   if (site) filter.site = site;
-  const status = req.query.status;
-  if (status) filter.status = status;
   const manual = req.query.manual;
+  const status = req.query.status;
+  if (status) {
+    // status=all means "show everything" (applied, passed, expired, etc.)
+    if (status !== 'all') filter.status = status;
+  } else if (manual !== '1' && manual !== 'true') {
+    // Default view is the actionable queue only — jobs already applied or
+    // passed live on the Tracking tab (Applications) instead of the list.
+    filter.status = { $in: ['new', 'pending', 'not_applied'] };
+  }
   if (manual === '1' || manual === 'true') {
     filter.needsManualApply = true;
     filter.status = { $in: ['new', 'not_applied', 'pending'] };

@@ -433,6 +433,8 @@ async function runStep(applicationId, key) {
           const result = await adapter.submitApplication({
             url: job.url,
             credentials: { email: creds?.email, password: creds?.password },
+            cookie: cookieHeader || null,
+            cookieOrigin: SITE_META[site]?.homeUrl || job.url,
             resume: resume?.pdf || null,
             resumeFilename: resume?.pdfFilename || '',
             fields: app.fieldValues ? Object.fromEntries(app.fieldValues) : {},

@@ -1,9 +1,41 @@
-const { withPage, safeText, delay, loginWithCookies, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied, safeClick } = require('./browser');
+const { withPage, safeText, delay, loginWithCookies, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied, safeClick, ensureLoggedIn } = require('./browser');
 const { detectApplyFormFields, fillFields } = require('../services/applyFields');
 
 const BASE = 'https://www.indeed.com';
 
 const normalize = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+
+/**
+ * Indeed auth check — shared between login() and the pre-submit check. Only a
+ * genuine /account/login link (header/nav) or a login page counts as logged
+ * out, so an apply modal that happens to mention login isn't misread.
+ */
+async function isIndeedAuthenticated(page) {
+  const url = page.url();
+  const loggedOut = await page.$('nav a[href*="/account/login"], header a[href*="/account/login"], a[data-testid="login-link"]');
+  return !(url.includes('/login') || loggedOut);
+}
+
+/** Fill and submit the Indeed email/password login form on `page`. Throws on failure. */
+async function indeedPasswordLogin(page, email, password) {
+  await page.goto(`${BASE}/account/login`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  const hasForm = !!(await page.$('input[name="email"], input[name="login-email"], input[type="email"]'));
+  if (!hasForm) {
+    throw new Error('Indeed login uses Google/Apple SSO or CAPTCHA and cannot be automated. Log in manually, then paste your session cookie.');
+  }
+  const emailSel = 'input[name="email"], input[name="login-email"], input[type="email"]';
+  const pwSel = 'input[type="password"]';
+  await page.type(emailSel, email, { delay: 20 });
+  await page.type(pwSel, password, { delay: 20 });
+  const submitBtn = await page.$('button[type="submit"], button[data-testid="login-button"]');
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
+    submitBtn ? safeClick(page, submitBtn, 'login submit') : page.keyboard.press('Enter'),
+  ]);
+  if (page.url().includes('login')) {
+    throw new Error('Indeed login failed — SSO/CAPTCHA required. Log in manually, then paste your session cookie.');
+  }
+}
 
 /**
  * Log in to Indeed. Prefers a pasted session cookie header (fallback when
@@ -13,11 +45,7 @@ const normalize = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 async function login({ email, password, cookies, cookieOrigin }) {
   if (cookies && cookieOrigin) {
     const ok = await withPage(async (page) => {
-      const isLoggedIn = await loginWithCookies(page, cookies, cookieOrigin, async (p) => {
-        const url = p.url();
-        const loggedOut = await p.$('a[href*="/account/login"], a[data-testid="login-link"]');
-        return !(url.includes('login') || loggedOut);
-      });
+      const isLoggedIn = await loginWithCookies(page, cookies, cookieOrigin, isIndeedAuthenticated);
       return isLoggedIn;
     }, 'indeed');
     if (ok) return { ok: true, via: 'cookies' };
@@ -30,24 +58,7 @@ async function login({ email, password, cookies, cookieOrigin }) {
   }
 
   return withPage(async (page) => {
-    await page.goto(`${BASE}/account/login`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    // Attempt the email/password form if present.
-    const hasForm = !!(await page.$('input[name="email"], input[name="login-email"], input[type="email"]'));
-    if (!hasForm) {
-      throw new Error('Indeed login uses Google/Apple SSO or CAPTCHA and cannot be automated. Log in manually, then paste your session cookie.');
-    }
-    const emailSel = 'input[name="email"], input[name="login-email"], input[type="email"]';
-    const pwSel = 'input[type="password"]';
-    await page.type(emailSel, email, { delay: 20 });
-    await page.type(pwSel, password, { delay: 20 });
-    const submitBtn = await page.$('button[type="submit"], button[data-testid="login-button"]');
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
-      submitBtn ? safeClick(page, submitBtn, 'login submit') : page.keyboard.press('Enter'),
-    ]);
-    if (page.url().includes('login')) {
-      throw new Error('Indeed login failed — SSO/CAPTCHA required. Log in manually, then paste your session cookie.');
-    }
+    await indeedPasswordLogin(page, email, password);
     return { ok: true, via: 'password' };
   }, 'indeed');
 }
@@ -142,16 +153,32 @@ async function detectApplyFields({ url }) {
  * redirects throw so the worker routes the job to Manual Apply.
  * Returns { ok: true, applied } or throws a structured error.
  */
-async function submitApplication({ url, credentials, resume, resumeFilename, fields, detected }) {
+async function submitApplication({ url, credentials, cookie, cookieOrigin, resume, resumeFilename, fields, detected }) {
   if (!url) throw new Error('Missing job URL');
   return withPage(async (page) => {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await delay(2500);
 
+    // Same self-healing login as Naukri: verify the session with the strict
+    // check login() uses and restore it here if it lapsed before applying.
+    const auth = await ensureLoggedIn(page, {
+      checkLoggedIn: isIndeedAuthenticated,
+      cookie,
+      cookieOrigin,
+      passwordLogin: () => indeedPasswordLogin(page, credentials?.email || '', credentials?.password || ''),
+    });
+    if (!auth) {
+      throw new Error('Login required — save credentials or paste a session cookie for Indeed, then retry.');
+    }
+    if (auth !== 'session') {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+      await delay(1500);
+    }
+
     const applyBtn = await page.$('button[data-testid="applyButton"], #indeedApplyButton, button[class*="apply"], a[class*="apply"]');
     if (!applyBtn) {
-      const hasLogin = await page.$('a[href*="/account/login"], input[name="email"]');
-      if (hasLogin) throw new Error('Login required — save credentials or paste a session cookie for Indeed.');
+      const state = await readApplyState(page, 'button[data-testid="applyButton"], #indeedApplyButton, button[class*="apply"]');
+      if (state?.successText) return { ok: true, applied: true, via: 'submitApplication' };
       throw new Error('No apply button found on this Indeed job (may redirect to employer site).');
     }
 

@@ -310,6 +310,34 @@ async function launchInteractiveBrowser(startUrl, { site } = {}) {
   return { browser, page, navError };
 }
 
+/**
+ * Make sure `page` carries a live authenticated session before an application
+ * is submitted. The worker runs login() first, but sessions can silently lapse
+ * between login and submit, and stored cookies can expire — instead of failing
+ * the whole application, re-verify here and restore the session in place.
+ * Order: existing session → cookie header → password login.
+ * Returns 'session' | 'cookie' | 'password' when logged in, or false.
+ */
+async function ensureLoggedIn(page, { checkLoggedIn, cookie, cookieOrigin, passwordLogin } = {}) {
+  if (typeof checkLoggedIn === 'function') {
+    try {
+      if (await checkLoggedIn(page)) return 'session';
+    } catch { /* fall through to login attempts */ }
+  }
+  if (cookie && cookieOrigin) {
+    const ok = await loginWithCookies(page, cookie, cookieOrigin, checkLoggedIn).catch(() => false);
+    if (ok) return 'cookie';
+  }
+  if (typeof passwordLogin === 'function') {
+    try {
+      await passwordLogin(page);
+      if (typeof checkLoggedIn !== 'function') return 'password';
+      return (await checkLoggedIn(page)) ? 'password' : false;
+    } catch { /* keep trying below */ }
+  }
+  return false;
+}
+
 /** Convert Puppeteer cookies into a raw "Cookie" request header string. */
 function cookiesToHeader(cookies) {
   return (cookies || [])
@@ -527,4 +555,4 @@ function confirmApplied(state) {
   return { applied: true };
 }
 
-module.exports = { getBrowser, getProfileDir, killProfileProcesses, newPage, withPage, safeText, safeAttr, delay, setCookiesFromHeader, loginWithCookies, closeBrowser, closeBrowserForSite, launchInteractiveBrowser, cookiesToHeader, gotoWithBackoff, blockError, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied, safeClick };
+module.exports = { getBrowser, getProfileDir, killProfileProcesses, newPage, withPage, safeText, safeAttr, delay, setCookiesFromHeader, loginWithCookies, closeBrowser, closeBrowserForSite, launchInteractiveBrowser, cookiesToHeader, gotoWithBackoff, blockError, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied, safeClick, ensureLoggedIn };

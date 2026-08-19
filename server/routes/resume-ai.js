@@ -137,6 +137,23 @@ router.post('/generate', asyncHandler(async (req, res) => {
       continue;
     }
     try {
+      // If this job already has a tailored resume (generated earlier but not yet
+      // applied, e.g. the apply failed or needs manual action), reuse it instead
+      // of spending AI budget regenerating the same document.
+      if (job.resumeId) {
+        const existing = await GeneratedResume.findById(job.resumeId).select('+pdf').lean().catch(() => null);
+        if (existing) {
+          results.push({
+            jobId: job._id,
+            resumeId: existing._id,
+            pdfFilename: existing.pdfFilename,
+            keywordsAdded: Array.isArray(existing.keywordsMatched) ? existing.keywordsMatched.length : 0,
+            reused: true,
+            usedAI: false,
+          });
+          continue;
+        }
+      }
       const built = await buildTailoredResume(job, { userId: req.adminId });
       const app = await Application.findOne({ userId: req.adminId, jobId: job._id })
         .sort({ createdAt: -1 })

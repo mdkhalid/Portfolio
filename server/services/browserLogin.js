@@ -162,7 +162,14 @@ async function interactiveLogin(site, { timeoutMs, startUrl } = {}) {
         await page.goto(meta.homeUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
         await delay(2000);
       }
-      if (await detectLoggedIn(page, site)) {
+      // The user has authenticated manually by now (the login form is gone).
+      // For Naukri, DOM "logged-in" checks are unreliable — login widgets and
+      // the #login_Layer button linger in the markup even after a successful
+      // login — so only skip harvesting on a bot-challenge / block page.
+      // Other sites keep the stricter detectLoggedIn gate.
+      const blocked = await isBlockPage(page);
+      const canHarvest = blocked ? false : (site === 'naukri' ? true : await detectLoggedIn(page, site));
+      if (canHarvest) {
         // Harvest ALL site cookies (every sub/parent domain), not just the
         // ones visible from the home URL — auth tokens often live on the
         // parent domain or a subdomain.

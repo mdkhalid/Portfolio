@@ -27,7 +27,9 @@ function urlSafeQuery(query) {
  */
 async function isNaukriAuthenticated(page) {
   const url = page.url();
-  const loggedOut = await page.$('a#login_Layer, a[href*="/nLogin/Login"], a[href*="nlogin/login"], .loginBtn, [data-testid="login-button"]');
+  // Only the header login button (#login_Layer) counts as a logged-out signal —
+  // login links in promo widgets/sidebars appear even when logged in.
+  const loggedOut = await page.$('a#login_Layer, .loginBtn');
   return !(/\/login|\/nlogin|\/nLogin/i.test(url) || loggedOut);
 }
 

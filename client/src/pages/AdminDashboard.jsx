@@ -83,6 +83,9 @@ export default function AdminDashboard() {
   const [lastBatchId, setLastBatchId] = useState(null)
   const [applyProgress, setApplyProgress] = useState([])
   const applySocketRef = useRef(null)
+  // Always-current refresh callbacks so the socket handler never closes over a
+  // stale snapshot (keeps the socket connection stable across filter changes).
+  const liveRefreshRef = useRef({ jobApps: null, tracking: null, manual: null })
   const [aiLoading, setAiLoading] = useState(false)
   const [aiResult, setAiResult] = useState('')
   const [generatedResumes, setGeneratedResumes] = useState([])
@@ -402,7 +405,8 @@ export default function AdminDashboard() {
     if (jobApps.items.length > 0) return
     if (!jobSites.some(s => s.enabled && !s.custom)) return
     autoFetchedRef.current = true
-    fetchJobs()
+    const t = setTimeout(() => { fetchJobs() }, 0)
+    return () => clearTimeout(t)
   }, [activeTab, fetching, jobAppsLoading, jobApps.items.length, jobSites])
 
   // Log in to every configured site AT ONCE using each site's own stored
@@ -520,6 +524,20 @@ export default function AdminDashboard() {
       } else if (data.type === 'pipeline_resumed') {
         showToast(data.title, 'success')
       }
+    })
+
+    // Server pushes a jobs:changed signal whenever job data mutates (match,
+    // fetch, status changes, apply/resume) — refresh the active list live so
+    // nothing requires a manual page reload. Throttled to avoid overlapping
+    // fetches during bursts of updates.
+    let lastJobsChangedAt = 0
+    socket.on('jobs:changed', () => {
+      const now = Date.now()
+      if (now - lastJobsChangedAt < 2000) return
+      lastJobsChangedAt = now
+      if (activeTab === 'job-apps') liveRefreshRef.current.jobApps?.()
+      else if (activeTab === 'tracking') liveRefreshRef.current.tracking?.()
+      else if (activeTab === 'manual') liveRefreshRef.current.manual?.()
     })
 
     return () => { socket.disconnect() }
@@ -785,6 +803,13 @@ export default function AdminDashboard() {
       showToast('Failed to load manual apply list', 'error')
     } finally { setManualLoading(false) }
   }, [manualFilters, manualJobs.page, showToast])
+
+  // Keep the live-refresher pointed at the freshest list loaders after every
+  // render (must be in an effect — the new react-hooks rule forbids writing
+  // refs during render).
+  useEffect(() => {
+    liveRefreshRef.current = { jobApps: refreshJobApps, tracking: refreshTracking, manual: refreshManualJobs }
+  })
 
   const handleManualFilterChange = (key, value) => {
     setManualFilters(prev => ({ ...prev, [key]: value }))

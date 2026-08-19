@@ -9,6 +9,7 @@ const { str } = require('../middleware/validate');
 const { sanitizeJdForAI } = require('../utils/security');
 const { checkAICost, recordAICost } = require('../services/aiCost');
 const { buildTailoredResume } = require('../services/resumeGenerate');
+const { emitJobsChanged } = require('../services/notifications');
 
 const router = express.Router();
 
@@ -181,6 +182,8 @@ router.post('/generate', asyncHandler(async (req, res) => {
       results.push({ jobId: id, error: String(err?.message || 'failed').slice(0, 200) });
     }
   }
+
+  emitJobsChanged(req.adminId);
 
   res.json({ generated: results.filter((r) => !r.error).length, results });
 }));

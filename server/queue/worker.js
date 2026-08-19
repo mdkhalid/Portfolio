@@ -10,7 +10,7 @@ const { getAdapter, isAutomatedSite, SITE_META } = require('../adapters');
 const { buildTailoredResume } = require('../services/resumeGenerate');
 const { resolveFieldValues, learnFieldValues } = require('../services/applyFields');
 const { getApplyFlow } = require('../services/applyFlow');
-const { notify } = require('../services/notifications');
+const { notify, emitJobsChanged } = require('../services/notifications');
 const { getQueue } = require('./index');
 
 const STEPS = ['fetch_jd', 'generate_resume', 'prepare_application', 'submit'];
@@ -499,6 +499,8 @@ async function runStep(applicationId, key) {
         { _id: app.jobId },
         { $set: { status: 'applied', applied: true, appliedAt: new Date(), appliedVia: 'system' } }
       );
+      // Push a change signal so the open dashboard updates without a reload.
+      emitJobsChanged(app.userId);
       // Emit a final progress payload with the terminal status — markStep's
       // last emit still reported 'running', so the UI never learned the
       // application actually succeeded until a manual refresh.

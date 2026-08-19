@@ -30,6 +30,15 @@ function isLoginInProgress(site) {
 
 const onLoginUrl = (url) => /login|signin|sign-in|nlogin|account\/login|auth/i.test(String(url || ''));
 
+/** True when the page still shows a login form (email/password fields). */
+async function stillOnLoginPage(page) {
+  try {
+    return !!(await page.$('input[type="password"], input[name="password"], form input[type="email"], form input[name="email"]'));
+  } catch {
+    return false;
+  }
+}
+
 /** Base hostname of a site ("https://www.naukri.com" -> "naukri.com"). */
 function siteHostname(site) {
   const home = (SITE_META[site] || {}).homeUrl || '';
@@ -83,8 +92,10 @@ async function detectLoggedIn(page, site) {
     // page — harvesting cookies from it produces a bogus session header.
     if (await isBlockPage(page)) return false;
     if (site === 'naukri') {
-      // Naukri keeps a visible Login button in the header while logged out.
-      const loggedOut = await page.$('a#login_Layer, a[href*="/nLogin/Login"], a[href*="nlogin/login"], .loginBtn, [data-testid="login-button"]');
+      // Naukri hides its header Login button (#login_Layer) once logged in.
+      // Login links in promo widgets/sidebars appear even for logged-in users,
+      // so only the header login button counts as a logged-out signal.
+      const loggedOut = await page.$('a#login_Layer, .loginBtn');
       return !loggedOut;
     }
     if (site === 'wellfound') {
@@ -141,7 +152,10 @@ async function interactiveLogin(site, { timeoutMs, startUrl } = {}) {
       }
       let checkUrl = '';
       try { checkUrl = page.url(); } catch { continue; }
-      if (onLoginUrl(checkUrl)) continue; // still on a login/auth page
+      // Naukri and others can leave "login" in the URL AFTER login completes
+      // (e.g. /nlogin/auth, /account/login redirects). Only keep waiting while
+      // an actual login FORM is on screen — once it's gone the login is done.
+      if (await stillOnLoginPage(page)) continue;
 
       // Left the login page → verify from the site home, then harvest cookies.
       if (meta.homeUrl && !checkUrl.startsWith(meta.homeUrl)) {

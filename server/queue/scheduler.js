@@ -42,13 +42,15 @@ async function runScheduledFetch() {
 async function runStaleExpiry() {
   const settings = await UserSettings.find().lean();
   const defaultDays = Number(env.JOB_STALE_DAYS) || 7;
+  const { emitJobsChanged } = require('../services/notifications');
   for (const s of settings) {
     const days = s.expireAfterDays || defaultDays;
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    await Job.updateMany(
+    const res = await Job.updateMany(
       { userId: s.userId, status: 'new', lastSeenAt: { $lt: cutoff } },
       { $set: { status: 'expired' } }
     );
+    if (res.modifiedCount) emitJobsChanged(s.userId);
   }
 }
 

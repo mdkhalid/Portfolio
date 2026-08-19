@@ -16,6 +16,7 @@ const { buildDedupeKey, parsePostedDate } = require('../services/jobDedupe');
 const { getUploadedResumeText } = require('../services/resumeGenerate');
 const { getAIClient } = require('../ai/client');
 const { sanitizeJdForAI } = require('../utils/security');
+const { emitJobsChanged } = require('../services/notifications');
 
 const MAX_FETCH_JOBS = 100;
 
@@ -121,6 +122,9 @@ async function fetchFromSite({ userId, site, location = '', pageCount = 1, maxJo
   }
 
   await UserJobSite.updateOne({ userId, name: site }, { $set: { lastFetched: now } });
+  // Push a change signal so any open dashboard refreshes without a manual reload
+  // (covers the HTTP fetch route AND the background scheduler fetch).
+  emitJobsChanged(userId);
   return { site, count: jobs.length, created, updated, skipped };
 }
 
@@ -370,6 +374,10 @@ ${sanitizeJdForAI(job.description || jd, 4000)}`;
     }
   }
 
+  // Push the new scores to the dashboard so cards update without a reload —
+  // this also covers long match batches whose HTTP response may be aborted.
+  emitJobsChanged(req.adminId);
+
   res.json({ matched: results.length, jobs: results });
 });
 
@@ -480,6 +488,8 @@ exports.update = asyncHandler(async (req, res) => {
       });
     }
   }
+
+  emitJobsChanged(req.adminId);
 
   res.json(updated);
 });
@@ -593,6 +603,8 @@ exports.manualMarkApplied = asyncHandler(async (req, res) => {
     });
   }
 
+  emitJobsChanged(req.adminId);
+
   res.json(job);
 });
 
@@ -609,6 +621,7 @@ exports.manualMarkPass = asyncHandler(async (req, res) => {
   if (existingApp) {
     await Application.updateOne({ _id: existingApp._id }, { $set: { status: 'passed', needsManualApply: false } });
   }
+  emitJobsChanged(req.adminId);
   res.json(job);
 });
 
@@ -727,6 +740,8 @@ exports.apply = asyncHandler(async (req, res) => {
     });
     enqueued.push(app._id);
   }
+
+  emitJobsChanged(req.adminId);
 
   res.json({
     batchId,
@@ -953,6 +968,7 @@ exports.retryApplication = asyncHandler(async (req, res) => {
     removeOnComplete: true,
     removeOnFail: false,
   });
+  emitJobsChanged(req.adminId);
   res.json({ message: 'Application requeued for retry', application: app });
 });
 

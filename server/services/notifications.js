@@ -189,9 +189,16 @@ async function sendDailyDigests() {
   }
 }
 
+/** Broadcast that job data changed so dashboards can refresh without a manual reload. */
+function emitJobsChanged(userId) {
+  if (!_io) return;
+  _io.to('admin-room').emit('jobs:changed', { userId: String(userId), at: Date.now() });
+}
+
 module.exports = {
   setIO,
   notify,
+  emitJobsChanged,
   sendEmail,
   listNotifications,
   unreadCount,

@@ -60,6 +60,8 @@ export default function AdminDashboard() {
   const [passwordSaving, setPasswordSaving] = useState(false)
   const [fetching, setFetching] = useState(false)
   const [fetchResult, setFetchResult] = useState(null)
+  const [loginAllInProgress, setLoginAllInProgress] = useState(false)
+  const [loginAllResult, setLoginAllResult] = useState(null)
   const [addSiteModal, setAddSiteModal] = useState(false)
   const [addSiteForm, setAddSiteForm] = useState({ label: '', baseUrl: '' })
   const [addingSite, setAddingSite] = useState(false)
@@ -387,6 +389,33 @@ export default function AdminDashboard() {
     } catch (err) {
       showToast(err.response?.data?.error || 'Fetch failed', 'error')
     } finally { setFetching(false) }
+  }
+
+  // Log in to every configured site AT ONCE using each site's own stored
+  // credentials / session cookie. All logins run concurrently on the server;
+  // if a site needs a CAPTCHA/SSO/OTP, a browser window opens automatically and
+  // the session is captured after the manual login.
+  const loginAll = async () => {
+    setLoginAllInProgress(true)
+    setLoginAllResult(null)
+    showToast('Logging in to all sites simultaneously… if a site needs a CAPTCHA/SSO/OTP a browser window will open — complete the login there and it gets captured automatically.', 'info')
+    try {
+      const { data } = await API.post('/api/job-sites/login-all', {}, { timeout: 12 * 60 * 1000 })
+      setLoginAllResult(data.results || [])
+      const ok = (data.results || []).filter(r => r.ok).length
+      const bad = (data.results || []).filter(r => !r.ok && !r.skipped).length
+      const skipped = (data.results || []).filter(r => r.skipped).length
+      await refreshJobSites()
+      if (bad) {
+        showToast(`${ok} connected, ${bad} failed${skipped ? ', ' + skipped + ' skipped' : ''} — see details below`, 'error')
+      } else if (skipped) {
+        showToast(`${ok} connected, ${skipped} skipped — see details below`, 'info')
+      } else {
+        showToast(`All ${ok} sites connected`, 'success')
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Login all failed', 'error')
+    } finally { setLoginAllInProgress(false) }
   }
 
   // Job Applications functions
@@ -1561,6 +1590,12 @@ export default function AdminDashboard() {
             {fetching ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
             {fetching ? 'Fetching...' : 'Fetch Jobs'}
           </button>
+          <button onClick={loginAll} disabled={loginAllInProgress || !jobSites.some(s => s.credentials?.email || s.hasCookies)}
+            title="Try to connect every configured site at once using each site's own stored credentials / session cookie"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-700 hover:to-teal-600 transition-all disabled:opacity-50 cursor-pointer">
+            {loginAllInProgress ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
+            {loginAllInProgress ? 'Logging in…' : 'Login All'}
+          </button>
         </div>
 
         {/* Fetch result */}
@@ -1602,6 +1637,39 @@ export default function AdminDashboard() {
                 </p>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Login All result */}
+        {loginAllResult && (
+          <div className={'p-4 rounded-xl border ' + (dark ? 'bg-gray-900 border-gray-700' : 'bg-emerald-50 border-emerald-200')}>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2">
+                <LogIn size={16} className="text-emerald-500" />
+                <span className="text-sm font-semibold">Login All Result</span>
+              </div>
+              <button onClick={() => setLoginAllResult(null)} className={'p-1 rounded cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-200 text-gray-500')}>
+                <X size={14} />
+              </button>
+            </div>
+            <div className="space-y-1.5">
+              {loginAllResult.map(r => (
+                <div key={r.name} className="flex items-start gap-2 text-sm">
+                  {r.ok
+                    ? <CheckCircle2 size={15} className="mt-0.5 text-emerald-500 flex-shrink-0" />
+                    : r.skipped
+                      ? <Clock size={15} className="mt-0.5 text-amber-500 flex-shrink-0" />
+                      : <AlertCircle size={15} className="mt-0.5 text-red-500 flex-shrink-0" />}
+                  <div className="min-w-0">
+                    <span className="font-medium">{r.label}</span>
+                    {r.ok
+                      ? <span className={'ml-1 text-xs ' + (dark ? 'text-gray-400' : 'text-gray-500')}>{r.via === 'browser' ? 'connected · session captured via browser' : 'connected' + (r.via ? ' · via ' + r.via : '')}</span>
+                      : <span className={'ml-1 text-xs ' + (dark ? 'text-gray-400' : 'text-gray-500')}>{r.skipped ? 'skipped' : 'failed'}</span>}
+                    {!r.ok && <p className={'text-xs mt-0.5 ' + (dark ? 'text-gray-400' : 'text-gray-500')}>{r.error}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

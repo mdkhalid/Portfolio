@@ -96,6 +96,82 @@ router.post('/', asyncHandler(async (req, res) => {
   res.status(201).json(toSafeSite(doc));
 }));
 
+/**
+ * POST /login-all — try to connect EVERY configured site at once. Each site
+ * logs in with its OWN stored credentials/session cookie (every connector has
+ * a different login id + password). All logins run concurrently. When a site's
+ * automated login hits a CAPTCHA/SSO/OTP/bot challenge, a visible browser
+ * window opens automatically for that site — the user completes the login and
+ * the session cookies are captured (enabling the site). A failure on one site
+ * never blocks the others. Never touches a site that already has an interactive
+ * login window open.
+ */
+router.post('/login-all', asyncHandler(async (req, res) => {
+  const { isLoginInProgress, connectSite } = require('../services/browserLogin');
+  const docs = await UserJobSite.find({ userId: req.adminId }).select('+credentials +cookies').lean();
+
+  const targets = docs
+    .map((doc) => {
+      const creds = decrypt(doc.credentials) || {};
+      const cookieHeader = doc.cookies ? decrypt(doc.cookies)?.value : null;
+      const meta = metaFor(doc.name, doc);
+      const origin = meta.homeUrl || doc.baseUrl;
+      if (!origin) return null;
+      return {
+        name: doc.name,
+        label: meta.label || doc.name,
+        origin,
+        email: creds.email,
+        password: creds.password,
+        cookieHeader,
+        hasCreds: Boolean(cookieHeader || (creds.email && creds.password)),
+      };
+    })
+    .filter(Boolean);
+
+  const withCreds = targets.filter((t) => t.hasCreds);
+  if (!withCreds.length) {
+    throw new AppError('No sites have saved credentials or a session cookie to log in with — save them first', 400, 'MISSING_CREDENTIALS');
+  }
+
+  const results = await Promise.all(withCreds.map(async (t) => {
+    // An interactive browser window is holding this site's profile — launching
+    // another login on top of it would corrupt/steal the user's window.
+    if (isLoginInProgress(t.name)) {
+      return { name: t.name, label: t.label, ok: false, skipped: true, error: 'Interactive browser login already in progress for this site.' };
+    }
+    try {
+      const r = await connectSite({
+        site: t.name,
+        email: t.email,
+        password: t.password,
+        cookieHeader: t.cookieHeader,
+        origin: t.origin,
+      });
+      if (!r.ok) {
+        await UserJobSite.updateOne({ userId: req.adminId, name: t.name }, { $set: { status: 'error' } });
+        return { name: t.name, label: t.label, ok: false, status: 'error', error: r.reason || 'Connection failed', via: r.via };
+      }
+      const updates = { status: 'connected' };
+      if (r.cookieHeader) {
+        // Interactive fallback earned a fresh session — persist the cookies so
+        // the worker can reuse them, and enable the site like the per-site
+        // "Login via Browser" button does.
+        updates.cookies = encrypt({ value: r.cookieHeader });
+        updates.cookieUpdatedAt = new Date();
+        updates.enabled = true;
+      }
+      await UserJobSite.updateOne({ userId: req.adminId, name: t.name }, { $set: updates });
+      return { name: t.name, label: t.label, ok: true, status: 'connected', via: r.via };
+    } catch (err) {
+      await UserJobSite.updateOne({ userId: req.adminId, name: t.name }, { $set: { status: 'error' } });
+      return { name: t.name, label: t.label, ok: false, status: 'error', error: err?.message || 'Connection failed' };
+    }
+  }));
+
+  res.json({ ok: true, results });
+}));
+
 router.put('/:name', asyncHandler(async (req, res) => {
   const name = str(req.params, 'name', { min: 1, max: 50 }).toLowerCase();
   await assertKnownSite(req.adminId, name);

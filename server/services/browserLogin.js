@@ -1,5 +1,5 @@
 const { launchInteractiveBrowser, delay, cookiesToHeader } = require('../adapters/browser');
-const { SITE_META } = require('../adapters');
+const { SITE_META, getAdapter } = require('../adapters');
 
 /**
  * Assisted browser login: opens a VISIBLE Chrome window on the site's login
@@ -22,6 +22,11 @@ const DEFAULT_TIMEOUT_MS = 4 * 60 * 1000;
 // concurrently (each has its own Chrome profile), but a second attempt on the
 // SAME site would kill the first window's profile lock.
 const _busySites = new Set();
+
+/** True while an interactive browser login window is open for `site`. */
+function isLoginInProgress(site) {
+  return _busySites.has(String(site || '').toLowerCase());
+}
 
 const onLoginUrl = (url) => /login|signin|sign-in|nlogin|account\/login|auth/i.test(String(url || ''));
 
@@ -163,4 +168,53 @@ async function interactiveLogin(site, { timeoutMs, startUrl } = {}) {
   }
 }
 
-module.exports = { interactiveLogin, detectLoggedIn, cookiesForSite, siteHostname };
+// Failures a visible browser window cannot fix (network/DNS/TLS down, missing
+// config) — opening an interactive window for these would only waste the user's
+// time, so they are reported as plain errors instead.
+const NO_INTERACTIVE_FALLBACK_RE = /net::|ERR_NAME_NOT_RESOLVED|ERR_INTERNET_DISCONNECTED|ERR_CONNECTION_|ERR_SSL|ERR_CERT|ERR_ABORTED|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|socket hang up|tunneling|getaddrinfo|self.signed|certificate|No site URL configured|not configured|Credentials or a session cookie are required|unknown job site/i;
+
+/** True when a failed automated login is worth retrying in a human browser. */
+function needsInteractiveLogin(err) {
+  const msg = String((err && err.message) || err || '');
+  return Boolean(msg) && !NO_INTERACTIVE_FALLBACK_RE.test(msg);
+}
+
+/**
+ * Flexible site connect (used by Login All): FIRST try the automated login with
+ * the site's OWN stored credentials / session cookie. If that fails for a reason
+ * a human browser can fix (CAPTCHA, OTP/2FA, SSO, Cloudflare/bot challenge,
+ * stale cookie, changed DOM...), FALL BACK to opening a visible browser window
+ * so the user completes the login manually; the session cookies are harvested
+ * and returned for the caller to persist (never fails out of the box).
+ *
+ * @returns {Promise<{ ok: boolean, via?: 'cookies'|'password'|'browser', cookieHeader?: string, cookieCount?: number, reason?: string }>}
+ */
+async function connectSite({ site, email, password, cookieHeader, origin }) {
+  const key = String(site || '').toLowerCase();
+  if (!origin) return { ok: false, reason: 'No site URL configured for ' + site };
+
+  try {
+    const adapter = getAdapter(key);
+    await adapter.login({
+      email,
+      password,
+      cookies: cookieHeader || undefined,
+      cookieOrigin: cookieHeader ? origin : undefined,
+      baseUrl: origin,
+    });
+    return { ok: true, via: cookieHeader ? 'cookies' : 'password' };
+  } catch (err) {
+    // Only open a browser window when the failure is something the user can
+    // actually resolve there (CAPTCHA/SSO/OTP/stale cookie/DOM). Network and
+    // config errors just surface as failures — a window can't fix them either.
+    if (!needsInteractiveLogin(err)) {
+      return { ok: false, reason: err?.message || 'Connection failed' };
+    }
+  }
+
+  const result = await interactiveLogin(key);
+  if (!result.ok) return { ok: false, via: 'browser', reason: result.reason };
+  return { ok: true, via: 'browser', cookieHeader: result.cookieHeader, cookieCount: result.cookieCount };
+}
+
+module.exports = { interactiveLogin, isLoginInProgress, connectSite, needsInteractiveLogin, detectLoggedIn, cookiesForSite, siteHostname };

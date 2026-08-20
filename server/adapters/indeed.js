@@ -175,11 +175,18 @@ async function submitApplication({ url, credentials, cookie, cookieOrigin, resum
       await delay(1500);
     }
 
-    const applyBtn = await page.$('button[data-testid="applyButton"], #indeedApplyButton, button[class*="apply"], a[class*="apply"]');
+    const applyBtn = await page.$('button[data-testid="applyButton"], #indeedApplyButton, button[class*="apply"], a[class*="apply"], button[data-testid="karmaApplyButton"], .apply-button, .jobsApplyButton');
     if (!applyBtn) {
+      // Fallback: try clicking by text (Indeed sometimes renders "Apply" as a link or button with specific text)
+      const clicked = await clickButtonByText(page, ['apply now', 'apply', 'submit application']);
+      if (clicked) {
+        await delay(3000);
+        const state = await readApplyState(page, 'button[data-testid="applyButton"], #indeedApplyButton, button[class*="apply"]');
+        return { ok: true, ...confirmApplied(state), via: 'submitApplication' };
+      }
       const state = await readApplyState(page, 'button[data-testid="applyButton"], #indeedApplyButton, button[class*="apply"]');
       if (state?.successText) return { ok: true, applied: true, via: 'submitApplication' };
-      throw new Error('No apply button found on this Indeed job (may redirect to employer site).');
+      throw new Error('No apply button found on this Indeed job (may redirect to employer site or require interaction).');
     }
 
     await Promise.all([

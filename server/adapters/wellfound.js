@@ -228,17 +228,21 @@ async function submitApplication({ url, credentials, cookie, cookieOrigin, resum
       await delay(2000);
     }
 
-    const applyBtn = await page.$('button[class*="styles_applyButton"], button[data-test="JobApplicationApplyButton"], button[data-test="ApplyButton"], a[data-test="ApplyButton"]');
+    const applyBtn = await page.$('button[class*="styles_applyButton"], button[data-test="JobApplicationApplyButton"], button[data-test="ApplyButton"], a[data-test="ApplyButton"], button[class*="apply"], a[class*="apply"]');
     if (!applyBtn) {
       // Fallback: click a visible button whose text contains "Apply".
       const clicked = await clickButtonByText(page, ['apply now', 'apply']);
-      if (!clicked) {
+      if (clicked) {
+        await delay(2000);
         const state = await readApplyState(page);
-        if (state && !state.btnPresent) {
-          return { applied: true, note: 'Already applied or direct apply' };
-        }
-        throw new Error('No apply button found on Wellfound job page.');
+        return confirmApplied(state);
       }
+      // Final fallback: check if we're already on an "applied" or "thank you" page
+      const state = await readApplyState(page);
+      if (state && !state.btnPresent) {
+        return { applied: true, note: 'Already applied or direct apply' };
+      }
+      throw new Error('No apply button found on Wellfound job page (may have different UI or redirect to employer site).');
     } else {
       await safeClick(page, applyBtn, 'Wellfound Apply button');
     }

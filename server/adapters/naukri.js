@@ -205,14 +205,21 @@ async function submitApplication({ url, credentials, cookie, cookieOrigin, resum
       await delay(1500);
     }
 
-    const applyBtn = await page.$('.apply-button, button[class*="apply"], a[class*="apply"]');
+const applyBtn = await page.$('.apply-button, button[class*="apply"], a[class*="apply"], button[data-test="applyButton"]');
     if (!applyBtn) {
+      // Fallback: try clicking by text "Apply" — Naukri sometimes renders the button with just "Apply" text
+      const clicked = await clickButtonByText(page, ['apply']);
+      if (clicked) {
+        await delay(3000);
+        const state = await readApplyState(page, '.apply-button, button[class*="apply"], a[class*="apply"]');
+        return { ok: true, ...confirmApplied(state), via: 'submitApplication' };
+      }
       const state = await readApplyState(page, '.apply-button, button[class*="apply"], a[class*="apply"]');
       if (state?.successText) return { ok: true, applied: true, via: 'submitApplication' };
-      throw new Error('No apply button found on this Naukri job.');
+      throw new Error('No apply button found on this Naukri job (may redirect to employer site or require manual apply).');
     }
 
-      await Promise.all([
+    await Promise.all([
         page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
         safeClick(page, applyBtn, 'apply'),
       ]);

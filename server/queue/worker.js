@@ -668,7 +668,8 @@ async function startWorker() {
             dedupeKey: `apply-failed-${applicationId}`,
           }).catch(() => {});
         }
-        throw err;
+        // Failure already handled above — route to manual apply and let the
+        // loop exit naturally. Do NOT re-throw or the queue worker will stop.
       }
     }
     await maybeNotifyBatchComplete(app.batchId || '');

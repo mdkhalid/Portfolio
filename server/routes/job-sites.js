@@ -152,6 +152,11 @@ router.post('/login-all', asyncHandler(async (req, res) => {
         await UserJobSite.updateOne({ userId: req.adminId, name: t.name }, { $set: { status: 'error' } });
         return { name: t.name, label: t.label, ok: false, status: 'error', error: r.reason || 'Connection failed', via: r.via };
       }
+      // After any successful automated login (password or cookie), capture
+      // fresh session cookies so the worker can reuse them. Set enabled: true
+      // when we have stored credentials (cookie or password), not only when
+      // new cookies are captured from an interactive browser fallback.
+      const { captureCookiesFromContext } = require('../services/sessionRefresh');
       const updates = { status: 'connected' };
       if (r.cookieHeader) {
         // Interactive fallback earned a fresh session — persist the cookies so
@@ -159,7 +164,18 @@ router.post('/login-all', asyncHandler(async (req, res) => {
         // "Login via Browser" button does.
         updates.cookies = encrypt({ value: r.cookieHeader });
         updates.cookieUpdatedAt = new Date();
+      }
+      // Set enabled: true whenever we have stored credentials (cookie OR password).
+      // This ensures the site is active for auto-apply without requiring manual toggle.
+      if (r.ok && (r.via === 'password' || r.via === 'cookies')) {
         updates.enabled = true;
+      }
+      // If we have a cookie header from interactive login, capture it into the
+      // encrypted cookie store so future auto-apply runs can reuse the session.
+      if (r.cookieHeader) {
+        try {
+          await captureCookiesFromContext(req.adminId, t.name).catch(() => {});
+        } catch {}
       }
       await UserJobSite.updateOne({ userId: req.adminId, name: t.name }, { $set: updates });
       return { name: t.name, label: t.label, ok: true, status: 'connected', via: r.via };

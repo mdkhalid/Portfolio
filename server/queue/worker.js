@@ -241,13 +241,19 @@ async function runStep(applicationId, key) {
             }
           }
         }
-        if (jd && jd.length >= 30) {
-          await Job.updateOne({ _id: job._id }, { $set: { description: jd } });
-        }
-      }
-      await markStep(application, key, { status: 'done', finishedAt: new Date() });
-      break;
+if (jd && jd.length >= 30) {
+      await Job.updateOne({ _id: job._id }, { $set: { description: jd } });
     }
+    // Capture cookies after login (via password or cookie fallback) so the
+    // submit step can reuse the refreshed session instead of re-logging in.
+    try {
+      const { captureCookiesFromContext } = require('../services/sessionRefresh');
+      await captureCookiesFromContext(app.userId, job.site).catch(() => {});
+    } catch {}
+  }
+  await markStep(application, key, { status: 'done', finishedAt: new Date() });
+  break;
+}
 
     case 'generate_resume': {
       // Wellfound (and any other resume-free provider) has no upload field in

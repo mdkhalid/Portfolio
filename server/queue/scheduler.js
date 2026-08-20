@@ -57,6 +57,18 @@ async function runStaleExpiry() {
 async function tick() {
   await runStaleExpiry().catch(() => {});
   await runScheduledFetch().catch(() => {});
+  // Phase 1: Proactive session health-check — refresh cookies for all
+  // enabled + connected sites at intervals shorter than the cookie TTL,
+  // preventing silent session expiration between auto-apply runs.
+  try {
+    const { refreshSiteCookies } = require('../services/sessionRefresh');
+    const entries = await UserJobSite.find({ enabled: true, status: 'connected' }).lean();
+    for (const e of entries) {
+      await refreshSiteCookies(e.userId, e.name).catch(() => {});
+    }
+  } catch (err) {
+    console.error('[scheduler] session health-check failed:', err?.message || err);
+  }
   const { sendDailyDigests } = require('../services/notifications');
   await sendDailyDigests().catch(() => {});
 }

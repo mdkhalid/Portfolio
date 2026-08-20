@@ -208,9 +208,10 @@ function needsInteractiveLogin(err) {
  * so the user completes the login manually; the session cookies are harvested
  * and returned for the caller to persist (never fails out of the box).
  *
+ * @param {{ site, email, password, cookieHeader, origin, userId? }} opts
  * @returns {Promise<{ ok: boolean, via?: 'cookies'|'password'|'browser', cookieHeader?: string, cookieCount?: number, reason?: string }>}
  */
-async function connectSite({ site, email, password, cookieHeader, origin }) {
+async function connectSite({ site, email, password, cookieHeader, origin, userId } = {}) {
   const key = String(site || '').toLowerCase();
   if (!origin) return { ok: false, reason: 'No site URL configured for ' + site };
 
@@ -223,6 +224,16 @@ async function connectSite({ site, email, password, cookieHeader, origin }) {
       cookieOrigin: cookieHeader ? origin : undefined,
       baseUrl: origin,
     });
+    // After successful automated login (cookie or password), capture fresh
+    // session cookies so the caller (e.g. login-all) can persist the session
+    // for reuse by the worker. userId may be provided by the caller; if not,
+    // cookie capture is skipped since we don't have the target user's key.
+    if (userId) {
+      try {
+        const { captureCookiesFromContext } = require('../services/sessionRefresh');
+        await captureCookiesFromContext(userId, key).catch(() => {});
+      } catch {}
+    }
     return { ok: true, via: cookieHeader ? 'cookies' : 'password' };
   } catch (err) {
     // Only open a browser window when the failure is something the user can

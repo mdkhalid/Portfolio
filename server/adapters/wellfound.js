@@ -248,10 +248,12 @@ async function submitApplication({ url, credentials, cookie, cookieOrigin, resum
     }
     await delay(2000);
 
-    // If there is a note / pitch box:
+    // If there is a note / pitch box, fill it with the pitch resolved in
+    // prepare_application (built from the candidate's profile). No canned
+    // text here — if nothing resolved, the optional note is simply skipped.
     const noteArea = await page.$('textarea[name="note"], textarea[placeholder*="pitch"], textarea[placeholder*="note"], textarea');
-    if (noteArea) {
-      const noteText = fields.pitch || fields.cover_letter || fields.note || 'Excited to apply! I have relevant full-stack software engineering experience and would love to connect.';
+    const noteText = fields.pitch || fields.cover_letter || fields.note || fields.cover_note || '';
+    if (noteArea && noteText) {
       await noteArea.type(noteText, { delay: 10 });
     }
 
@@ -284,4 +286,5 @@ module.exports = {
   searchJobs,
   fetchJobDescription,
   submitApplication,
+  isAuthenticated: isLoggedInPage,
 };

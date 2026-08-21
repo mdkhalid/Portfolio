@@ -257,4 +257,4 @@ const applyBtn = await page.$('.apply-button, button[class*="apply"], a[class*="
   }, 'naukri');
 }
 
-module.exports = { login, searchJobs, fetchJobDescription, submitApplication, detectApplyFields };
+module.exports = { login, searchJobs, fetchJobDescription, submitApplication, detectApplyFields, isAuthenticated: isNaukriAuthenticated };

@@ -221,4 +221,4 @@ async function submitApplication({ url, credentials, cookie, cookieOrigin, resum
   }, 'indeed');
 }
 
-module.exports = { login, searchJobs, fetchJobDescription, submitApplication, detectApplyFields };
+module.exports = { login, searchJobs, fetchJobDescription, submitApplication, detectApplyFields, isAuthenticated: isIndeedAuthenticated };

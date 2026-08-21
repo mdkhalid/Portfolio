@@ -322,8 +322,9 @@ export default function AdminDashboard() {
 
   const testJobSite = async (name) => {
     setTestingSite(name)
+    showToast('Connecting… if a CAPTCHA/SSO window opens, complete the login there — it gets captured automatically.', 'info')
     try {
-      const { data } = await API.post('/api/job-sites/' + name + '/test')
+      const { data } = await API.post('/api/job-sites/' + name + '/test', {}, { timeout: 11 * 60 * 1000 })
       showToast(data.message || 'Connected', 'success')
       await refreshJobSites()
     } catch (err) {
@@ -2185,6 +2186,7 @@ export default function AdminDashboard() {
             <option value="indeed">Indeed</option>
             <option value="workatastartup">Work at a Startup</option>
             <option value="wellfound">Wellfound</option>
+            <option value="foundit">foundit (Monster)</option>
             <option value="linkedin">LinkedIn</option>
           </select>
           <select value={jobAppsFilters.status} onChange={e => handleFilterChange('status', e.target.value)}
@@ -2249,6 +2251,7 @@ export default function AdminDashboard() {
                         job.site === 'naukri' ? (dark ? 'bg-orange-500/10 text-orange-400' : 'bg-orange-50 text-orange-700')
                           : job.site === 'indeed' ? (dark ? 'bg-blue-500/10 text-blue-400' : 'bg-blue-50 text-blue-700')
                           : job.site === 'workatastartup' ? (dark ? 'bg-red-500/10 text-red-400' : 'bg-red-50 text-red-700')
+                          : job.site === 'foundit' ? (dark ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-50 text-indigo-700')
                           : (dark ? 'bg-purple-500/10 text-purple-400' : 'bg-purple-50 text-purple-700')
                       )}>{job.site}</span>
                       <span className={'text-xs ' + (dark ? 'text-gray-500' : 'text-gray-400')}>{formatDate(job.postedDate)}</span>
@@ -2485,6 +2488,7 @@ export default function AdminDashboard() {
             <option value="indeed">Indeed</option>
             <option value="workatastartup">Work at a Startup</option>
             <option value="wellfound">Wellfound</option>
+            <option value="foundit">foundit (Monster)</option>
             <option value="linkedin">LinkedIn</option>
           </select>
           <select value={trackingFilters.status} onChange={e => handleTrackingFilterChange('status', e.target.value)}

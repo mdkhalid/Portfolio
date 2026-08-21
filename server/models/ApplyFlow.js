@@ -39,6 +39,10 @@ const applyFlowSchema = new mongoose.Schema(
     // True when the provider has no auto-apply (custom sites / YC single application).
     manualApply: { type: Boolean, default: false },
     manualApplyReason: { type: String, default: '' },
+    // True when the provider's apply form has no resume upload (it uses the
+    // resume already stored on the candidate's provider profile, e.g. Wellfound).
+    // The worker reads this instead of a hardcoded site list.
+    resumeFree: { type: Boolean, default: false },
     source: { type: String, enum: ['adapter', 'seed', 'user'], default: 'seed' },
   },
   { timestamps: true }

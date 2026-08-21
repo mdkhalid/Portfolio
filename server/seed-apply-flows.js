@@ -46,15 +46,32 @@ const FLOWS = [
   {
     site: 'wellfound',
     label: 'Wellfound',
+    // Wellfound's apply form has no resume upload — it uses the resume already
+    // attached to the candidate's Wellfound profile. The worker reads this flag
+    // (not a hardcoded site list) to skip resume generation.
+    resumeFree: true,
     steps: [
       { key: 'login', label: 'Log in (cookie -> persistent profile -> password, Cloudflare)', kind: 'login', order: 0 },
       { key: 'search', label: 'Search jobs with rate-limit backoff', kind: 'search', order: 1 },
       { key: 'fetch_jd', label: 'Fetch job description', kind: 'fetch_jd', order: 2 },
       { key: 'apply_modal', label: 'Open apply modal', kind: 'detect_fields', order: 3 },
       { key: 'fill_pitch', label: 'Fill note/pitch textarea', kind: 'fill_fields', order: 4 },
-      { key: 'upload_resume', label: 'Upload tailored resume', kind: 'upload_resume', order: 5 },
-      { key: 'submit', label: 'Send application', kind: 'submit', order: 6 },
-      { key: 'confirm', label: 'Confirm application state', kind: 'confirm', order: 7 },
+      { key: 'submit', label: 'Send application', kind: 'submit', order: 5 },
+      { key: 'confirm', label: 'Confirm application state', kind: 'confirm', order: 6 },
+    ],
+  },
+  {
+    site: 'foundit',
+    label: 'foundit (Monster)',
+    steps: [
+      { key: 'login', label: 'Log in (password form or cookie; bot-fronted)', kind: 'login', order: 0 },
+      { key: 'search', label: 'Search jobs by keyword/location slug', kind: 'search', order: 1 },
+      { key: 'fetch_jd', label: 'Fetch job description', kind: 'fetch_jd', order: 2 },
+      { key: 'detect_fields', label: 'Detect apply form fields', kind: 'detect_fields', order: 3 },
+      { key: 'upload_resume', label: 'Upload tailored resume', kind: 'upload_resume', order: 4 },
+      { key: 'fill_fields', label: 'Fill detected fields', kind: 'fill_fields', order: 5 },
+      { key: 'submit', label: 'Submit application', kind: 'submit', order: 6 },
+      { key: 'confirm', label: 'Confirm application state', kind: 'confirm', order: 7, branch: 'Bot wall / employer redirect -> manual apply' },
     ],
   },
   {

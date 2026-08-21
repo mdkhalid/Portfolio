@@ -136,9 +136,24 @@ router.post('/login-all', asyncHandler(async (req, res) => {
 
   const results = await Promise.all(withCreds.map(async (t) => {
     // An interactive browser window is holding this site's profile — launching
-    // another login on top of it would corrupt/steal the user's window.
+    // another login on top of it would corrupt/steal the user's window. Give
+    // the in-progress login a short grace period to finish instead of skipping:
+    // once it completes, the freshly captured cookies let the normal automated
+    // login below succeed.
     if (isLoginInProgress(t.name)) {
-      return { name: t.name, label: t.label, ok: false, skipped: true, error: 'Interactive browser login already in progress for this site.' };
+      const deadline = Date.now() + 90 * 1000;
+      while (isLoginInProgress(t.name) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+      if (isLoginInProgress(t.name)) {
+        return {
+          name: t.name,
+          label: t.label,
+          ok: false,
+          skipped: true,
+          error: 'A login window is still open for this site — complete or close it, then retry.',
+        };
+      }
     }
     try {
       const r = await connectSite({
@@ -265,11 +280,8 @@ router.post('/:name/test', asyncHandler(async (req, res) => {
 
   const doc = await UserJobSite.findOne({ userId: req.adminId, name }).select('+credentials +cookies');
   if (!doc) throw new AppError('Site not configured yet', 404, 'NOT_FOUND');
-  const creds = decrypt(doc.credentials);
+  const creds = decrypt(doc.credentials) || {};
   const cookieHeader = doc.cookies ? decrypt(doc.cookies)?.value : null;
-  if (!cookieHeader && (!creds?.email || !creds?.password)) {
-    throw new AppError('Credentials or a session cookie are missing — save them first', 400, 'MISSING_CREDENTIALS');
-  }
 
   const meta = metaFor(name, doc);
   const origin = meta.homeUrl;
@@ -277,23 +289,52 @@ router.post('/:name/test', asyncHandler(async (req, res) => {
     throw new AppError('No site URL configured — set baseUrl when adding the site', 400, 'NO_SITE_URL');
   }
 
-  try {
-    const adapter = getAdapter(name);
-    await adapter.login({
-      email: creds.email,
-      password: creds.password,
-      cookies: cookieHeader || undefined,
-      cookieOrigin: cookieHeader ? origin : undefined,
-      baseUrl: origin,
-    });
-    doc.status = 'connected';
-    await doc.save();
-    res.json({ ok: true, status: 'connected', message: 'Connected successfully', via: cookieHeader ? 'cookies' : 'password' });
-  } catch (err) {
+  // 1) Automated login when we have something to try (session cookie OR
+  //    email/password — cookies are never required).
+  if (cookieHeader || (creds.email && creds.password)) {
+    try {
+      const adapter = getAdapter(name);
+      await adapter.login({
+        email: creds.email,
+        password: creds.password,
+        cookies: cookieHeader || undefined,
+        cookieOrigin: cookieHeader ? origin : undefined,
+        baseUrl: origin,
+      });
+      doc.status = 'connected';
+      await doc.save();
+      return res.json({ ok: true, status: 'connected', message: 'Connected successfully', via: cookieHeader ? 'cookies' : 'password' });
+    } catch (err) {
+      // Unrecoverable failures (network/DNS/TLS/config) fail fast — a visible
+      // browser cannot fix them. Everything else falls through to the same
+      // interactive fallback Login All uses.
+      const { needsInteractiveLogin } = require('../services/browserLogin');
+      if (!needsInteractiveLogin(err)) {
+        doc.status = 'error';
+        await doc.save();
+        res.status(400).json({ ok: false, status: 'error', error: err.message || 'Connection failed' });
+        return;
+      }
+    }
+  }
+
+  // 2) Interactive fallback — identical to Login All: opens a visible Chrome
+  //    window on the site's login page; the user completes CAPTCHA/SSO/OTP and
+  //    the session is captured automatically. Works with zero saved credentials.
+  const { interactiveLogin } = require('../services/browserLogin');
+  const result = await interactiveLogin(name);
+  if (!result.ok) {
     doc.status = 'error';
     await doc.save();
-    res.status(400).json({ ok: false, status: 'error', error: err.message || 'Connection failed' });
+    throw new AppError(result.reason || 'Interactive login failed', 408, 'LOGIN_TIMEOUT');
   }
+
+  doc.cookies = encrypt({ value: result.cookieHeader });
+  doc.cookieUpdatedAt = new Date();
+  doc.enabled = true;
+  doc.status = 'connected';
+  await doc.save();
+  res.json({ ok: true, status: 'connected', message: `Logged in — ${result.cookieCount} session cookies captured. Site enabled.`, via: 'browser' });
 }));
 
 /**

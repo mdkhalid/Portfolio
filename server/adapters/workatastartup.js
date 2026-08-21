@@ -164,6 +164,21 @@ async function fetchJobDescription(input) {
   }, 'workatastartup');
 }
 
+/**
+ * True when the browser is on Work at a Startup, logged in: off YC auth
+ * pages, no login form on screen, and no logged-out header links. Used by
+ * interactive-login harvesting (detectLoggedIn delegates here).
+ */
+async function isAuthenticated(page) {
+  const url = page.url();
+  if (url.includes('account.ycombinator.com') || /\/login|\/signin|\/auth/i.test(url)) return false;
+  if (await page.$('input[type="password"]').catch(() => null)) return false;
+  if (!/workatastartup\.com/i.test(url)) return false;
+  // Logged-out WATS shows Log In / Sign Up links in the header/nav.
+  const loggedOut = await page.$('header a[href*="login" i], header a[href*="signup" i], nav a[href*="login" i]').catch(() => null);
+  return !loggedOut;
+}
+
 /** Work at a Startup applies via the YC single application — manual apply only. */
 async function detectApplyFields() {
   return [];
@@ -173,4 +188,4 @@ async function submitApplication() {
   return { applied: false, needsManualApply: true, reason: 'YC applications go through the Work at a Startup profile form — apply in the browser.' };
 }
 
-module.exports = { login, searchJobs, fetchJobDescription, detectApplyFields, submitApplication };
+module.exports = { login, searchJobs, fetchJobDescription, detectApplyFields, submitApplication, isAuthenticated };

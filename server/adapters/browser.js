@@ -130,9 +130,19 @@ async function getBrowser(site) {
   return _browserPromises.get(key);
 }
 
+// Open-page count + last-use timestamp per site key — feeds the idle reaper.
+const _pageCounts = new Map();
+const _lastUsed = new Map();
+
 async function newPage(site) {
+  const key = site ? String(site).toLowerCase() : 'default';
   const browser = await getBrowser(site);
   const page = await browser.newPage();
+  _pageCounts.set(key, (_pageCounts.get(key) || 0) + 1);
+  _lastUsed.set(key, Date.now());
+  page.once('close', () => {
+    _pageCounts.set(key, Math.max(0, (_pageCounts.get(key) || 1) - 1));
+  });
   await page.setUserAgent(
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'
   );
@@ -254,6 +264,28 @@ async function closeBrowserForSite(site) {
   const b = await promise.catch(() => null);
   if (b) await b.close().catch(() => {});
 }
+
+// Idle reaper: site browsers used to stay cached forever once opened — the
+// headed ones (Wellfound) keep a permanent Chrome taskbar entry visible even
+// though their window is parked off-screen. Profiles persist on disk, so
+// closing an idle browser loses nothing; the next use relaunches it.
+let _reaperStarted = false;
+function startIdleReaper() {
+  if (_reaperStarted) return;
+  _reaperStarted = true;
+  const timer = setInterval(() => {
+    const now = Date.now();
+    for (const key of [..._browserPromises.keys()]) {
+      if (key === 'default' || _interactiveSites.has(key)) continue;
+      if ((_pageCounts.get(key) || 0) > 0) continue;
+      const last = _lastUsed.get(key) || 0;
+      if (now - last < 5 * 60 * 1000) continue;
+      closeBrowserForSite(key);
+    }
+  }, 60 * 1000);
+  if (typeof timer.unref === 'function') timer.unref();
+}
+startIdleReaper();
 
 /**
  * Launch a DEDICATED visible (headed) browser for interactive login. The user

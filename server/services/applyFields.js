@@ -32,7 +32,30 @@ function toCanonicalKey(label = '', key = '') {
   if (/github/i.test(text)) return 'github_url';
   if (/portfolio|website/i.test(text)) return 'portfolio_url';
   if (/headline|summary|about you|tell us about/i.test(text)) return 'about_summary';
+  // Free-form notes to the hiring team: pitch, cover letter, "why do you want
+  // this job", message boxes. Value is built from the profile (buildCoverNote).
+  if (/pitch|cover[- ]?letter|note to|message to|why (do you want|are you interested|are you a good)|what (excites|interests) you/i.test(text)) return 'cover_note';
   return slugify(label || key);
+}
+
+/**
+ * Build a short, profile-derived application note. The single source for
+ * cover-note text — adapters never hardcode canned pitches. Uses the
+ * candidate's own title/summary so every provider gets a truthful,
+ * personalized note instead of a generic template.
+ */
+function buildCoverNote(profile = {}, jobTitle = '') {
+  const title = String(profile.title || '').trim();
+  const summary = String(profile.summary || '').replace(/\s+/g, ' ').trim();
+  const role = String(jobTitle || 'this role').trim();
+  if (summary) {
+    // Lead with the candidate's own first summary sentence (max ~280 chars).
+    const first = summary.split(/(?<=[.!?])\s/)[0].slice(0, 280);
+    return `${first} I'm excited about the ${role} opportunity and would love to connect.`;
+  }
+  return title
+    ? `As a ${title}, I'm excited about the ${role} opportunity and would love to connect.`
+    : `I'm excited about the ${role} opportunity and would love to connect.`;
 }
 
 function resolveLabel(el) {
@@ -225,6 +248,13 @@ async function resolveFieldValues({ userId, site, detected = [], jobTitle = '' }
     if (crossSite?.value) {
       fieldValues[f.key] = crossSite.value;
       fieldMeta[f.key] = { ...f, source: 'saved', canonicalKey: canonical, learnedFrom: crossSite.site };
+      continue;
+    }
+    // Free-form notes/pitches are built deterministically from the profile —
+    // never sent to AI for invention and never hardcoded in adapters.
+    if (canonical === 'cover_note') {
+      fieldValues[f.key] = buildCoverNote(profile || {}, jobTitle);
+      fieldMeta[f.key] = { ...f, source: 'profile', canonicalKey: canonical };
       continue;
     }
     const pf = profileMap[f.key] || profileMap[f.type];
@@ -447,6 +477,7 @@ module.exports = {
   detectFields,
   fillFields,
   profileFieldMap,
+  buildCoverNote,
   resolveFieldValues,
   aiAnswerFields,
   buildFewShotContext,

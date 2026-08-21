@@ -63,33 +63,67 @@ async function initQueue() {
 function initMemoryQueue() {
   _memoryMode = true;
   const listeners = new Map();
+  // Jobs added before a processor registers — buffered instead of dropped.
+  const buffered = new Map();
+  // Bull-style dedupe: `${name}:${jobId}` stays reserved while a job is
+  // waiting/active, so a duplicate add is absorbed instead of double-run.
+  const inFlight = new Set();
+  const counts = { waiting: 0, active: 0, completed: 0, failed: 0 };
+  let seq = 0;
+
+  function run(job, dedupeKey) {
+    setImmediate(async () => {
+      counts.waiting = Math.max(0, counts.waiting - 1);
+      counts.active++;
+      const fn = listeners.get(job.name);
+      try {
+        if (fn) await fn(job);
+        counts.completed++;
+      } catch (err) {
+        counts.failed++;
+        console.error('[queue:memory] job failed:', err?.message || err);
+      } finally {
+        counts.active = Math.max(0, counts.active - 1);
+        if (dedupeKey) inFlight.delete(dedupeKey);
+      }
+    });
+  }
+
   const queue = {
     async add(name, data, opts = {}) {
+      const dedupeKey = opts.jobId ? `${name}:${opts.jobId}` : null;
+      if (dedupeKey && inFlight.has(dedupeKey)) {
+        // Same jobId still waiting/active → dedupe like Bull does.
+        return { id: opts.jobId, name, data, opts, deduped: true };
+      }
       const job = {
-        id: String(Date.now()) + Math.random().toString(36).slice(2, 8),
+        id: opts.jobId || String(Date.now()) + '-' + ++seq,
         name,
         data,
         opts,
         attemptsMade: 0,
         async remove() {},
       };
-      // Simulate processing synchronously in the background.
-      setImmediate(() => {
-        const fn = listeners.get(name);
-        if (fn) {
-          Promise.resolve(fn(job))
-            .catch((err) => console.error('[queue:memory] job failed:', err.message));
-        }
-      });
+      counts.waiting++;
+      if (dedupeKey) inFlight.add(dedupeKey);
+      if (!listeners.has(name)) {
+        if (!buffered.has(name)) buffered.set(name, []);
+        buffered.get(name).push({ job, dedupeKey });
+        return job;
+      }
+      run(job, dedupeKey);
       return job;
     },
     async process(name, fn) {
       listeners.set(name, fn);
+      const queued = buffered.get(name) || [];
+      buffered.set(name, []);
+      for (const { job, dedupeKey } of queued) run(job, dedupeKey);
     },
     async on() {},
     async close() {},
     async getJobCounts() {
-      return { waiting: 0, active: 0, completed: 0, failed: 0 };
+      return { ...counts };
     },
     async getJob() {
       return null;

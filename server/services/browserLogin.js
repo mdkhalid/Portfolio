@@ -1,19 +1,15 @@
-const { launchInteractiveBrowser, delay, cookiesToHeader } = require('../adapters/browser');
-const { SITE_META, getAdapter } = require('../adapters');
-
 /**
  * Assisted browser login: opens a VISIBLE Chrome window on the site's login
  * page, waits for the user to complete login manually (CAPTCHA/OTP/SSO safe),
  * then harvests the session cookies so the headless worker can reuse them.
+ *
+ * Nothing is hardcoded per site: login URLs, timeouts, and logged-in checks
+ * come from SITE_META (loginUrl, slowLogin) and the site's adapter
+ * (isAuthenticated). Unknown sites fall back to generic heuristics.
  */
 
-// Where to open the interactive window for each built-in site.
-const LOGIN_URLS = {
-  naukri: 'https://www.naukri.com/nlogin/login',
-  indeed: 'https://secure.indeed.com/account/login',
-  workatastartup: 'https://www.workatastartup.com/login',
-  wellfound: 'https://wellfound.com/login',
-};
+const { launchInteractiveBrowser, delay, cookiesToHeader } = require('../adapters/browser');
+const { SITE_META, getAdapter } = require('../adapters');
 
 const POLL_MS = 4000;
 const DEFAULT_TIMEOUT_MS = 4 * 60 * 1000;
@@ -71,9 +67,6 @@ function browserAlive(browser) {
   }
 }
 
-// Sites that need longer to log in manually (rate limits / Cloudflare waits).
-const LONG_LOGIN_SITES = new Set(['wellfound']);
-
 /** True when the page is a rate-limit / bot-challenge interstitial, not the site. */
 async function isBlockPage(page) {
   try {
@@ -84,27 +77,39 @@ async function isBlockPage(page) {
   }
 }
 
-/** Site-specific "is the user logged in now?" check on the current page. */
+/**
+ * Site-specific "is the user logged in now?" check on the current page.
+ * Delegates to the adapter's own `isAuthenticated` when it exports one
+ * (Naukri/Indeed/Wellfound do); unknown/custom sites fall back to generic
+ * heuristics: off any login URL and no visible login form on screen.
+ */
 async function detectLoggedIn(page, site) {
   try {
     if (onLoginUrl(page.url())) return false;
     // A 429 "too many requests" or Cloudflare challenge page is NOT a logged-in
     // page — harvesting cookies from it produces a bogus session header.
     if (await isBlockPage(page)) return false;
-    if (site === 'naukri') {
-      // Naukri hides its header Login button (#login_Layer) once logged in.
-      // Login links in promo widgets/sidebars appear even for logged-in users,
-      // so only the header login button counts as a logged-out signal.
-      const loggedOut = await page.$('a#login_Layer, .loginBtn');
-      return !loggedOut;
+    const adapter = getAdapter(site);
+    if (adapter && typeof adapter.isAuthenticated === 'function') {
+      return await adapter.isAuthenticated(page);
     }
-    if (site === 'wellfound') {
-      // Logged-out pages show Log In / Sign Up links in the header nav.
-      const loggedOut = await page.$('header a[href*="/login"], header a[href*="/signup"], nav a[href*="/login"]');
-      return !loggedOut;
-    }
-    // Generic: off the login URL and page has a body → best-effort success.
-    return true;
+    // Generic fallback for custom sites: no login CTA / password field visible.
+    const state = await page.evaluate(() => {
+      const body = (document.body && document.body.innerText) || '';
+      const isVisible = (el) => {
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none';
+      };
+      const hasVisiblePass = Array.from(document.querySelectorAll('input[type="password"]')).some(isVisible);
+      const hasLoginCta = Array.from(document.querySelectorAll('a, button')).some((el) => {
+        if (!isVisible(el)) return false;
+        const t = (el.textContent || '').trim().toLowerCase();
+        return /^(log ?in|sign ?in|login|register|sign ?up)$/.test(t);
+      });
+      return { hasSession: /logout|log\s*out|my\s*(job)?feed|my\s*profile|view\s*profile|saved\s*jobs/i.test(body.slice(0, 20000)), hasLoginCta, hasVisiblePass };
+    });
+    return !state.hasVisiblePass && !state.hasLoginCta && state.hasSession;
   } catch {
     return false; // page mid-navigation — try again next poll
   }
@@ -118,17 +123,20 @@ async function detectLoggedIn(page, site) {
  */
 async function interactiveLogin(site, { timeoutMs, startUrl } = {}) {
   const key = String(site || '').toLowerCase();
-  if (_busySites.has(key)) return { ok: false, reason: 'A browser login for this site is already in progress.' };
+  if (_busySites.has(key)) {
+    return { ok: false, reason: 'A login window is already open for this site — complete or close it, then retry.' };
+  }
   _busySites.add(key);
+  const meta = SITE_META[key] || {};
   // Rate-limited sites (Cloudflare "too many requests") need room to cool down
-  // inside the window while the user waits and refreshes manually.
-  const limit = timeoutMs || (LONG_LOGIN_SITES.has(site) ? 10 * 60 * 1000 : DEFAULT_TIMEOUT_MS);
-  const meta = SITE_META[site] || {};
-  const openUrl = startUrl || LOGIN_URLS[site] || meta.homeUrl;
-  if (!openUrl) return { ok: false, reason: 'No site URL configured for ' + site };
+  // inside the window while the user waits and refreshes manually. The longer
+  // window is declared per site in SITE_META (slowLogin) — not hardcoded here.
+  const limit = timeoutMs || (meta.slowLogin ? 10 * 60 * 1000 : DEFAULT_TIMEOUT_MS);
+  const openUrl = startUrl || meta.loginUrl || meta.homeUrl;
 
   let browser = null;
   try {
+    if (!openUrl) return { ok: false, reason: 'No site URL configured for ' + site };
     const session = await launchInteractiveBrowser(openUrl, { site });
     browser = session.browser;
     const page = session.page;
@@ -152,23 +160,28 @@ async function interactiveLogin(site, { timeoutMs, startUrl } = {}) {
       }
       let checkUrl = '';
       try { checkUrl = page.url(); } catch { continue; }
-      // Naukri and others can leave "login" in the URL AFTER login completes
-      // (e.g. /nlogin/auth, /account/login redirects). Only keep waiting while
-      // an actual login FORM is on screen — once it's gone the login is done.
+
+      // Two-step/SSO flows (YC, Google SSO, OTP screens) run on a DIFFERENT
+      // domain than the site and often show NO password field (username-only
+      // step). The user is mid-login there — HANDS OFF the page entirely;
+      // navigating away would yank them out of the form they're typing in.
+      // The provider redirects back to the site when login completes.
+      const onHome = meta.homeUrl && checkUrl.startsWith(meta.homeUrl);
+      const crossDomainAuth = !onHome && /account\.|auth\.|login\.|signin\.|accounts\.|\/login|\/signin|\/auth/i.test(checkUrl);
+      if (crossDomainAuth) continue;
+
+      // A visible login form means the user is still working — keep waiting.
+      // (Naukri and others can leave "login" in the URL AFTER login completes,
+      // so the URL alone is not enough.)
       if (await stillOnLoginPage(page)) continue;
 
-      // Left the login page → verify from the site home, then harvest cookies.
-      if (meta.homeUrl && !checkUrl.startsWith(meta.homeUrl)) {
+      // Off-home on a non-auth URL: verify once from the site home, then
+      // harvest only on a confirmed logged-in (non-blocked) page.
+      if (!onHome && meta.homeUrl) {
         await page.goto(meta.homeUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
         await delay(2000);
       }
-      // The user has authenticated manually by now (the login form is gone).
-      // For Naukri, DOM "logged-in" checks are unreliable — login widgets and
-      // the #login_Layer button linger in the markup even after a successful
-      // login — so only skip harvesting on a bot-challenge / block page.
-      // Other sites keep the stricter detectLoggedIn gate.
-      const blocked = await isBlockPage(page);
-      const canHarvest = blocked ? false : (site === 'naukri' ? true : await detectLoggedIn(page, site));
+      const canHarvest = await detectLoggedIn(page, site);
       if (canHarvest) {
         // Harvest ALL site cookies (every sub/parent domain), not just the
         // ones visible from the home URL — auth tokens often live on the

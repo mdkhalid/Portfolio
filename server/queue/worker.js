@@ -15,11 +15,6 @@ const { getQueue } = require('./index');
 
 const STEPS = ['fetch_jd', 'generate_resume', 'prepare_application', 'submit'];
 
-// Providers whose apply form has no resume upload (e.g. Wellfound uses the
-// resume already stored on the candidate's profile). Generating a tailored
-// resume for these sites wastes AI budget and the file is never attached.
-const RESUME_FREE_SITES = new Set(['wellfound']);
-
 const STEP_LABELS = {
   fetch_jd: 'Fetching job description',
   generate_resume: 'Preparing ATS-friendly resume',
@@ -256,10 +251,14 @@ if (jd && jd.length >= 30) {
 }
 
     case 'generate_resume': {
-      // Wellfound (and any other resume-free provider) has no upload field in
-      // its apply flow — it uses the resume already stored on the profile. Skip
-      // generation entirely and do not burn AI budget on a file that's unused.
-      if (RESUME_FREE_SITES.has(job.site)) {
+      // Provider behavior is declared per site in the ApplyFlow metadata — no
+      // hardcoded site lists:
+      //   - resumeFree: true  → apply form has no resume upload (e.g. Wellfound
+      //     uses the resume already stored on the candidate's profile).
+      //   - manualApply: true → application is routed to manual apply later,
+      //     so generating a tailored resume would only waste AI budget.
+      const flowMeta = await getApplyFlow(job.site).catch(() => null);
+      if (flowMeta && (flowMeta.resumeFree || flowMeta.manualApply)) {
         await markStep(application, key, { status: 'skipped', finishedAt: new Date() });
         break;
       }
@@ -616,6 +615,10 @@ async function startWorker() {
   }
   const queue = await getQueue();
   await rescueStuckApplications();
+  // Periodic rescue: applications can also get stuck mid-run (memory-mode job
+  // loss, crash between steps), not just across restarts. Re-check every 5 min.
+  const rescueTimer = setInterval(() => rescueStuckApplications(), 5 * 60 * 1000);
+  rescueTimer.unref();
 
   queue.process('apply', async (job) => {
     const { applicationId } = job.data;
@@ -680,7 +683,22 @@ async function startWorker() {
 }
 
 if (require.main === module) {
-  startWorker().catch((err) => {
+  (async () => {
+    // Split-brain guard: without Redis each process gets its OWN in-memory
+    // queue. The server already runs a worker, so a standalone one here would
+    // process the same applications twice → duplicate submissions on sites.
+    const { isMemoryMode } = require('./index');
+    await getQueue();
+    if (isMemoryMode()) {
+      console.error(
+        '[worker] Refusing to start a standalone worker while Redis is unavailable: ' +
+          'the server process already runs its own in-memory worker and two memory queues would apply to the same jobs twice. ' +
+          'Start Redis (REDIS_URL) or let the server process handle applications.'
+      );
+      process.exit(1);
+    }
+    await startWorker();
+  })().catch((err) => {
     console.error('[worker] failed to start:', err);
     process.exit(1);
   });

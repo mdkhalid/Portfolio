@@ -159,6 +159,8 @@ app.post('/api/applications/:id/answers', auth, csrfProtection, require('./route
 app.use('/api/resume', auth, csrfProtection, require('./routes/resume-ai'));
 app.use('/api/pipeline', auth, csrfProtection, require('./routes/pipeline'));
 app.use('/api/notifications', auth, csrfProtection, require('./routes/notifications'));
+// Social Publisher — auth applied per-route inside (OAuth callbacks stay public).
+app.use('/api/social', require('./routes/social'));
 
 app.use('/api/upload', auth, csrfProtection, require('./routes/upload'));
 app.use('/api/resume-files', auth, csrfProtection, require('./routes/upload-resume'));
@@ -220,11 +222,13 @@ if (require.main === module) {
   if (env.NODE_ENV !== 'test') {
     const { startWorker, setIO } = require('./queue/worker');
     const notifications = require('./services/notifications');
+    const { setSocialIO } = require('./queue/socialJobs');
     const { setupSocket: socketSetup } = require('./socket');
     setIO({ io: null }); // placeholder; real io wired after setup
     setupSocket(server, (io) => {
       setIO(io);
       notifications.setIO(io);
+      setSocialIO(io);
     });
     startWorker().catch((err) => console.error('[worker] failed to start:', err.message));
     const { startScheduler } = require('./queue/scheduler');

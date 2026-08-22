@@ -38,6 +38,22 @@ const env = {
   JOB_AI_DAILY_BUDGET: optional('JOB_AI_DAILY_BUDGET', '100'),
   JOB_AI_WEEKLY_BUDGET: optional('JOB_AI_WEEKLY_BUDGET', '500'),
   JOB_NOTIFY_FROM: optional('JOB_NOTIFY_FROM', ''),
+  // ─── Social Publisher (LinkedIn + X posting) ─────────────────────────────
+  CONTENT_AI_BASE_URL: optional('CONTENT_AI_BASE_URL', ''),
+  CONTENT_AI_API_KEY: optional('CONTENT_AI_API_KEY', ''),
+  CONTENT_AI_MODEL: optional('CONTENT_AI_MODEL', ''),
+  IMAGE_AI_BASE_URL: optional('IMAGE_AI_BASE_URL', ''),
+  IMAGE_AI_API_KEY: optional('IMAGE_AI_API_KEY', ''),
+  IMAGE_AI_MODEL: optional('IMAGE_AI_MODEL', ''),
+  IMAGE_AI_SIZE: optional('IMAGE_AI_SIZE', '1024x1024'),
+  LINKEDIN_CLIENT_ID: optional('LINKEDIN_CLIENT_ID', ''),
+  LINKEDIN_CLIENT_SECRET: optional('LINKEDIN_CLIENT_SECRET', ''),
+  LINKEDIN_REDIRECT_URI: optional('LINKEDIN_REDIRECT_URI', ''),
+  X_CLIENT_ID: optional('X_CLIENT_ID', ''),
+  X_CLIENT_SECRET: optional('X_CLIENT_SECRET', ''),
+  X_REDIRECT_URI: optional('X_REDIRECT_URI', ''),
+  SERVER_BASE_URL: optional('SERVER_BASE_URL', ''),
+  SOCIAL_CREDENTIALS_KEY: optional('SOCIAL_CREDENTIALS_KEY', ''),
 };
 
 const isKnownPlaceholder =

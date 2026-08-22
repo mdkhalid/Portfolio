@@ -5,9 +5,10 @@ import { useTheme } from '../context/ThemeContext'
 import { useApiAuth } from '../lib/api'
 import { motion } from 'framer-motion'
 import { io } from 'socket.io-client'
-import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, BookOpen, Phone, PhoneCall, MessagesSquare, Send, MessageCircle, Users, Globe, RefreshCw, Loader2, Filter, Search, ChevronLeft, ChevronRight, CheckSquare, Square, Target, Zap, Briefcase as BriefcaseIcon, ExternalLink, EyeOff, ListTodo, History, RotateCcw, Bell, CheckCheck, PauseCircle, PlayCircle, UserCheck, XCircle, Banknote, Star, Upload, LogIn, KeyRound } from 'lucide-react'
+import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, BookOpen, Phone, PhoneCall, MessagesSquare, Send, MessageCircle, Users, Globe, RefreshCw, Loader2, Filter, Search, ChevronLeft, ChevronRight, CheckSquare, Square, Target, Zap, Briefcase as BriefcaseIcon, ExternalLink, EyeOff, ListTodo, History, RotateCcw, Bell, CheckCheck, PauseCircle, PlayCircle, UserCheck, XCircle, Banknote, Star, Upload, LogIn, KeyRound, Share2 } from 'lucide-react'
 import EditModal from '../features/admin/components/EditModal'
 import ProfileForm from '../features/admin/components/ProfileForm'
+import SocialTab from '../features/social/SocialTab'
 
 const tabs = [
   { key: 'profile', label: 'Profile', icon: User },
@@ -26,6 +27,7 @@ const tabs = [
   { key: 'job-apps', label: 'Job Applications', icon: BriefcaseIcon },
   { key: 'tracking', label: 'Tracking', icon: ListTodo },
   { key: 'manual-apply', label: 'Manual Apply', icon: UserCheck },
+  { key: 'social', label: 'Social', icon: Share2 },
 ]
 
 export default function AdminDashboard() {
@@ -3142,6 +3144,7 @@ export default function AdminDashboard() {
       case 'job-apps': return renderJobApps()
       case 'tracking': return renderTracking()
       case 'manual-apply': return renderManualApply()
+      case 'social': return <SocialTab API={API} dark={dark} showToast={showToast} />
       default: return null
     }
   }

@@ -7,23 +7,58 @@ const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const { int, mongoId, str, strArray } = require('../middleware/validate');
 const SocialConnection = require('../models/SocialConnection');
 const SocialPost = require('../models/SocialPost');
+const { encryptToken } = require('../utils/cryptoSocial');
+const linkedinService = require('../services/linkedinService');
+const xService = require('../services/xService');
+const {
+  createState,
+  verifyState,
+  createPkcePair,
+  resolveRedirectUri,
+  popupResultHtml,
+  STATE_COOKIE,
+  STATE_MAX_AGE_MS,
+} = require('../services/socialOauth');
 
 const router = express.Router();
 
-// OAuth connect/callback endpoints are added in Phase 1 and stay public here —
-// browser redirects carry no Authorization header; those routes will be
-// protected by a signed state parameter instead of the admin JWT.
+// OAuth connect/callback endpoints are public by design — browser redirects
+// from LinkedIn/X carry no Authorization header. They are protected by
+// HMAC-signed state + double-submit cookie instead of the admin JWT.
+// Every other route below requires auth (+ CSRF for mutations).
 
+const PLATFORMS = ['linkedin', 'x'];
 const STATUS_VALUES = ['generating', 'draft', 'ready', 'failed'];
 const SOCIAL_UPLOAD_DIR = path.join(__dirname, '..', 'uploads', 'social');
 
+/** Serve HTML with a scoped CSP override (popup pages use a tiny inline script). */
+function sendHtml(res, status, html) {
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:"
+  );
+  res.status(status).type('html').send(html);
+}
+
+const stateCookieOptions = () => ({
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: process.env.NODE_ENV === 'production',
+  maxAge: STATE_MAX_AGE_MS,
+  path: '/api/social',
+});
+
 /** Public shape of a connection row (never exposes tokens). */
 function connectionShape(row) {
-  if (!row || row.status !== 'connected') {
+  const rawStatus = row?.status || 'disconnected';
+  const isExpired =
+    row?.status === 'connected' && row?.expiresAt && new Date(row.expiresAt) < new Date();
+  const status = isExpired ? 'expired' : rawStatus;
+  if (!row || status !== 'connected') {
     return {
       connected: false,
-      status: row?.status || 'disconnected',
-      userName: '',
+      status,
+      userName: row?.platformUserName || '',
       avatarUrl: '',
       connectedAt: null,
       expiresAt: null,
@@ -31,7 +66,7 @@ function connectionShape(row) {
   }
   return {
     connected: true,
-    status: 'connected',
+    status,
     userName: row.platformUserName || '',
     avatarUrl: row.avatarUrl || '',
     connectedAt: row.connectedAt,
@@ -39,24 +74,134 @@ function connectionShape(row) {
   };
 }
 
-async function getPostOr404(id) {
-  mongoId(id, 'postId');
-  const post = await SocialPost.findById(id).lean();
-  if (!post) throw new AppError('Social post not found', 404, 'NOT_FOUND');
-  return post;
+async function saveConnection(platform, tokenData, profile) {
+  const expiresInMs = Number(tokenData?.expires_in || 0) * 1000;
+  const expiresAt = expiresInMs > 0 ? new Date(Date.now() + expiresInMs - 60_000) : null;
+  const scope = Array.isArray(tokenData?.scope)
+    ? tokenData.scope.join(' ')
+    : String(tokenData?.scope || '');
+
+  await SocialConnection.findOneAndUpdate(
+    { platform },
+    {
+      platform,
+      accessToken: encryptToken(tokenData.access_token),
+      refreshToken: tokenData.refresh_token ? encryptToken(tokenData.refresh_token) : null,
+      expiresAt,
+      scope,
+      platformUserId: profile?.id || '',
+      platformUserName: profile?.username || profile?.name || '',
+      avatarUrl: profile?.avatarUrl || '',
+      status: 'connected',
+      connectedAt: new Date(),
+      disconnectedAt: null,
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
 }
 
-/** Delete a generated image file, ignoring missing/invalid paths. */
-function removeImageFile(imagePath) {
+/** GET /linkedin/connect and /x/connect — start OAuth (public). */
+function connectRoute(platform) {
+  return (req, res) => {
+    try {
+      const service = platform === 'linkedin' ? linkedinService : xService;
+      if (!service.isConfigured()) {
+        return sendHtml(
+          res,
+          503,
+          popupResultHtml(false, `${platform === 'x' ? 'X' : 'LinkedIn'} app is not configured yet. Add its client ID/secret to the server environment first.`)
+        );
+      }
+      const redirectUri = resolveRedirectUri(req, platform);
+      let authUrl;
+      if (platform === 'linkedin') {
+        const state = createState(platform);
+        res.cookie(STATE_COOKIE, state, stateCookieOptions());
+        authUrl = service.buildAuthUrl(redirectUri, state);
+      } else {
+        // PKCE verifier travels inside the HMAC-signed state payload.
+        const { verifier } = createPkcePair();
+        const state = createState(platform, { verifier });
+        res.cookie(STATE_COOKIE, state, stateCookieOptions());
+        authUrl = service.buildAuthUrl(redirectUri, state, verifier);
+      }
+      return res.redirect(authUrl);
+    } catch (err) {
+      console.error(`[social:${platform}-connect]`, err?.message || err);
+      return sendHtml(res, 500, popupResultHtml(false, 'Could not start sign-in. Please try again.'));
+    }
+  };
+}
+
+router.get('/linkedin/connect', connectRoute('linkedin'));
+router.get('/x/connect', connectRoute('x'));
+
+/** Shared callback handler — validates state, exchanges code, stores tokens. */
+async function handleCallback(req, res, platform) {
+  const fail = (msg, status = 400) => sendHtml(res, status, popupResultHtml(false, msg));
   try {
-    if (!imagePath || !imagePath.startsWith('/uploads/social/')) return;
-    const resolved = path.resolve(path.join(__dirname, '..', imagePath));
-    if (!resolved.startsWith(path.resolve(SOCIAL_UPLOAD_DIR) + path.sep)) return;
-    fs.promises.unlink(resolved).catch(() => {});
-  } catch {
-    // best-effort cleanup only
+    if (req.query.error) {
+      return fail('Sign-in was cancelled or denied.');
+    }
+    const state = String(req.query.state || '');
+    const payload = verifyState(state);
+    const cookieState = String(req.cookies?.[STATE_COOKIE] || '');
+    if (!payload || payload.platform !== platform || !cookieState || cookieState !== state) {
+      return fail('Sign-in session expired or invalid. Please click Connect again.');
+    }
+
+    const code = String(req.query.code || '');
+    if (!code) return fail('No authorization code received. Please retry.');
+
+    res.clearCookie(STATE_COOKIE, { path: '/api/social' });
+    const redirectUri = resolveRedirectUri(req, platform);
+
+    if (platform === 'linkedin') {
+      const tokens = await linkedinService.exchangeCodeForToken(code, redirectUri);
+      const profile = await linkedinService.fetchProfile(tokens.access_token);
+      await saveConnection(platform, tokens, profile);
+    } else {
+      const verifier = String(payload.verifier || '');
+      if (!verifier) return fail('Invalid sign-in session. Please retry.');
+      const tokens = await xService.exchangeCodeForToken(code, verifier, redirectUri);
+      const profile = await xService.fetchProfile(tokens.access_token);
+      await saveConnection(platform, tokens, profile);
+    }
+    return sendHtml(res, 200, popupResultHtml(true, `${platform === 'x' ? 'X' : 'LinkedIn'} connected successfully!`));
+  } catch (err) {
+    console.error(`[social:${platform}-callback]`, err?.message || err);
+    return fail('Sign-in failed. Please reconnect.');
   }
 }
+
+router.get('/linkedin/callback', (req, res) => handleCallback(req, res, 'linkedin'));
+router.get('/x/callback', (req, res) => handleCallback(req, res, 'x'));
+
+/** POST /connections/:platform/disconnect — wipe stored tokens. */
+router.post(
+  '/connections/:platform/disconnect',
+  auth,
+  csrfProtection,
+  asyncHandler(async (req, res) => {
+    const platform = req.params.platform;
+    if (!PLATFORMS.includes(platform)) {
+      throw new AppError('Unknown platform', 400, 'INVALID_PLATFORM');
+    }
+    await SocialConnection.updateOne(
+      { platform },
+      {
+        $set: {
+          status: 'disconnected',
+          accessToken: null,
+          refreshToken: null,
+          connectedAt: null,
+          disconnectedAt: new Date(),
+        },
+      }
+    );
+    res.json({ disconnected: true });
+  })
+);
 
 /** GET /api/social/connections — connection status for both platforms. */
 router.get(
@@ -68,6 +213,10 @@ router.get(
       .lean();
     const byPlatform = Object.fromEntries(rows.map((r) => [r.platform, r]));
     res.json({
+      configured: {
+        linkedin: linkedinService.isConfigured(),
+        x: xService.isConfigured(),
+      },
       linkedin: connectionShape(byPlatform.linkedin),
       x: connectionShape(byPlatform.x),
     });
@@ -198,3 +347,24 @@ router.post('/posts/:id/publish/linkedin', auth, csrfProtection, notImplemented(
 router.post('/posts/:id/publish/x', auth, csrfProtection, notImplemented('Phase 4'));
 
 module.exports = router;
+
+/* ── helpers defined after export for readability ─────────────────────────── */
+
+async function getPostOr404(id) {
+  mongoId(id, 'postId');
+  const post = await SocialPost.findById(id).lean();
+  if (!post) throw new AppError('Social post not found', 404, 'NOT_FOUND');
+  return post;
+}
+
+/** Delete a generated image file, ignoring missing/invalid paths. */
+function removeImageFile(imagePath) {
+  try {
+    if (!imagePath || !imagePath.startsWith('/uploads/social/')) return;
+    const resolved = path.resolve(path.join(__dirname, '..', imagePath));
+    if (!resolved.startsWith(path.resolve(SOCIAL_UPLOAD_DIR) + path.sep)) return;
+    fs.promises.unlink(resolved).catch(() => {});
+  } catch {
+    // best-effort cleanup only
+  }
+}

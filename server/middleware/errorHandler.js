@@ -41,6 +41,21 @@ const errorHandler = (err, req, res, next) => {
     return res.status(403).json({ error: 'Origin not allowed' });
   }
 
+  // Infrastructure failures: keep the app responsive with a clear 503 instead
+  // of an opaque 500 (database down, upstream refused, DNS, timeouts).
+  const msg = String(err?.message || '');
+  if (
+    err.name === 'MongooseServerSelectionError' ||
+    err.name === 'MongooseError' && /timed out|buffering/i.test(msg) ||
+    /ECONNREFUSED|ETIMEDOUT|ECONNRESET|ENOTFOUND|EAI_AGAIN/.test(String(err.code || '') + ' ' + msg)
+  ) {
+    console.error('[infra]', err);
+    return res.status(503).json({
+      error: 'Service temporarily unavailable. Please try again shortly.',
+      code: 'SERVICE_UNAVAILABLE',
+    });
+  }
+
   console.error('[unhandled]', err);
   return res.status(500).json({
     error: isProd ? 'Internal server error' : err.message,

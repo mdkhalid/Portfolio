@@ -59,4 +59,16 @@ export const useApiAuth = () => {
   return api
 }
 
+/**
+ * Centralized error-message extraction for every API call in the app.
+ * Returns a human-safe string; never leaks raw provider/stack details.
+ */
+export const getApiErrorMessage = (err, fallback = 'Something went wrong. Please try again.') => {
+  if (!err) return fallback
+  if (err.code === 'ECONNABORTED' || err.message === 'Network Error') {
+    return 'Cannot reach the server. Check your connection and retry.'
+  }
+  return err.response?.data?.error || err.message || fallback
+}
+
 export default api

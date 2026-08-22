@@ -231,8 +231,12 @@ if (require.main === module) {
       setSocialIO(io);
     });
     startWorker().catch((err) => console.error('[worker] failed to start:', err.message));
-    const { startScheduler } = require('./queue/scheduler');
-    startScheduler();
+    try {
+      const { startScheduler } = require('./queue/scheduler');
+      startScheduler();
+    } catch (err) {
+      console.error('[scheduler] failed to start:', err.message);
+    }
   } else {
     setupSocket(server);
   }
@@ -240,6 +244,15 @@ if (require.main === module) {
   server.listen(PORT, () =>
     console.log(`Server running on port ${PORT} (${env.NODE_ENV})`)
   );
+
+  // Last-resort safety nets: log and keep serving. A crash in one request or
+  // background task must never take the whole app down.
+  process.on('uncaughtException', (err) => {
+    console.error('[uncaughtException]', err);
+  });
+  process.on('unhandledRejection', (err) => {
+    console.error('[unhandledRejection]', err);
+  });
 
   const shutdown = (signal) => {
     console.log(`\n[shutdown] Received ${signal}, closing server...`);
@@ -254,7 +267,4 @@ if (require.main === module) {
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('unhandledRejection', (err) => {
-    console.error('[unhandledRejection]', err);
-  });
 }

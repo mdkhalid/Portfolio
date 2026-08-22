@@ -5,6 +5,26 @@ const Admin = require('../models/Admin');
 
 const MAX_ACTIVE = 3;
 
+/**
+ * Wrap an async socket handler so no DB/save failure inside a handler can
+ * produce an unhandled rejection or kill the connection loop. Errors are
+ * logged centrally and, when the client can receive events, reported.
+ */
+function safeHandler(socket, name, fn) {
+  return async (...args) => {
+    try {
+      await fn(...args);
+    } catch (err) {
+      console.error(`[socket:${name}]`, err?.message || err);
+      try {
+        socket.emit('chat:error', { message: 'Something went wrong. Please try again.' });
+      } catch {
+        // socket already gone
+      }
+    }
+  };
+}
+
 function setupSocket(server, onIO) {
   const parseList = (val) =>
     (val || '')
@@ -79,7 +99,7 @@ function setupSocket(server, onIO) {
 function setupVisitorHandlers(io, socket) {
   const { visitorId } = socket.data;
 
-  socket.on('visitor:join', async (data) => {
+  socket.on('visitor:join', safeHandler(socket, 'visitor:join', async (data) => {
     const name = data?.name?.trim() || 'Guest';
 
     const existing = await ChatSession.findOne({ visitorId, status: { $in: ['waiting', 'active'] } });
@@ -118,9 +138,9 @@ function setupVisitorHandlers(io, socket) {
       io.to('admin-room').emit('chat:new', formatSession(session));
     }
     broadcastState(io);
-  });
+  }));
 
-  socket.on('visitor:message', async (data) => {
+  socket.on('visitor:message', safeHandler(socket, 'visitor:message', async (data) => {
     const content = data?.content?.trim();
     if (!content) return;
 
@@ -137,13 +157,13 @@ function setupVisitorHandlers(io, socket) {
     await session.save();
 
     io.to('admin-room').emit('chat:message', { sessionId: session._id, message: msg });
-  });
+  }));
 
   socket.on('visitor:typing', () => {
     io.to('admin-room').emit('chat:typing', { sessionId: socket.data.sessionId || visitorId });
   });
 
-  socket.on('disconnect', async () => {
+  socket.on('disconnect', safeHandler(socket, 'visitor:disconnect', async () => {
     const session = await ChatSession.findOne({ visitorId, status: 'active' });
     if (session) {
       session.messages.push({ role: 'system', content: 'Visitor disconnected', timestamp: new Date() });
@@ -155,11 +175,11 @@ function setupVisitorHandlers(io, socket) {
       promoteNext(io);
     }
     broadcastState(io);
-  });
+  }));
 }
 
 function setupAdminHandlers(io, socket) {
-  socket.on('admin:message', async (data) => {
+  socket.on('admin:message', safeHandler(socket, 'admin:message', async (data) => {
     const { sessionId, content } = data || {};
     if (!content?.trim() || !sessionId) return;
 
@@ -174,9 +194,9 @@ function setupAdminHandlers(io, socket) {
     if (visitorSocket) visitorSocket.emit('chat:message', msg);
 
     io.to('admin-room').emit('chat:message', { sessionId: session._id, message: msg });
-  });
+  }));
 
-  socket.on('admin:end-chat', async (data) => {
+  socket.on('admin:end-chat', safeHandler(socket, 'admin:end-chat', async (data) => {
     const { sessionId } = data || {};
     if (!sessionId) return;
 
@@ -194,7 +214,7 @@ function setupAdminHandlers(io, socket) {
     io.to('admin-room').emit('chat:closed', { sessionId: session._id });
     promoteNext(io);
     broadcastState(io);
-  });
+  }));
 
   socket.on('disconnect', () => {
     broadcastState(io);

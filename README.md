@@ -230,6 +230,7 @@ The admin dashboard includes a job-search + automated-apply subsystem (the "Job 
 | `indeed` | ✅ | ✅ | ✅ (cookie → password/SSO login, apply wizard; external employer redirects become manual) |
 | `workatastartup` | ✅ (client-side keyword filter) | ✅ | ❌ manual (YC single application) |
 | `wellfound` | ✅ (rate-limit backoff) | ✅ | ✅ (cookie → persistent profile → password login, pitch + fields + resume) |
+| `foundit` (Monster) | ✅ | ✅ | ✅ (cookie → password/interactive login, field fill + resume) |
 | `generic` (custom site) | ❌ | ❌ | ❌ manual |
 
 **How a job flows through the system:**

@@ -10,6 +10,7 @@ const SocialPost = require('../models/SocialPost');
 const { encryptToken } = require('../utils/cryptoSocial');
 const linkedinService = require('../services/linkedinService');
 const xService = require('../services/xService');
+const { enqueueGenerate } = require('../queue/socialJobs');
 const {
   createState,
   verifyState,
@@ -253,19 +254,27 @@ router.get(
   })
 );
 
-/** POST /api/social/posts — create draft from topic notes + start generation job.
- * Generation pipeline is wired in Phase 2; until then this returns 501. */
+/** POST /api/social/posts — create draft from topic notes, kick off async
+ * generation. Returns immediately with the post id; progress arrives via
+ * socket 'social:progress' events and status polling. */
 router.post(
   '/posts',
   auth,
   csrfProtection,
   asyncHandler(async (req, res) => {
-    str(req.body, 'topicNotes', { max: 5000 });
-    throw new AppError(
-      'Social content generation is not implemented yet (Phase 2)',
-      501,
-      'NOT_IMPLEMENTED'
-    );
+    const topicNotes = str(req.body, 'topicNotes', { max: 5000 });
+    const post = await SocialPost.create({ topicNotes, status: 'generating' });
+    try {
+      await enqueueGenerate(post._id);
+    } catch (err) {
+      // Queue unavailable: mark failed instead of leaving a zombie "generating".
+      await SocialPost.updateOne(
+        { _id: post._id },
+        { $set: { status: 'failed', lastError: 'Could not start generation job.' } }
+      ).catch(() => {});
+      throw new AppError('Could not start generation job. Please retry.', 503, 'QUEUE_UNAVAILABLE');
+    }
+    res.status(201).json({ post });
   })
 );
 
@@ -341,8 +350,43 @@ function notImplemented(phase) {
   });
 }
 
-router.post('/posts/:id/regenerate/text', auth, csrfProtection, notImplemented('Phase 2'));
-router.post('/posts/:id/regenerate/image', auth, csrfProtection, notImplemented('Phase 2'));
+/** POST /posts/:id/regenerate/text — re-run content generation only. */
+router.post(
+  '/posts/:id/regenerate/text',
+  auth,
+  csrfProtection,
+  asyncHandler(async (req, res) => {
+    const post = await getPostOr404(req.params.id);
+    if (post.status === 'generating') {
+      throw new AppError('Generation already in progress', 409, 'ALREADY_GENERATING');
+    }
+    await SocialPost.updateOne(
+      { _id: post._id },
+      { $set: { status: 'generating', lastError: '' } }
+    );
+    await enqueueGenerate(post._id, 'text');
+    res.json({ queued: true, postId: post._id });
+  })
+);
+
+/** POST /posts/:id/regenerate/image — re-run image generation only. */
+router.post(
+  '/posts/:id/regenerate/image',
+  auth,
+  csrfProtection,
+  asyncHandler(async (req, res) => {
+    const post = await getPostOr404(req.params.id);
+    if (post.status === 'generating') {
+      throw new AppError('Generation already in progress', 409, 'ALREADY_GENERATING');
+    }
+    await SocialPost.updateOne(
+      { _id: post._id },
+      { $set: { status: 'generating', lastError: '' } }
+    );
+    await enqueueGenerate(post._id, 'image');
+    res.json({ queued: true, postId: post._id });
+  })
+);
 router.post('/posts/:id/publish/linkedin', auth, csrfProtection, notImplemented('Phase 4'));
 router.post('/posts/:id/publish/x', auth, csrfProtection, notImplemented('Phase 4'));
 

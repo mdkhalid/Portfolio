@@ -45,6 +45,9 @@ async function initQueue() {
         settings: {
           stalledInterval: 30000,
           maxStalledCount: 1,
+          // AI generation / image upload jobs can legitimately run minutes;
+          // a longer lock prevents false-stall reprocessing (double spends).
+          lockDuration: 600000,
         },
       });
       _redisClient = queue;

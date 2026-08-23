@@ -10,7 +10,7 @@ const SocialPost = require('../models/SocialPost');
 const { encryptToken } = require('../utils/cryptoSocial');
 const linkedinService = require('../services/linkedinService');
 const xService = require('../services/xService');
-const { enqueueGenerate } = require('../queue/socialJobs');
+const { enqueueGenerate, enqueuePublishLinkedIn, enqueuePublishX } = require('../queue/socialJobs');
 const {
   createState,
   verifyState,
@@ -343,13 +343,6 @@ router.delete(
   })
 );
 
-/** Stub helper for endpoints delivered in later phases. */
-function notImplemented(phase) {
-  return asyncHandler(async () => {
-    throw new AppError(`Not implemented yet (${phase})`, 501, 'NOT_IMPLEMENTED');
-  });
-}
-
 /** POST /posts/:id/regenerate/text — re-run content generation only. */
 router.post(
   '/posts/:id/regenerate/text',
@@ -387,8 +380,67 @@ router.post(
     res.json({ queued: true, postId: post._id });
   })
 );
-router.post('/posts/:id/publish/linkedin', auth, csrfProtection, notImplemented('Phase 4'));
-router.post('/posts/:id/publish/x', auth, csrfProtection, notImplemented('Phase 4'));
+/** POST /posts/:id/publish/linkedin — queue a LinkedIn publish job. */
+router.post(
+  '/posts/:id/publish/linkedin',
+  auth,
+  csrfProtection,
+  asyncHandler(async (req, res) => {
+    const post = await getPostOr404(req.params.id);
+    if (post.status !== 'ready') {
+      throw new AppError('This post is not ready to publish yet.', 409, 'NOT_READY');
+    }
+    const conn = await SocialConnection.findOne({ platform: 'linkedin' })
+      .select('status expiresAt')
+      .lean();
+    if (!conn || conn.status !== 'connected') {
+      throw new AppError('LinkedIn is not connected.', 409, 'NOT_CONNECTED');
+    }
+    if (conn.expiresAt && new Date(conn.expiresAt) < new Date()) {
+      throw new AppError('LinkedIn connection expired. Please reconnect.', 409, 'TOKEN_EXPIRED');
+    }
+    try {
+      await enqueuePublishLinkedIn(post._id);
+    } catch {
+      throw new AppError('Could not start publishing job. Please retry.', 503, 'QUEUE_UNAVAILABLE');
+    }
+    res.status(202).json({ queued: true, postId: post._id });
+  })
+);
+
+/** POST /posts/:id/publish/x — queue an X teaser post (links to LinkedIn URL). */
+router.post(
+  '/posts/:id/publish/x',
+  auth,
+  csrfProtection,
+  asyncHandler(async (req, res) => {
+    const post = await getPostOr404(req.params.id);
+    if (post.status !== 'ready') {
+      throw new AppError('This post is not ready to publish yet.', 409, 'NOT_READY');
+    }
+    const conn = await SocialConnection.findOne({ platform: 'x' })
+      .select('status expiresAt')
+      .lean();
+    if (!conn || conn.status !== 'connected') {
+      throw new AppError('X is not connected.', 409, 'NOT_CONNECTED');
+    }
+    if (conn.expiresAt && new Date(conn.expiresAt) < new Date()) {
+      throw new AppError('X connection expired. Please reconnect.', 409, 'TOKEN_EXPIRED');
+    }
+    const hasLinkedIn = (post.publishes || []).some(
+      (p) => p.platform === 'linkedin' && p.ok && p.url
+    );
+    if (!hasLinkedIn) {
+      throw new AppError('Publish to LinkedIn first so the teaser can link to it.', 409, 'NEED_LINKEDIN_URL');
+    }
+    try {
+      await enqueuePublishX(post._id);
+    } catch {
+      throw new AppError('Could not start publishing job. Please retry.', 503, 'QUEUE_UNAVAILABLE');
+    }
+    res.status(202).json({ queued: true, postId: post._id });
+  })
+);
 
 module.exports = router;
 

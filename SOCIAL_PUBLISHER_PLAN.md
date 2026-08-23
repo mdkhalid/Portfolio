@@ -1,6 +1,6 @@
 # Social Publisher — LinkedIn + X Content Automation
 
-> **Status:** In progress — Phases 0–3 shipped (`1424aa7`, `5e1d015`, `d10b6f3`, `406c7f6`, `dd847c3`); Phases 4–5 remaining
+> **Status:** Phases 0–5 implemented (Phase 4 pending live verification with real keys)
 > **Created:** 2026-08-22
 > **Scope:** Entirely new feature. Zero changes to existing features. Only additive edits:
 > one new tab entry in `AdminDashboard.jsx`, new route mounts in `server.js`, new models/services/routes.
@@ -16,14 +16,16 @@
 | 1 — Connections | ✅ Done | `d10b6f3` | LinkedIn + X OAuth (signed state, PKCE), encrypted tokens, popup connect flow, Social tab UI |
 | 2 — AI Pipeline | ✅ Done | `406c7f6` | Prompt builders, OpenAI-compatible content/image calls, async Bull job, live socket steps |
 | 3 — Preview UI | ✅ Done | `dd847c3` | Compose form, animated stepper, LinkedIn lookalike preview, inline editing, regenerate, prompts inspector |
-| 4 — Publishing | ⏳ Next | — | LinkedIn image upload + post creation, X teaser with link, success-only counters |
-| 5 — History & Polish | ⏳ Pending | — | Paginated archive, detail view, expired-token handling, setup docs |
+| 4 — Publishing | ✅ Implemented | (this session) | LinkedIn image register/upload + UGC post, X teaser (text-only) with LinkedIn URL, success-only counters, publish UI wired. Needs live keys to verify end-to-end. |
+| 5 — History & Polish | ✅ Implemented | (this session) | Create/History tabs in SocialTab, paginated archive (`HistoryList`), detail view with publish log + repost (`PostDetail`), expired-token surfaced via badges + publish errors |
 
 **Verification so far:** 42/42 server tests pass · eslint + production build clean ·
 end-to-end pipeline probe green (POST → async job → prompts persisted → graceful failure without keys).
 
 **Blocked on user inputs (not code):** `CONTENT_AI_*` / `IMAGE_AI_*` keys (zenmux/aihub),
 LinkedIn app Client ID/Secret, X app Client ID/Secret — placeholders already in `server/.env`.
+Phase 4 also needs these set (plus a real `SOCIAL_CREDENTIALS_KEY`) before a post can actually
+reach LinkedIn/X; the code path is complete and fails gracefully otherwise.
 
 ---
 

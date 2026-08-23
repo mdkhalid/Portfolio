@@ -6,6 +6,8 @@ import { getApiErrorMessage } from '../../lib/api'
 import ComposeForm from './ComposeForm'
 import GenerateProgress from './GenerateProgress'
 import PostPreview from './PostPreview'
+import HistoryList from './HistoryList'
+import PostDetail from './PostDetail'
 
 const STEPS = [
   { key: 'building_prompts', label: 'Building prompts' },
@@ -21,6 +23,9 @@ function modeSteps(mode) {
   if (mode === 'image') return freshSteps().filter((s) => ['creating_image', 'saving_draft'].includes(s.key))
   return freshSteps()
 }
+
+const idlePublish = () => ({ status: 'idle', step: '', label: '', url: '', error: '' })
+const freshPublish = () => ({ linkedin: idlePublish(), x: idlePublish() })
 
 const PLATFORM_META = {
   linkedin: {
@@ -69,6 +74,9 @@ export default function SocialTab({ API, dark, showToast }) {
 
   // Wizard state
   const [view, setView] = useState('compose') // compose | generating | preview
+  const [section, setSection] = useState('create') // create | history
+  const [detailId, setDetailId] = useState(null)
+  const [refreshKey, setRefreshKey] = useState(0)
   const [activePostId, setActivePostId] = useState(null)
   const activePostIdRef = useRef(null)
   const lastNotesRef = useRef('')
@@ -78,6 +86,7 @@ export default function SocialTab({ API, dark, showToast }) {
   const [post, setPost] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [regenBusy, setRegenBusy] = useState({ text: false, image: false })
+  const [publish, setPublish] = useState(freshPublish())
 
   /* ── connections ── */
   const refresh = useCallback(async () => {
@@ -149,6 +158,7 @@ export default function SocialTab({ API, dark, showToast }) {
       if (data.post.status === 'ready') {
         setPost(data.post)
         setView('preview')
+        setPublish(freshPublish())
       } else if (data.post.status === 'failed') {
         setGenError(data.post.lastError || 'Generation failed.')
       }
@@ -158,6 +168,13 @@ export default function SocialTab({ API, dark, showToast }) {
       return 'error'
     }
   }, [API, showToast])
+
+  const refreshPost = useCallback(async (id) => {
+    try {
+      const { data } = await API.get(`/api/social/posts/${id}`)
+      if (data.post.status === 'ready') setPost(data.post)
+    } catch { /* non-critical */ }
+  }, [API])
 
   const applyProgress = useCallback((evt) => {
     setSteps((prev) => prev.map((s) => (s.key === evt.step ? { ...s, status: evt.status || s.status, error: evt.error || '' } : s)))
@@ -169,6 +186,22 @@ export default function SocialTab({ API, dark, showToast }) {
     const socket = io(window.location.origin, { auth: { token, role: 'admin' } })
     socket.on('social:progress', (evt) => {
       if (String(evt?.postId) !== String(activePostIdRef.current)) return
+      if (evt.platform) {
+        setPublish((prev) => {
+          const cur = prev[evt.platform] || idlePublish()
+          const next = {
+            ...cur,
+            status: evt.status === 'done' ? 'done' : evt.status === 'error' ? 'error' : 'publishing',
+            step: evt.step || cur.step,
+            label: evt.label || cur.label,
+            error: evt.status === 'error' ? (evt.error || cur.error) : '',
+          }
+          if (evt.result?.url) next.url = evt.result.url
+          return { ...prev, [evt.platform]: next }
+        })
+        if (evt.status === 'done') refreshPost(evt.postId).catch(() => {})
+        return
+      }
       applyProgress(evt)
       if (evt.step === 'saving_draft' && evt.status === 'done') loadPost(evt.postId)
       if (evt.status === 'error') setGenError(evt.error || 'Generation failed.')
@@ -264,6 +297,7 @@ export default function SocialTab({ API, dark, showToast }) {
     activePostIdRef.current = null
     setActivePostId(null)
     setView('compose')
+    setPublish(freshPublish())
   }
 
   const newPost = () => {
@@ -273,17 +307,76 @@ export default function SocialTab({ API, dark, showToast }) {
     setGenError('')
     setSteps(freshSteps())
     setView('compose')
+    setPublish(freshPublish())
+  }
+
+  const publishToLinkedIn = async (postId) => {
+    if (!postId) return
+    activePostIdRef.current = postId
+    setPublish((p) => ({ ...p, linkedin: { status: 'publishing', step: 'preparing_upload', label: 'Queuing...', url: '', error: '' } }))
+    try {
+      await API.post(`/api/social/posts/${postId}/publish/linkedin`)
+      showToast({ type: 'success', message: 'Publishing to LinkedIn…' })
+    } catch (err) {
+      const m = getApiErrorMessage(err, 'Could not start publishing.')
+      setPublish((p) => ({ ...p, linkedin: { status: 'error', error: m, url: '' } }))
+      showToast({ type: 'error', message: m })
+    }
+  }
+
+  const publishToX = async (postId) => {
+    if (!postId) return
+    activePostIdRef.current = postId
+    setPublish((p) => ({ ...p, x: { status: 'publishing', step: 'composing_tweet', label: 'Queuing...', url: '', error: '' } }))
+    try {
+      await API.post(`/api/social/posts/${postId}/publish/x`)
+      showToast({ type: 'success', message: 'Posting to X…' })
+    } catch (err) {
+      const m = getApiErrorMessage(err, 'Could not start posting.')
+      setPublish((p) => ({ ...p, x: { status: 'error', error: m, url: '' } }))
+      showToast({ type: 'error', message: m })
+    }
+  }
+
+  const openDetail = (id) => {
+    activePostIdRef.current = id
+    setPublish(freshPublish())
+    setDetailId(id)
+  }
+
+  const closeDetail = () => {
+    setDetailId(null)
+    setRefreshKey((k) => k + 1)
   }
 
   const cardBg = dark ? 'bg-gray-800/60 border-gray-700' : 'bg-white border-gray-200'
   const muted = dark ? 'text-gray-400' : 'text-gray-500'
 
+  const sectionBtn = (key, label) => (
+    <button
+      key={key}
+      onClick={() => { setSection(key); if (key !== 'history') setDetailId(null) }}
+      className={'px-4 py-1.5 rounded-xl text-sm font-medium transition-colors cursor-pointer ' +
+        (section === key
+          ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-sm'
+          : (dark ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'))}
+    >
+      {label}
+    </button>
+  )
+
   return (
     <div className="space-y-6 max-w-4xl">
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold">Social Publisher</h2>
-          <p className={'text-sm mt-0.5 ' + muted}>Connect accounts, create AI posts, preview and publish.</p>
+        <div className="flex items-center gap-3">
+          <div>
+            <h2 className="text-xl font-bold">Social Publisher</h2>
+            <p className={'text-sm mt-0.5 ' + muted}>Connect accounts, create AI posts, preview and publish.</p>
+          </div>
+          <div className={'flex gap-1.5 p-1 rounded-2xl ' + (dark ? 'bg-gray-900/60' : 'bg-gray-200/60')}>
+            {sectionBtn('create', 'Create')}
+            {sectionBtn('history', 'History')}
+          </div>
         </div>
         <button
           onClick={() => { setLoading(true); refresh() }}
@@ -353,10 +446,10 @@ export default function SocialTab({ API, dark, showToast }) {
       </div>
 
       {/* Flow */}
-      {view === 'compose' && (
+      {section === 'create' && view === 'compose' && (
         <ComposeForm dark={dark} submitting={submitting} onGenerate={onGenerate} />
       )}
-      {view === 'generating' && (
+      {section === 'create' && view === 'generating' && (
         <GenerateProgress
           dark={dark}
           steps={steps}
@@ -366,7 +459,7 @@ export default function SocialTab({ API, dark, showToast }) {
           onBack={backToCompose}
         />
       )}
-      {view === 'preview' && post && (
+      {section === 'create' && view === 'preview' && post && (
         <PostPreview
           API={API}
           dark={dark}
@@ -374,10 +467,34 @@ export default function SocialTab({ API, dark, showToast }) {
           post={post}
           linkedinProfile={connections?.linkedin}
           regenBusy={regenBusy}
+          publish={publish}
+          onPublishLinkedIn={publishToLinkedIn}
+          onPublishX={publishToX}
           onRegenerateText={() => regenerate('text')}
           onRegenerateImage={() => regenerate('image')}
           onUpdated={(updated) => setPost(updated)}
           onNewPost={newPost}
+        />
+      )}
+      {section === 'history' && !detailId && (
+        <HistoryList
+          API={API}
+          dark={dark}
+          showToast={showToast}
+          refreshKey={refreshKey}
+          onOpen={openDetail}
+        />
+      )}
+      {section === 'history' && detailId && (
+        <PostDetail
+          API={API}
+          dark={dark}
+          showToast={showToast}
+          postId={detailId}
+          publish={publish}
+          onPublishLinkedIn={publishToLinkedIn}
+          onPublishX={publishToX}
+          onBack={closeDetail}
         />
       )}
     </div>

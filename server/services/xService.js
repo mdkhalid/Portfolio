@@ -103,11 +103,43 @@ async function fetchProfile(accessToken) {
   }
 }
 
+const TWEETS_URL = 'https://api.twitter.com/2/tweets';
+
+/**
+ * Create a tweet (text only — the LinkedIn post image is linked, not re-uploaded).
+ * Returns { id, url } where url is a handle-agnostic web status link.
+ */
+async function createPost(accessToken, { text } = {}) {
+  try {
+    const res = await fetchWithTimeout(TWEETS_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw Object.assign(
+        new Error(data?.detail || data?.title || `X create tweet error (${res.status})`),
+        { response: { status: res.status, data } }
+      );
+    }
+    const id = data?.data?.id;
+    if (!id) throw new Error('X tweet response missing id');
+    return { id, url: `https://x.com/i/web/status/${id}` };
+  } catch (err) {
+    socialFail('publish_x', err, { status: 502 });
+  }
+}
+
 module.exports = {
   isConfigured,
   buildAuthUrl,
   exchangeCodeForToken,
   refreshAccessToken,
   fetchProfile,
+  createPost,
   SCOPE,
 };

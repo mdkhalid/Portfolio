@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ThumbsUp, MessageCircle, Repeat2, Send, Globe, Pencil, RefreshCw, ImagePlus, Loader2, Save, X, Copy, ChevronDown } from 'lucide-react'
+import { ThumbsUp, MessageCircle, Repeat2, Send, Globe, Pencil, RefreshCw, ImagePlus, Loader2, Save, X, Copy, ChevronDown, AtSign } from 'lucide-react'
 import { getApiErrorMessage } from '../../lib/api'
 
 const CLAMP_AT = 420
@@ -8,6 +8,9 @@ export default function PostPreview({
   API, dark, showToast, post,
   linkedinProfile,
   regenBusy, // { text: bool, image: bool }
+  publish,
+  onPublishLinkedIn,
+  onPublishX,
   onRegenerateText, onRegenerateImage, onUpdated, onNewPost,
 }) {
   const [expanded, setExpanded] = useState(false)
@@ -63,6 +66,17 @@ export default function PostPreview({
   }
 
   const isClamped = !expanded && fullText.length > CLAMP_AT
+
+  const li = publish?.linkedin || { status: 'idle', url: '', error: '', label: '' }
+  const x = publish?.x || { status: 'idle', url: '', error: '', label: '' }
+  const liBusy = li.status === 'publishing'
+  const liDone = li.status === 'done'
+  const xBusy = x.status === 'publishing'
+  const xDone = x.status === 'done'
+  const linkedinUrl = (post.publishes || [])
+    .filter((p) => p.platform === 'linkedin' && p.ok && p.url)
+    .map((p) => p.url)
+    .pop() || ''
 
   return (
     <div className="space-y-4">
@@ -177,13 +191,36 @@ export default function PostPreview({
         )}
         <div className="flex-1" />
         <button
-          disabled
-          title="Publishing arrives with the next update"
-          className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-[#0a66c2] text-white text-sm font-semibold opacity-50 cursor-not-allowed"
+          onClick={() => onPublishLinkedIn(post._id)}
+          disabled={liBusy}
+          title={liDone ? 'Publish again to LinkedIn' : 'Publish this post to LinkedIn'}
+          className={'inline-flex items-center gap-2 px-5 py-2 rounded-xl text-white text-sm font-semibold transition-all cursor-pointer disabled:opacity-60 ' + (dark ? 'bg-[#0a66c2] hover:bg-[#004182]' : 'bg-[#0a66c2] hover:opacity-90')}
         >
-          Post to LinkedIn <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/20">soon</span>
+          {liBusy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+          {liBusy ? (li.label || 'Publishing…') : liDone ? 'Repost to LinkedIn' : 'Post to LinkedIn'}
         </button>
+        {li.url && (
+          <a href={li.url} target="_blank" rel="noreferrer" className={'inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium cursor-pointer ' + (dark ? 'bg-gray-800 hover:bg-gray-700 text-blue-400' : 'bg-gray-100 hover:bg-gray-200 text-blue-600')}>
+            <Globe size={14} /> View
+          </a>
+        )}
+        <button
+          onClick={() => onPublishX(post._id)}
+          disabled={xBusy || !linkedinUrl}
+          title={linkedinUrl ? 'Post a teaser to X linking to your LinkedIn post' : 'Publish to LinkedIn first'}
+          className={'inline-flex items-center gap-2 px-5 py-2 rounded-xl text-white text-sm font-semibold transition-all cursor-pointer disabled:opacity-50 ' + (dark ? 'bg-black hover:bg-gray-900' : 'bg-black hover:opacity-90')}
+        >
+          {xBusy ? <Loader2 size={15} className="animate-spin" /> : <AtSign size={15} />}
+          {xBusy ? (x.label || 'Posting…') : xDone ? 'Repost to X' : 'Post to X'}
+        </button>
+        {x.url && (
+          <a href={x.url} target="_blank" rel="noreferrer" className={'inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium cursor-pointer ' + (dark ? 'bg-gray-800 hover:bg-gray-700 text-blue-400' : 'bg-gray-100 hover:bg-gray-200 text-blue-600')}>
+            <AtSign size={14} /> View
+          </a>
+        )}
       </div>
+      {li.error && <p className={'text-xs mt-2 ' + (dark ? 'text-red-400' : 'text-red-500')}>{li.error}</p>}
+      {x.error && <p className={'text-xs mt-2 ' + (dark ? 'text-red-400' : 'text-red-500')}>{x.error}</p>}
 
       {/* prompts inspector */}
       <div className={'rounded-2xl border overflow-hidden ' + cardBg}>

@@ -20,7 +20,13 @@ const { emitJobsChanged } = require('../services/notifications');
 
 const MAX_FETCH_JOBS = 100;
 
-async function getSearchKeywords() {
+/**
+ * Build the search query for a site from the profile title + top skills.
+ * Sites AND together every word they receive, so mashing title + 4 skills
+ * into one query yields noisy/empty results: Indeed gets the title only,
+ * Naukri title + top 2 skills, others title + top 3.
+ */
+async function getSearchKeywords(site = '') {
   const [profile, skills] = await Promise.all([
     Profile.findOne().lean(),
     Skill.find().lean(),
@@ -29,19 +35,30 @@ async function getSearchKeywords() {
   const stack = skills
     .flatMap((c) => (Array.isArray(c.items) ? c.items : []))
     .map((s) => (typeof s === 'string' ? s : s?.name || ''))
-    .filter(Boolean)
-    .slice(0, 4);
+    .filter(Boolean);
+  const key = String(site || '').toLowerCase();
+  const skillCount = key === 'indeed' ? 0 : key === 'naukri' ? 2 : 3;
   const parts = title ? [title] : [];
-  parts.push(...stack);
+  parts.push(...stack.slice(0, skillCount));
   return parts.join(' ').trim();
 }
 
 function applyBlocklist(jobs, blocklist) {
-  const names = (blocklist || []).map((b) => String(b.name || '').toLowerCase().trim()).filter(Boolean);
+  // Entries shorter than 2 chars over-match everything; drop them.
+  const names = (blocklist || [])
+    .map((b) => String(b.name || '').toLowerCase().trim())
+    .filter((n) => n.length >= 2);
   if (!names.length) return jobs;
   return jobs.filter((j) => {
     const company = String(j.company || '').toLowerCase().trim();
-    return !names.some((n) => company.includes(n) || n.includes(company));
+    if (!company) return true;
+    return !names.some((n) => {
+      if (company === n) return true;
+      // Word-boundary match inside the company name only: loose two-way
+      // substring matching let a short entry like "ib" block "IBM".
+      const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`).test(company);
+    });
   });
 }
 
@@ -61,7 +78,7 @@ async function fetchFromSite({ userId, site, location = '', pageCount = 1, maxJo
   const settings = await UserSettings.findOne({ userId }).lean();
   const adapter = getAdapter(site);
 
-  const doSearch = async () => adapter.searchJobs({ query: await getSearchKeywords(), location, pageCount, maxJobs });
+  const doSearch = async () => adapter.searchJobs({ query: await getSearchKeywords(site), location, pageCount, maxJobs });
 
   let raw = await doSearch();
 

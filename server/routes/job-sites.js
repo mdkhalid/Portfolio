@@ -162,6 +162,7 @@ router.post('/login-all', asyncHandler(async (req, res) => {
         password: t.password,
         cookieHeader: t.cookieHeader,
         origin: t.origin,
+        userId: req.adminId,
       });
       if (!r.ok) {
         await UserJobSite.updateOne({ userId: req.adminId, name: t.name }, { $set: { status: 'error' } });
@@ -180,11 +181,10 @@ router.post('/login-all', asyncHandler(async (req, res) => {
         updates.cookies = encrypt({ value: r.cookieHeader });
         updates.cookieUpdatedAt = new Date();
       }
-      // Set enabled: true whenever we have stored credentials (cookie OR password).
-      // This ensures the site is active for auto-apply without requiring manual toggle.
-      if (r.ok && (r.via === 'password' || r.via === 'cookies')) {
-        updates.enabled = true;
-      }
+      // Enable the site on ANY successful connect (password, stored cookies, or
+      // interactive browser fallback) — the site now has a usable session or
+      // stored credentials, so it is ready for auto-apply without a manual toggle.
+      updates.enabled = true;
       // If we have a cookie header from interactive login, capture it into the
       // encrypted cookie store so future auto-apply runs can reuse the session.
       if (r.cookieHeader) {

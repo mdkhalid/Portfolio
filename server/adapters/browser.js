@@ -90,32 +90,38 @@ async function getBrowser(site) {
     }
   }
   if (!_browserPromises.has(key)) {
-    // Lazy-require so requiring the adapters never pulls in puppeteer's ESM
-    // entry (jest/CommonJS contexts that never launch a browser stay clean).
-    if (!_puppeteer) {
-      _puppeteer = require('puppeteer');
-    }
-    if (site && !_interactiveSites.has(key)) {
-      // A crashed/killed server can leave headless Chrome holding the profile
-      // lock; clear it so this fresh launch actually works.
-      await killProfileProcesses(site);
-      await delay(500);
-    }
-    const launchOptions = {
-      headless: 'new',
-      args: LAUNCH_ARGS,
-      defaultViewport: { width: 1366, height: 768 },
-    };
-    if (site) {
-      launchOptions.userDataDir = getProfileDir(site);
-      if (HEADED_SITES.has(key)) {
-        // Real Chrome (matches the interactive-login fingerprint), hidden
-        // off-screen so the user never sees it flash during auto-apply.
-        launchOptions.headless = false;
-        launchOptions.args = [...LAUNCH_ARGS, '--window-position=-32000,-32000', '--window-size=1366,768'];
+    // Reserve the slot SYNCHRONOUSLY before any await: concurrent callers
+    // (worker submit + scheduler cookie refresh + match JD fetch share the
+    // per-site browser) must all receive the SAME launch promise, otherwise
+    // both pass the has(key) check and launch two Chromes on one profile.
+    const promise = (async () => {
+      // Lazy-require so requiring the adapters never pulls in puppeteer's ESM
+      // entry (jest/CommonJS contexts that never launch a browser stay clean).
+      if (!_puppeteer) {
+        _puppeteer = require('puppeteer');
       }
-    }
-    const promise = _puppeteer.launch(launchOptions);
+      if (site && !_interactiveSites.has(key)) {
+        // A crashed/killed server can leave headless Chrome holding the profile
+        // lock; clear it so this fresh launch actually works.
+        await killProfileProcesses(site);
+        await delay(500);
+      }
+      const launchOptions = {
+        headless: 'new',
+        args: LAUNCH_ARGS,
+        defaultViewport: { width: 1366, height: 768 },
+      };
+      if (site) {
+        launchOptions.userDataDir = getProfileDir(site);
+        if (HEADED_SITES.has(key)) {
+          // Real Chrome (matches the interactive-login fingerprint), hidden
+          // off-screen so the user never sees it flash during auto-apply.
+          launchOptions.headless = false;
+          launchOptions.args = [...LAUNCH_ARGS, '--window-position=-32000,-32000', '--window-size=1366,768'];
+        }
+      }
+      return _puppeteer.launch(launchOptions);
+    })();
     _browserPromises.set(key, promise);
     if (key === 'default') _browserPromise = promise;
     promise

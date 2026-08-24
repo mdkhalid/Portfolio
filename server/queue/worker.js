@@ -327,6 +327,8 @@ if (jd && jd.length >= 30) {
           metadata: { applicationId: String(app._id), jobId: String(job._id), jobTitle: job.title, company: job.company },
           dedupeKey: `ai-budget-app-${app._id}`,
         }).catch(() => {});
+        // Terminal state changed — let the dashboard refresh without a reload.
+        emitJobsChanged(app.userId);
         return { skipped: true };
       }
 
@@ -409,6 +411,8 @@ if (jd && jd.length >= 30) {
           dedupeKey: `needs-input-${app._id}`,
           maxAgeMs: 7 * 24 * 60 * 60 * 1000,
         }).catch(() => {});
+        // Let the dashboard refresh its lists without a manual reload.
+        emitJobsChanged(app.userId);
         return { waiting: true };
       }
 
@@ -442,6 +446,8 @@ if (jd && jd.length >= 30) {
           { $set: { needsManualApply: true, manualApplyReason: reason } }
         );
         await markStep(application, key, { status: 'done', finishedAt: new Date() });
+        // Routed out of the automated pipeline — refresh dashboard lists.
+        emitJobsChanged(app.userId);
         break;
       }
       const siteDoc = await UserJobSite.findOne({ userId: app.userId, name: site }).select('+credentials +cookies').lean();
@@ -579,6 +585,8 @@ if (jd && jd.length >= 30) {
               );
               await markStep(application, key, { status: 'done', finishedAt: new Date() });
               lastSubmitAt.set(site, Date.now());
+              // Routed out of the automated pipeline — refresh dashboard lists.
+              emitJobsChanged(app.userId);
               break; // skip the "mark applied" block below
             }
             throw new Error(reason);
@@ -751,6 +759,15 @@ async function startWorker() {
             );
           }
           const jobDoc = a.jobId ? await Job.findById(a.jobId).select('title company site').lean().catch(() => null) : null;
+          // Mirror the success path: push a change signal AND a terminal
+          // progress payload so the dashboard lists and the pipeline panel
+          // update without a manual refresh (the catch block previously
+          // emitted neither, leaving failures invisible until reload).
+          emitJobsChanged(a.userId);
+          const failedApp = await Application.findById(applicationId).lean().catch(() => null);
+          if (failedApp) {
+            emitProgress({ ...failedApp, jobTitle: jobDoc?.title || '' });
+          }
           notify({
             userId: a.userId,
             type: 'apply_failed',

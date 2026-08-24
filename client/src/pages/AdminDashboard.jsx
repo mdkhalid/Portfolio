@@ -509,14 +509,47 @@ export default function AdminDashboard() {
           return { ...prev, items }
         })
       }
+      // Live-update the Tracking tab too: match by applicationId (NOT jobId —
+      // the tracking list shows Application records). Applied entries stay in
+      // the list (they are tracking records) with their updated status. This
+      // makes failed/pending/skipped runs visible immediately instead of only
+      // after the next jobs:changed refresh.
+      if (data.applicationId) {
+        const patch = (item) => ({
+          ...item,
+          status: data.status,
+          lastAction: data.lastAction || item.lastAction,
+          ...(data.status === 'applied' && !item.appliedAt ? { appliedAt: new Date().toISOString() } : {}),
+          ...(data.steps && data.steps.length
+            ? { progress: { ...(item.progress || {}), currentStep: data.currentStep, steps: data.steps } }
+            : {}),
+        })
+        setTracking(prev => {
+          const idx = prev.items.findIndex(item => String(item._id) === data.applicationId)
+          if (idx < 0) return prev
+          const items = [...prev.items]
+          items[idx] = patch(items[idx])
+          return { ...prev, items }
+        })
+        // Keep an open tracking detail panel in sync with the live run.
+        setTrackingDetail(prev => (prev && String(prev._id) === data.applicationId ? patch(prev) : prev))
+      }
     })
 
     // In-app notifications arrive over the same admin socket connection.
     socket.on('notify:inapp', (data) => {
       setNotifications(prev => [data, ...prev].slice(0, 50))
       if (!data.read) setNotificationCount(c => c + 1)
+      // Silent refresh of whichever list is open — failure/input/pause events
+      // change application state, so toast-only left the view stale.
+      const refreshActiveList = () => {
+        if (activeTab === 'job-apps') liveRefreshRef.current.jobApps?.()
+        else if (activeTab === 'tracking') liveRefreshRef.current.tracking?.()
+        else if (activeTab === 'manual') liveRefreshRef.current.manual?.()
+      }
       if (data.type === 'apply_failed' || data.type === 'needs_input') {
         showToast(data.title + (data.body ? ' — ' + data.body : ''), 'warning')
+        refreshActiveList()
       } else if (data.type === 'apply_success') {
         showToast(data.title, 'success')
         if (activeTab === 'job-apps') refreshJobApps()
@@ -525,6 +558,7 @@ export default function AdminDashboard() {
         if (activeTab === 'job-apps') refreshJobApps()
       } else if (data.type === 'pipeline_paused' || data.type === 'ai_budget') {
         showToast(data.title, 'warning')
+        refreshActiveList()
       } else if (data.type === 'pipeline_resumed') {
         showToast(data.title, 'success')
       }

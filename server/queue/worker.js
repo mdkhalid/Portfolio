@@ -307,8 +307,12 @@ if (jd && jd.length >= 30) {
         }
       }
 
-      // Build a tailored, ATS-friendly PDF resume from profile data
-      const built = await buildTailoredResume(job, { userId: app.userId, skipOnBudgetExceeded: true });
+      // Build a tailored, ATS-friendly PDF resume from profile data. When the
+      // AI budget is exhausted, buildTailoredResume falls back to the
+      // deterministic path (no AI spend) instead of skipping — auto-apply must
+      // not be stricter than the manual Generate button, which always produces
+      // a resume. The aiSkipped guard below remains as a safety net.
+      const built = await buildTailoredResume(job, { userId: app.userId });
       if (built.aiSkipped) {
         await Application.updateOne(
           { _id: app._id },

@@ -262,7 +262,10 @@ exports.match = asyncHandler(async (req, res) => {
     return res.json({ matched: 0, jobs: [] });
   }
 
-  // AI cost guard: don't run the expensive AI matcher over the budget.
+  // AI cost guard: the initial check decides whether AI matching starts at
+  // all; the per-job check inside the loop stops AI once the budget is
+  // exhausted mid-batch (a single check for up to 50 jobs could overshoot
+  // the budget by 49 calls).
   const costCheck = await checkAICost(req.adminId, { purpose: 'match' });
   const useAI = costCheck.allowed;
 
@@ -294,8 +297,25 @@ exports.match = asyncHandler(async (req, res) => {
   }
 
   const results = [];
+  let aiBudgetHit = false;
   for (const job of jobs) {
     try {
+      // Per-job budget check: once the AI budget is exhausted, finish the rest
+      // of the batch with the deterministic keyword-overlap matcher instead of
+      // overshooting the budget.
+      if (!aiBudgetHit) {
+        const perJobCheck = await checkAICost(req.adminId, { purpose: 'match' });
+        if (!perJobCheck.allowed) aiBudgetHit = true;
+      }
+      if (aiBudgetHit) {
+        const fallback = await fallbackMatch(job, profileText);
+        await Job.updateOne(
+          { _id: job._id },
+          { $set: { matchScore: fallback.score, matchedKeywords: fallback.matched, missingKeywords: fallback.missing } }
+        );
+        results.push(fallback);
+        continue;
+      }
       const jd = job.description || '';
       if (!jd || jd.trim().length < 20) {
         // Try to fetch full JD if missing (fetch-first; login only as fallback)

@@ -441,10 +441,13 @@ async function learnFieldValues({ userId, site, fieldValues = {}, fieldMeta = {}
 
 /**
  * Open a job's apply form (best-effort) and detect its fields without
- * submitting. Uses the shared browser; returns the detected field list (or []).
- * `applySelectors` are the site-specific apply-button selectors.
+ * submitting. Runs in the SAME per-site browser as the submit step (pass
+ * `site`) so login-walled apply forms are visible and the detected
+ * fields/selectors match what submit will actually see. Returns the detected
+ * field list (or []). `applySelectors` are the site-specific apply-button
+ * selectors.
  */
-async function detectApplyFormFields({ url, applySelectors = [], waitAfterClick = 3500 }) {
+async function detectApplyFormFields({ url, site, applySelectors = [], waitAfterClick = 3500 }) {
   if (!url) return [];
   return withPage(async (page) => {
     try {
@@ -468,7 +471,7 @@ async function detectApplyFormFields({ url, applySelectors = [], waitAfterClick 
     } catch {
       return [];
     }
-  });
+  }, site);
 }
 
 module.exports = {

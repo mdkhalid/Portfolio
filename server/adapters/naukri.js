@@ -171,6 +171,7 @@ async function fetchJobDescription(input) {
 async function detectApplyFields({ url }) {
   return detectApplyFormFields({
     url,
+    site: 'naukri',
     applySelectors: ['.apply-button, button[class*="apply"], a[class*="apply"], [type="button"]:not([data-qa])'],
   });
 }

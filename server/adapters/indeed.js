@@ -144,6 +144,7 @@ async function fetchJobDescription(input) {
 async function detectApplyFields({ url }) {
   return detectApplyFormFields({
     url,
+    site: 'indeed',
     applySelectors: ['button[data-testid="applyButton"], #indeedApplyButton, button[class*="apply"], a[class*="apply"]'],
   });
 }

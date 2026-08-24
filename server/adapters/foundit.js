@@ -194,6 +194,7 @@ async function fetchJobDescription(input) {
 async function detectApplyFields({ url }) {
   return detectApplyFormFields({
     url,
+    site: 'foundit',
     applySelectors: ['button[class*="apply" i], a[class*="apply" i], button[data-test*="apply" i]'],
   });
 }

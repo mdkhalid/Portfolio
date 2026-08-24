@@ -43,34 +43,53 @@ async function runStaleExpiry() {
   const settings = await UserSettings.find().lean();
   const defaultDays = Number(env.JOB_STALE_DAYS) || 7;
   const { emitJobsChanged } = require('../services/notifications');
+  // Expire actionable-but-unapplied jobs: 'new' (never touched), 'not_applied'
+  // (auto-apply failed / routed out) and 'passed' (skipped by the user).
+  // 'pending' is deliberately exempt: it tracks a job with an application
+  // still waiting on user input, and expiring it would orphan that flow.
+  const EXPIRABLE = ['new', 'not_applied', 'passed'];
   for (const s of settings) {
     const days = s.expireAfterDays || defaultDays;
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const res = await Job.updateMany(
-      { userId: s.userId, status: 'new', lastSeenAt: { $lt: cutoff } },
+      { userId: s.userId, status: { $in: EXPIRABLE }, lastSeenAt: { $lt: cutoff } },
       { $set: { status: 'expired' } }
     );
     if (res.modifiedCount) emitJobsChanged(s.userId);
   }
 }
 
+let _tickRunning = false;
+
 async function tick() {
-  await runStaleExpiry().catch(() => {});
-  await runScheduledFetch().catch(() => {});
-  // Phase 1: Proactive session health-check — refresh cookies for all
-  // enabled + connected sites at intervals shorter than the cookie TTL,
-  // preventing silent session expiration between auto-apply runs.
-  try {
-    const { refreshSiteCookies } = require('../services/sessionRefresh');
-    const entries = await UserJobSite.find({ enabled: true, status: 'connected' }).lean();
-    for (const e of entries) {
-      await refreshSiteCookies(e.userId, e.name).catch(() => {});
-    }
-  } catch (err) {
-    console.error('[scheduler] session health-check failed:', err?.message || err);
+  // Overlap guard: the boot tick (5s after start) and a cron firing can land
+  // on top of a long-running fetch. Without the lock the same site gets
+  // scraped concurrently and the dedupe index produces E11000 noise.
+  if (_tickRunning) {
+    console.warn('[scheduler] tick already running — skipping this firing');
+    return;
   }
-  const { sendDailyDigests } = require('../services/notifications');
-  await sendDailyDigests().catch(() => {});
+  _tickRunning = true;
+  try {
+    await runStaleExpiry().catch(() => {});
+    await runScheduledFetch().catch(() => {});
+    // Phase 1: Proactive session health-check — refresh cookies for all
+    // enabled + connected sites at intervals shorter than the cookie TTL,
+    // preventing silent session expiration between auto-apply runs.
+    try {
+      const { refreshSiteCookies } = require('../services/sessionRefresh');
+      const entries = await UserJobSite.find({ enabled: true, status: 'connected' }).lean();
+      for (const e of entries) {
+        await refreshSiteCookies(e.userId, e.name).catch(() => {});
+      }
+    } catch (err) {
+      console.error('[scheduler] session health-check failed:', err?.message || err);
+    }
+    const { sendDailyDigests } = require('../services/notifications');
+    await sendDailyDigests().catch(() => {});
+  } finally {
+    _tickRunning = false;
+  }
 }
 
 /** Start the daily scheduler; also runs one tick shortly after boot. */

@@ -37,8 +37,11 @@ async function initQueue() {
     try {
       const queue = new Bull('applyQueue', REDIS_URL, {
         defaultJobOptions: {
-          attempts: 3,
-          backoff: { type: 'exponential', delay: 5000 },
+          // The process handler persists every failure itself (not_applied +
+          // step error) and never rethrows, so Bull-level retries would just
+          // re-run an already-handled pipeline — attempts stays 1 to reflect
+          // reality. Retries go through the explicit user-facing retry route.
+          attempts: 1,
           removeOnComplete: true,
           removeOnFail: false,
         },

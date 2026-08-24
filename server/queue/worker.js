@@ -648,8 +648,9 @@ async function rescueStuckApplications() {
       await Application.updateOne({ _id: app._id }, { $set: { status: 'queued' } });
       await queue.add('apply', { applicationId: app._id, batchId: app.batchId || '' }, {
         jobId: String(app._id),
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 5000 },
+        // attempts: 1 — the handler persists every failure and never rethrows;
+        // Bull retries would re-run an already-handled pipeline.
+        attempts: 1,
         removeOnComplete: true,
         removeOnFail: false,
       });

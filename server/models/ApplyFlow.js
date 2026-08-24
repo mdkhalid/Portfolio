@@ -17,6 +17,10 @@ const applyStepSchema = new mongoose.Schema(
     key: { type: String, required: true },
     label: { type: String, default: '' },
     kind: { type: String, enum: STEP_KINDS, required: true },
+    // Which worker step (STEPS in queue/worker.js) this finer-grained flow
+    // step belongs to — maps the flow description onto the progress steps the
+    // UI actually renders, so debugging lines the two views up.
+    workerStep: { type: String, enum: ['fetch_jd', 'generate_resume', 'prepare_application', 'submit'], default: null },
     selectors: [{ type: String }],
     // Decision/branch notes for this step (e.g. external redirect -> manual apply).
     branch: { type: String, default: '' },

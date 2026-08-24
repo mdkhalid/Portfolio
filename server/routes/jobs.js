@@ -810,8 +810,9 @@ exports.apply = asyncHandler(async (req, res) => {
 
     await queue.add('apply', { applicationId: app._id, batchId }, {
       jobId: String(app._id),
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 5000 },
+      // attempts: 1 — the worker handler persists every failure and never
+      // rethrows; Bull retries would re-run an already-handled pipeline.
+      attempts: 1,
       removeOnComplete: true,
       removeOnFail: false,
     });
@@ -1053,8 +1054,7 @@ exports.retryApplication = asyncHandler(async (req, res) => {
   const queue = await getQueue();
   await queue.add('apply', { applicationId: app._id, batchId }, {
     jobId: String(app._id),
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 5000 },
+    attempts: 1,
     removeOnComplete: true,
     removeOnFail: false,
   });
@@ -1135,8 +1135,7 @@ exports.submitApplicationAnswers = asyncHandler(async (req, res) => {
   const queue = await getQueue();
   await queue.add('apply', { applicationId: app._id, batchId: newBatchId }, {
     jobId: String(app._id),
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 5000 },
+    attempts: 1,
     removeOnComplete: true,
     removeOnFail: false,
   });

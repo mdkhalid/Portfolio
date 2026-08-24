@@ -647,10 +647,11 @@ async function startWorker() {
                 manualApplyReason: manualApply ? rawReason : '',
               } }
           );
-          // Persist the raw failure detail on the submit step + timeline so the
-          // user sees exactly why, while the enum reason stays filterable.
+          // Persist the raw failure detail on the step that actually failed +
+          // timeline so the user sees exactly why, while the enum reason stays
+          // filterable.
           await Application.updateOne(
-            { _id: applicationId, 'progress.steps.key': 'submit' },
+            { _id: applicationId, 'progress.steps.key': key },
             { $set: { 'progress.steps.$.error': rawReason, 'progress.steps.$.status': 'failed' } }
           ).catch(() => {});
           // Route the job into the Manual Apply list so the user can finish in
@@ -671,8 +672,12 @@ async function startWorker() {
             dedupeKey: `apply-failed-${applicationId}`,
           }).catch(() => {});
         }
-        // Failure already handled above — route to manual apply and let the
-        // loop exit naturally. Do NOT re-throw or the queue worker will stop.
+        // Failure already handled above — the application is now not_applied
+        // (or routed to manual apply). Stop the chain: without this break the
+        // loop would keep running later steps — e.g. submit would still fire
+        // with resume: null after a generate_resume failure. Do NOT re-throw
+        // or the queue worker will stop.
+        break;
       }
     }
     await maybeNotifyBatchComplete(app.batchId || '');

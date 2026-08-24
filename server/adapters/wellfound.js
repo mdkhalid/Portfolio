@@ -239,7 +239,7 @@ async function submitApplication({ url, credentials, cookie, cookieOrigin, resum
       }
       // Final fallback: check if we're already on an "applied" or "thank you" page
       const state = await readApplyState(page);
-      if (state && !state.btnPresent) {
+      if (state && !state.readFailed && !state.btnPresent) {
         return { applied: true, note: 'Already applied or direct apply' };
       }
       throw new Error('No apply button found on Wellfound job page (may have different UI or redirect to employer site).');

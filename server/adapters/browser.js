@@ -591,9 +591,10 @@ async function readApplyState(page, applySelector) {
     return state;
   } catch (err) {
     // The page navigated while we were reading it (common after a successful
-    // submit redirects to a confirmation page). Return null so confirmApplied
-    // treats it as "unknown" and defaults to applied:true rather than failing.
-    return null;
+    // submit redirects to a confirmation page). Flag it so confirmApplied can
+    // treat a post-click navigation as a positive signal, distinct from a
+    // genuine read failure (which stays unknown and defaults to NOT applied).
+    return { readFailed: true, navigated: true };
   }
 }
 
@@ -601,9 +602,19 @@ async function readApplyState(page, applySelector) {
  * Interpret `readApplyState` output: an apply button whose label switched to
  * "Applied"/"Submitted" (or disappeared, or is disabled) means the application
  * went through; a still-active "Apply"-labelled button means it didn't.
+ * Unknown state defaults to NOT applied — for an apply tool, a false
+ * "Applied" is worse than a false "not applied" (the user can verify and
+ * retry, but a phantom application can't be undone).
  */
 function confirmApplied(state) {
-  if (!state) return { applied: true };
+  if (!state || state.readFailed) {
+    if (state?.navigated) {
+      // Navigation right after the submit click is usually the confirmation
+      // redirect — count it as applied, but mark it unconfirmed.
+      return { applied: true, uncertain: true, reason: 'Page navigated after submit — likely a confirmation redirect, verify on the site.' };
+    }
+    return { applied: false, uncertain: true, reason: 'Application status could not be confirmed on the site — verify manually.' };
+  }
   if (state.successText) return { applied: true };
   const stillApply = state.btnPresent && !state.btnDisabled
     && /apply|submit|register/.test(state.btnText)

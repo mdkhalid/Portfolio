@@ -104,7 +104,10 @@ async function login({ email, password, cookies, cookieOrigin }) {
  */
 async function searchJobs({ query, location = '', pageCount = 1, maxJobs = 50 }) {
   const q = urlSafeQuery(query);
-  const url = `${BASE}/${q}-jobs${location ? '?location=' + encodeURIComponent(location) : ''}`;
+  // Naukri has no ?location= query param — the location filter only works in
+  // the path form /<query>-jobs-in-<location>.
+  const loc = location ? urlSafeQuery(location) : '';
+  const url = `${BASE}/${q}-jobs${loc ? '-in-' + loc : ''}`;
   return withPage(async (page) => {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await delay(3000);

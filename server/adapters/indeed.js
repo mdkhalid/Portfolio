@@ -68,7 +68,9 @@ async function login({ email, password, cookies, cookieOrigin }) {
  * Public search works without login for the listing (details/apply may need it).
  */
 async function searchJobs({ query, location = '', pageCount = 1, maxJobs = 50 }) {
-  const q = normalize(query).split(/\s+/).slice(0, 4).join('+');
+  // Join with spaces, not '+': URLSearchParams encodes '+' as %2B, which makes
+  // Indeed search for a literal "word%2Bword" string and return no results.
+  const q = normalize(query).split(/\s+/).slice(0, 4).join(' ');
   const params = new URLSearchParams({ q });
   if (location) params.set('l', location);
   const url = `${BASE}/jobs?${params.toString()}`;

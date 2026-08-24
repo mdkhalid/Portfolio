@@ -241,8 +241,16 @@ const applyBtn = await page.$('.apply-button, button[class*="apply"], a[class*="
       await delay(500);
     }
 
-    // Confirm: prefer the visible submit button, fall back to text matching.
-    const confirmBtn = await page.$('button[class*="submit"], button[class*="apply"], [type="submit"]');
+    // Confirm: scope to the apply modal/dialog/form so we never re-click the
+    // main apply button or an unrelated submit (e.g. the search form).
+    const confirmBtn = await page.$([
+      '[role="dialog"] button[class*="submit"]',
+      '[role="dialog"] [type="submit"]',
+      '[class*="modal"] button[class*="submit"]',
+      '[class*="modal"] [type="submit"]',
+      'form[class*="apply"] [type="submit"]',
+      '[class*="apply-modal"] button',
+    ].join(', '));
     if (confirmBtn) {
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),

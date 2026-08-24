@@ -488,8 +488,21 @@ async function uploadResumeFile(page, resumeBuffer, filename = 'resume.pdf') {
     const safe = String(filename || 'resume.pdf').replace(/[^\w.\-]/g, '_').slice(-80) || 'resume.pdf';
     tempPath = path.join(os.tmpdir(), 'resume-' + Date.now() + '-' + safe);
     fs.writeFileSync(tempPath, resumeBuffer);
-    const fileInput = await page.$('input[type="file"]');
-    if (!fileInput) return false;
+    // Pick the RESUME file input, not just the first one on the page: prefer
+    // inputs whose accept attribute allows documents, and never touch inputs
+    // that look like avatar/photo uploads. Falls back to the first file input
+    // when nothing better is available.
+    const inputs = await page.$$('input[type="file"]');
+    if (!inputs.length) return false;
+    const idx = await page.evaluate(() => {
+      const els = Array.from(document.querySelectorAll('input[type="file"]'));
+      const isDoc = (a) => /\.pdf|pdf|doc|resume|cv/i.test(a || '');
+      const isImageOnly = (a) => /image|photo|avatar|picture/i.test(a || '');
+      let pick = els.findIndex((el) => isDoc(el.getAttribute('accept')) && !isImageOnly(el.getAttribute('accept')));
+      if (pick < 0) pick = els.findIndex((el) => !isImageOnly(el.getAttribute('accept')));
+      return pick < 0 ? 0 : pick;
+    }).catch(() => 0);
+    const fileInput = inputs[Math.min(idx, inputs.length - 1)];
     await fileInput.uploadFile(tempPath);
     await delay(1200);
     return true;

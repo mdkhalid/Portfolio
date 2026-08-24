@@ -1,4 +1,5 @@
 const Job = require('../models/Job');
+const mongoose = require('mongoose');
 const UserJobSite = require('../models/UserJobSite');
 const UserSettings = require('../models/UserSettings');
 const Profile = require('../models/Profile');
@@ -502,6 +503,15 @@ exports.update = asyncHandler(async (req, res) => {
 
   const updated = await Job.findByIdAndUpdate(id, { $set: updates }, { new: true }).lean();
 
+  // A manual "applied" while an automated application is queued/running would
+  // let the worker submit the same job again — cancel the in-flight run first.
+  if (req.body.status === 'applied') {
+    await Application.updateMany(
+      { userId: req.adminId, jobId: id, status: { $in: ['queued', 'running'] } },
+      { $set: { status: 'canceled' } }
+    );
+  }
+
   // Keep the Tracking tab unified: manual apply/pass also surfaces as an
   // Application record so it appears alongside system/imported applications.
   if (req.body.status === 'applied' || req.body.status === 'passed') {
@@ -621,7 +631,21 @@ exports.manualMarkApplied = asyncHandler(async (req, res) => {
   ).lean();
   if (!job) throw new AppError('Job not found', 404, 'NOT_FOUND');
 
-  const existingApp = await Application.findOne({ userId: req.adminId, jobId: id }).sort({ createdAt: -1 }).lean();
+  // Cancel any queued/running automated run FIRST — the worker re-checks
+  // cancellation between steps, so this stops a mid-flight run from also
+  // submitting (duplicate). Setting the active record straight to 'applied'
+  // would not stop the worker, which holds its own cached copy.
+  await Application.updateMany(
+    { userId: req.adminId, jobId: id, status: { $in: ['queued', 'running'] } },
+    { $set: { status: 'canceled' } }
+  );
+
+  // Track the manual apply in the latest Application record. Prefer updating
+  // a non-active record; otherwise create a new one (the unique index only
+  // covers queued/running/pending, all canceled above, so this cannot clash).
+  const existingApp = await Application.findOne(
+    { userId: req.adminId, jobId: id, status: { $nin: ['queued', 'running'] } }
+  ).sort({ createdAt: -1 }).lean();
   if (existingApp) {
     await Application.updateOne(
       { _id: existingApp._id },
@@ -677,6 +701,12 @@ const { checkAICost, recordAICost } = require('../services/aiCost');
 exports.apply = asyncHandler(async (req, res) => {
   const jobIds = Array.isArray(req.body?.jobIds) ? req.body.jobIds : null;
   if (!jobIds || !jobIds.length) throw new AppError('jobIds required', 400, 'MISSING_JOB_IDS');
+  // Reject malformed ids up front — an invalid ObjectId in the $in filter
+  // throws a Mongoose CastError and surfaces as a 500 instead of a 400.
+  const badIds = jobIds.filter((id) => !mongoose.isValidObjectId(id));
+  if (badIds.length) {
+    throw new AppError(`Invalid job id(s): ${badIds.slice(0, 5).join(', ')}`, 400, 'INVALID_JOB_ID');
+  }
 
   // Master pause/kill-switch
   const settings = await UserSettings.findOne({ userId: req.adminId }).lean();
@@ -695,12 +725,21 @@ exports.apply = asyncHandler(async (req, res) => {
   const queue = await getQueue();
   const enqueued = [];
   const manual = [];
+  let alreadyApplied = 0;
+  let alreadyActive = 0;
+
+  // Jobs beyond the batch cap are dropped — report them explicitly instead of
+  // folding them silently into the skipped count.
+  const overCap = Math.max(0, jobs.length - maxBatch);
 
   for (const job of jobs.slice(0, maxBatch)) {
     // Never re-apply an already-applied job — this is the primary duplicate-
     // apply guard. Applied jobs keep their record (Tracking tab) but are never
     // submitted again.
-    if (job.applied || job.status === 'applied') continue;
+    if (job.applied || job.status === 'applied') {
+      alreadyApplied += 1;
+      continue;
+    }
 
     // Jobs on custom sites (or otherwise flagged manual) have no automation:
     // flag them for manual apply instead of queueing a doomed auto-run.
@@ -715,6 +754,7 @@ exports.apply = asyncHandler(async (req, res) => {
 
     const existing = await Application.findOne({ userId: req.adminId, jobId: job._id }).lean();
     if (existing && ['queued', 'running', 'pending', 'applied'].includes(existing.status)) {
+      alreadyActive += 1;
       continue; // idempotency guard (active OR already-applied)
     }
 
@@ -780,14 +820,27 @@ exports.apply = asyncHandler(async (req, res) => {
 
   emitJobsChanged(req.adminId);
 
+  // Counts come from real jobs only — nonexistent ids are reported separately
+  // so "skipped" no longer inflates with ids that matched nothing.
+  const notFound = jobIds.length - jobs.length;
+  const skipped = alreadyApplied + alreadyActive;
+  const notes = [];
+  if (manual.length) notes.push(`${manual.length} job(s) need manual application — added to the Manual Apply list.`);
+  if (overCap) notes.push(`${overCap} job(s) were over the ${maxBatch}-per-batch cap and were not queued.`);
+  if (notFound) notes.push(`${notFound} job id(s) were not found.`);
+
   res.json({
     batchId,
     queued: enqueued.length,
-    skipped: jobIds.length - enqueued.length - manual.length,
+    skipped,
+    alreadyApplied,
+    alreadyActive,
+    overCap,
+    notFound,
     manual: manual.length,
     manualJobIds: manual,
-    note: manual.length
-      ? `${manual.length} job(s) need manual application — added to the Manual Apply list.`
+    note: notes.length
+      ? notes.join(' ')
       : enqueued.length
         ? 'Applications queued. Watch the Progress panel for live updates.'
         : 'All selected jobs were already queued/running/pending or need manual apply.',

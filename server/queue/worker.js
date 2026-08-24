@@ -58,18 +58,46 @@ function isManualApplyFailure(err) {
  */
 const BROWSER_DISCONNECT_RE = /connection closed|target closed|protocol error|execution context (was |is )?destroyed|browser has been closed|browser is not connected|navigator is not connected|websocket/i;
 
-async function withBrowserRetry(site, fn) {
+/**
+ * Retry a browser operation once after a browser-process death.
+ *
+ * `checkBeforeRetry` is REQUIRED for operations that may already have taken
+ * effect on the site (i.e. submit): if Chrome dies AFTER the submit click but
+ * before the adapter returns, blindly re-running would post a DUPLICATE
+ * application. The check inspects on-site state and decides:
+ *   'applied'    → the first attempt already went through; return a synthetic
+ *                  success instead of re-submitting.
+ *   'notApplied' → provably pre-click; safe to retry once.
+ *   'unknown'    → cannot tell; rethrow instead of risking a duplicate.
+ * Logins are idempotent, so they pass no check and retry freely.
+ */
+async function withBrowserRetry(site, fn, { checkBeforeRetry } = {}) {
   try {
     return await fn();
   } catch (err) {
     const msg = String(err?.message || '');
-    if (BROWSER_DISCONNECT_RE.test(msg)) {
-      console.warn(`[worker] browser disconnected during ${site} submit — retrying once with a fresh browser`);
-      try { require('../adapters/browser').closeBrowserForSite(site); } catch {}
-      await sleep(1200);
-      return await fn();
+    if (!BROWSER_DISCONNECT_RE.test(msg)) throw err;
+    if (checkBeforeRetry) {
+      let verdict = 'unknown';
+      try {
+        verdict = await checkBeforeRetry();
+      } catch {
+        verdict = 'unknown';
+      }
+      if (verdict === 'applied') {
+        console.warn(`[worker] browser died after ${site} submit click — on-site state confirms applied, not re-submitting`);
+        return { applied: true, recoveredAfterCrash: true };
+      }
+      if (verdict !== 'notApplied') {
+        throw new Error(
+          `${site} submit interrupted and on-site state is unknown — not retrying to avoid a duplicate application. Verify on the site, then retry manually if needed. (${msg})`
+        );
+      }
     }
-    throw err;
+    console.warn(`[worker] browser disconnected during ${site} operation — retrying once with a fresh browser`);
+    try { require('../adapters/browser').closeBrowserForSite(site); } catch {}
+    await sleep(1200);
+    return await fn();
   }
 }
 
@@ -476,6 +504,31 @@ if (jd && jd.length >= 30) {
         }
 
         if (typeof adapter.submitApplication === 'function') {
+          // If Chrome dies AFTER the submit click but before the adapter
+          // returns, a blind retry would post a duplicate application.
+          // Before any retry, re-open the job page (logged in) and read the
+          // apply state: only re-submit when the site proves it never went
+          // through; treat a confirmed apply as success; on unknown state,
+          // fail loudly instead of risking a duplicate.
+          const verifySubmitState = async () => {
+            const { withPage, readApplyState } = require('../adapters/browser');
+            return withPage(async (page) => {
+              if (cookieHeader) {
+                await adapter.login({ cookies: cookieHeader, cookieOrigin: SITE_META[site]?.homeUrl || job.url });
+              } else if (creds?.email && creds?.password) {
+                await adapter.login({ email: creds.email, password: creds.password });
+              }
+              await page.goto(job.url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+              await sleep(2500);
+              const state = await readApplyState(page);
+              if (!state) return 'unknown';
+              if (state.successText) return 'applied';
+              if (!state.btnPresent || !state.btnText) return 'unknown';
+              if (state.btnDisabled) return 'applied';
+              const applyLike = /apply|submit|register/.test(state.btnText) && !/applied|submitted|done/.test(state.btnText);
+              return applyLike ? 'notApplied' : 'unknown';
+            }, site);
+          };
           const result = await withBrowserRetry(site, () =>
             adapter.submitApplication({
             url: job.url,
@@ -486,7 +539,7 @@ if (jd && jd.length >= 30) {
             resumeFilename: resume?.pdfFilename || '',
             fields: app.fieldValues ? Object.fromEntries(app.fieldValues) : {},
             detected: app.detectedFields || [],
-          }));
+          }), { checkBeforeRetry: verifySubmitState });
           if (result?.error) throw new Error(result.error);
 
           // The adapter didn't throw, but it may report the application was

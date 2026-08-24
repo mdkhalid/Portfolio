@@ -265,9 +265,14 @@ if (jd && jd.length >= 30) {
 
       // Prefer a tailored resume already attached to the job (from
       // POST /api/resume/generate). Fall back to generating one here.
+      // Ignore soft-deleted attachments and attachments without a usable PDF
+      // buffer — otherwise submit would upload nothing.
       if (job.resumeId) {
-        const attached = await GeneratedResume.findById(job.resumeId).lean().catch(() => null);
-        if (attached) {
+        const attached = await GeneratedResume.findOne({ _id: job.resumeId, deletedAt: null })
+          .select('+pdf')
+          .lean()
+          .catch(() => null);
+        if (attached && attached.pdf && attached.pdf.length) {
           await Application.updateOne({ _id: app._id }, { $set: { resumeId: attached._id } });
           await markStep(application, key, { status: 'done', finishedAt: new Date() });
           break;
@@ -430,6 +435,16 @@ if (jd && jd.length >= 30) {
         // the explicit +pdf projection above returns `pdf` undefined, which made
         // adapters silently upload nothing and the provider fall back to the
         // candidate's already-attached profile resume.
+
+        // Fail fast when this site expects a resume upload but there is no
+        // usable PDF buffer (missing/deleted resume, or generation produced no
+        // pdf). Passing null makes adapters silently skip the upload. Sites
+        // whose flow is resumeFree apply without an upload, so they are exempt.
+        if (!flow?.resumeFree && !(resume?.pdf && resume.pdf.length)) {
+          throw new Error(
+            `No resume PDF available for ${site} — generate or attach a resume for this job, then retry.`
+          );
+        }
 
         // Applying on automated sites needs a logged-in session: a saved cookie
         // header, stored credentials, or a persistent browser profile created

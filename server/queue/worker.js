@@ -546,6 +546,21 @@ if (jd && jd.length >= 30) {
           }), { checkBeforeRetry: verifySubmitState });
           if (result?.error) throw new Error(result.error);
 
+          // One-time warning for resumeFree sites (e.g. Wellfound): they submit
+          // whatever resume is attached to the candidate's SITE profile. If the
+          // apply UI reported no profile resume, applications go out with only
+          // the pitch note — warn once (dedupeKey) so the user can fix it.
+          if (result?.profileResumeMissing) {
+            notify({
+              userId: app.userId,
+              type: 'system',
+              title: `No resume attached on ${site}`,
+              body: `Your ${site} profile has no resume attached — applications are being sent with only the pitch note. Upload a resume in your ${site} profile settings.`,
+              metadata: { site, jobId: job._id ? String(job._id) : '' },
+              dedupeKey: `${site}-no-profile-resume`,
+            }).catch(() => {});
+          }
+
           // The adapter didn't throw, but it may report the application was
           // NOT actually submitted (e.g. needsManualApply, external redirect,
           // or success indicator missing).  Honour that signal instead of

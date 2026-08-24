@@ -248,6 +248,18 @@ async function submitApplication({ url, credentials, cookie, cookieOrigin, resum
     }
     await delay(2000);
 
+    // Wellfound sends the resume attached to the candidate's PROFILE (there is
+    // no upload in the apply modal). If the apply modal offers to add/upload a
+    // resume, the profile has none — flag it so the worker warns the user
+    // once instead of silently sending applications with only the pitch note.
+    // Scoped to the modal so job-posting copy can't false-trigger the warning.
+    const profileResumeMissing = await page.evaluate(() => {
+      const modal = document.querySelector('[role="dialog"], [class*="modal" i], [data-test*="Application" i]');
+      if (!modal) return false;
+      const text = ((modal.innerText) || '').toLowerCase().slice(0, 4000);
+      return /\badd resume\b|upload (a |your )?resume|attach (a |your )?resume/.test(text);
+    }).catch(() => false);
+
     // If there is a note / pitch box, fill it with the pitch resolved in
     // prepare_application (built from the candidate's profile). No canned
     // text here — if nothing resolved, the optional note is simply skipped.
@@ -277,7 +289,12 @@ async function submitApplication({ url, credentials, cookie, cookieOrigin, resum
     await delay(3000);
 
     const state = await readApplyState(page);
-    return confirmApplied(state);
+    const outcome = confirmApplied(state);
+    // Surface the missing-profile-resume signal without altering the verdict.
+    if (profileResumeMissing && outcome && typeof outcome === 'object') {
+      outcome.profileResumeMissing = true;
+    }
+    return outcome;
   }, 'wellfound');
 }
 

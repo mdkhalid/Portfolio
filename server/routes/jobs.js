@@ -497,7 +497,9 @@ exports.update = asyncHandler(async (req, res) => {
     if (req.body.status === 'applied') {
       updates.applied = true;
       updates.appliedAt = new Date();
-      updates.appliedVia = 'manual';
+      // Distinct from manual_browser (finished in their own browser) and system
+      // (auto-apply): the user just marked the job applied from the list.
+      updates.appliedVia = 'manual_mark';
     }
   }
 
@@ -520,7 +522,7 @@ exports.update = asyncHandler(async (req, res) => {
       if (req.body.status === 'applied' && existing.status !== 'applied') {
         await Application.updateOne(
           { _id: existing._id },
-          { $set: { status: 'applied', appliedAt: new Date(), appliedVia: 'manual' } }
+          { $set: { status: 'applied', appliedAt: new Date(), appliedVia: 'manual_mark' } }
         );
       }
     } else {
@@ -530,7 +532,7 @@ exports.update = asyncHandler(async (req, res) => {
         site: job.site,
         status: req.body.status,
         appliedAt: req.body.status === 'applied' ? new Date() : null,
-        appliedVia: 'manual',
+        appliedVia: 'manual_mark',
         timeline: [{ event: req.body.status === 'applied' ? 'Marked as applied (manual)' : 'Marked as passed (manual)' }],
       });
     }
@@ -622,7 +624,9 @@ exports.manualMarkApplied = asyncHandler(async (req, res) => {
         status: 'applied',
         applied: true,
         appliedAt: new Date(),
-        appliedVia: 'manual',
+        // Distinct from manual_mark (marked from the list without applying):
+        // the user actually completed the application in their browser.
+        appliedVia: 'manual_browser',
         needsManualApply: false,
         manualApplyReason: '',
       },
@@ -649,7 +653,7 @@ exports.manualMarkApplied = asyncHandler(async (req, res) => {
   if (existingApp) {
     await Application.updateOne(
       { _id: existingApp._id },
-      { $set: { status: 'applied', appliedAt: new Date(), appliedVia: 'manual', needsManualApply: false } }
+      { $set: { status: 'applied', appliedAt: new Date(), appliedVia: 'manual_browser', needsManualApply: false } }
     );
   } else {
     await Application.create({
@@ -658,9 +662,9 @@ exports.manualMarkApplied = asyncHandler(async (req, res) => {
       site: job.site,
       status: 'applied',
       appliedAt: new Date(),
-      appliedVia: 'manual',
+      appliedVia: 'manual_browser',
       needsManualApply: false,
-      timeline: [{ event: 'Marked as applied (manual)' }],
+      timeline: [{ event: 'Applied manually in the browser' }],
     });
   }
 

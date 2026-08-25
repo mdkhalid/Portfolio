@@ -211,7 +211,7 @@ router.get('/generated/:id', asyncHandler(async (req, res) => {
   res.json(item);
 }));
 
-/** GET /api/resume/generated/:id/pdf — download the PDF */
+/** GET /api/resume/generated/:id/pdf — download the PDF (?inline=1 previews it in a browser tab). */
 router.get('/generated/:id/pdf', asyncHandler(async (req, res) => {
   const item = await GeneratedResume.findOne({ _id: req.params.id, userId: req.adminId, deletedAt: null })
     .select('+pdf');
@@ -224,7 +224,10 @@ router.get('/generated/:id/pdf', asyncHandler(async (req, res) => {
       ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       : 'application/pdf'
   );
-  res.setHeader('Content-Disposition', `attachment; filename="${item.pdfFilename || 'resume.pdf'}"`);
+  // Browsers render an inline PDF natively — used by the "View" preview button.
+  // DOCX can't be rendered, so it always downloads.
+  const inline = req.query.inline === '1' && !isDocx;
+  res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${item.pdfFilename || 'resume.pdf'}"`);
   res.send(item.pdf);
 }));
 

@@ -65,7 +65,9 @@ const applicationSchema = new mongoose.Schema(
     resumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'GeneratedResume', default: null },
     batchId: { type: String, default: '' },
     appliedAt: { type: Date, default: null },
-    appliedVia: { type: String, enum: ['system', 'imported', 'manual'], default: null },
+    // 'manual' is kept for legacy records: 'manual_mark' = marked applied from
+    // the job list, 'manual_browser' = user finished the apply in their browser.
+    appliedVia: { type: String, enum: ['system', 'imported', 'manual', 'manual_mark', 'manual_browser'], default: null },
     status: { type: String, enum: APP_STATUS, default: 'queued' },
     notAppliedReason: { type: String, enum: NOT_APPLIED_REASON, default: null },
     // Set when the site redirected to an external employer site / needs manual action.

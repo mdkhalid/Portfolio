@@ -82,7 +82,11 @@ export default function AdminDashboard() {
   const [matchingJobs, setMatchingJobs] = useState(false)
   const [bulkAction, setBulkAction] = useState(null) // 'apply' | 'pass'
   const [applying, setApplying] = useState(false)
-  const [lastBatchId, setLastBatchId] = useState(null)
+  // Persisted so a page refresh can restore the pipeline panel via
+  // GET /api/jobs/apply/batch/:id (progress used to vanish on reload).
+  const [lastBatchId, setLastBatchId] = useState(() => {
+    try { return localStorage.getItem('lastApplyBatchId') } catch { return null }
+  })
   const [applyProgress, setApplyProgress] = useState([])
   const applySocketRef = useRef(null)
   // Always-current refresh callbacks so the socket handler never closes over a
@@ -581,6 +585,42 @@ export default function AdminDashboard() {
     return () => { socket.disconnect() }
   }, [token, showToast, activeTab, refreshJobApps])
 
+  // Restore the Auto-Apply Pipeline panel after a page refresh: the live
+  // socket events are gone by then, so rebuild the rows from the batch REST
+  // endpoint. Runs once on mount; a missing/empty batch just clears the
+  // stored id.
+  useEffect(() => {
+    if (!token || !lastBatchId) return
+    let cancelled = false
+    const toProgress = (a) => ({
+      applicationId: String(a._id),
+      jobId: a.jobId && a.jobId._id ? String(a.jobId._id) : (a.jobId ? String(a.jobId) : ''),
+      batchId: a.batchId || lastBatchId,
+      status: a.status,
+      jobTitle: (a.jobId && a.jobId.title) || '',
+      currentStep: a.progress?.currentStep || '',
+      lastAction: a.lastAction || '',
+      steps: (a.progress?.steps || []).map(s => ({ key: s.key, label: s.label, status: s.status, error: s.error || '' })),
+    })
+    API.get(`/api/jobs/apply/batch/${lastBatchId}`)
+      .then(({ data }) => {
+        if (cancelled) return
+        if (data.applications?.length) {
+          setApplyProgress(data.applications.map(toProgress))
+        } else {
+          setLastBatchId(null)
+          try { localStorage.removeItem('lastApplyBatchId') } catch {}
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLastBatchId(null)
+          try { localStorage.removeItem('lastApplyBatchId') } catch {}
+        }
+      })
+    return () => { cancelled = true }
+  }, [token, lastBatchId])
+
   const handleFilterChange = (key, value) => {
     setJobAppsFilters(prev => ({ ...prev, [key]: value }))
     setJobApps(prev => ({ ...prev, page: 1 }))
@@ -711,6 +751,7 @@ export default function AdminDashboard() {
       setApplying(true)
       const { data } = await API.post('/api/jobs/apply', { jobIds: ids })
       setLastBatchId(data.batchId)
+      try { localStorage.setItem('lastApplyBatchId', data.batchId) } catch {}
       setApplyProgress([])
       setSelectedJobs(new Set())
       showToast(`${data.queued} jobs queued for automated apply`, 'success')
@@ -1010,6 +1051,19 @@ export default function AdminDashboard() {
     }
   }
 
+  // Open the resume PDF in a new browser tab for preview instead of forcing a
+  // download. The blob keeps the axios auth header out of the URL.
+  const previewGeneratedResume = async (id) => {
+    try {
+      const res = await API.get(`/api/resume/generated/${id}/pdf?inline=1`, { responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      window.open(url, '_blank', 'noopener')
+      setTimeout(() => URL.revokeObjectURL(url), 60 * 1000)
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Failed to open resume preview', 'error')
+    }
+  }
+
   const deleteGeneratedResume = async (id) => {
     try {
       await API.delete('/api/resume/generated/' + id)
@@ -1276,6 +1330,8 @@ export default function AdminDashboard() {
                       )}
                     </div>
                     <div className="flex gap-1 flex-shrink-0">
+                      <button onClick={() => previewGeneratedResume(item._id)} title="View in browser"
+                        className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-200 text-blue-600')}><Eye size={16} /></button>
                       <button onClick={() => downloadGeneratedResume(item._id, item.pdfFilename)}
                         className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-emerald-400' : 'hover:bg-gray-200 text-emerald-600')}><Download size={16} /></button>
                       <button onClick={() => deleteGeneratedResume(item._id)}
@@ -2334,7 +2390,7 @@ export default function AdminDashboard() {
               </h3>
               <div className="flex items-center gap-2">
                 {lastBatchId && (
-                  <button onClick={() => { setApplyProgress([]); setLastBatchId(null) }}
+                  <button onClick={() => { setApplyProgress([]); setLastBatchId(null); try { localStorage.removeItem('lastApplyBatchId') } catch {} }}
                     className={'text-xs px-2 py-1 rounded-lg cursor-pointer ' + (dark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
                     Clear
                   </button>
@@ -2469,10 +2525,17 @@ export default function AdminDashboard() {
                     </button>
                   </div>
                   {jobDetailPanel.resumeId && (
-                    <button onClick={() => downloadGeneratedResume(jobDetailPanel.resumeId)}
-                      className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-emerald-500 hover:bg-emerald-600 transition-all cursor-pointer">
-                      <Download size={16} /> View Attached Resume
-                    </button>
+                    <div className="flex gap-2">
+                      <button onClick={() => previewGeneratedResume(jobDetailPanel.resumeId)}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-emerald-500 hover:bg-emerald-600 transition-all cursor-pointer">
+                        <Eye size={16} /> View Attached Resume
+                      </button>
+                      <button onClick={() => downloadGeneratedResume(jobDetailPanel.resumeId, jobDetailPanel.resumeFilename)}
+                        title="Download"
+                        className={'flex items-center justify-center px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer border ' + (dark ? 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-100')}>
+                        <Download size={16} />
+                      </button>
+                    </div>
                   )}
                   {aiResult && (
                     <div className={'p-3 rounded-xl border text-sm whitespace-pre-wrap max-h-64 overflow-y-auto ' + (dark ? 'bg-gray-800 border-gray-700 text-gray-300' : 'bg-gray-50 border-gray-200 text-gray-700')}>
@@ -2542,9 +2605,11 @@ export default function AdminDashboard() {
           <select value={trackingFilters.via} onChange={e => handleTrackingFilterChange('via', e.target.value)}
             className={'px-3 py-2 rounded-xl border outline-none text-sm cursor-pointer ' + (dark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-700')}>
             <option value="">Any Source</option>
-            <option value="system">System</option>
+            <option value="system">System (Auto-Apply)</option>
             <option value="imported">Imported</option>
-            <option value="manual">Manual</option>
+            <option value="manual_mark">Manual · Marked</option>
+            <option value="manual_browser">Manual · In Browser</option>
+            <option value="manual">Manual (Legacy)</option>
           </select>
           <div className="flex-1" />
           <button onClick={refreshTracking} disabled={trackingLoading}

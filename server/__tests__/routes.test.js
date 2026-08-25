@@ -497,7 +497,8 @@ describe('Custom Job Sites + Manual Apply (Phase 6.5)', () => {
     const appDoc = await Application.findOne({ userId: adminId, jobId }).lean();
     expect(appDoc).toBeTruthy();
     expect(appDoc.status).toBe('applied');
-    expect(appDoc.appliedVia).toBe('manual');
+    // mark-applied = user finished the apply in their own browser
+    expect(appDoc.appliedVia).toBe('manual_browser');
 
     // Manual list no longer shows it
     const afterApplied = await agent.get('/api/jobs/manual');

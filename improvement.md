@@ -2,6 +2,42 @@
 
 Full-stack bug & inconsistency review. Confirmed findings, ordered by impact. Each item has a location, what's wrong, and a suggested fix.
 
+> ## ✅ STATUS: ALL 26 ISSUES FIXED (verified Aug 2026)
+>
+> Every numbered issue below has been implemented and re-verified against the current codebase:
+>
+> | # | Issue | Status |
+> |---|---|---|
+> | 1 | Activity log enum mismatch | ✅ FIXED — enum extended (`models/Activity.js`) |
+> | 2 | Published/Draft toggle no-op | ✅ FIXED — real toggle (`EditModal.jsx`) |
+> | 3 | New article saves as Draft but shows Published | ✅ FIXED — initialized `{ published: false }` |
+> | 4 | Editing article shows blank Content | ✅ FIXED — no `.select('-content')`; full item passed to editor |
+> | 5 | Chat visitor identity never persisted | ✅ FIXED — `visitorId` UUID persisted in `localStorage` |
+> | 6 | Profile drops avatarUrl/calendlyUrl/availabilityStatus | ✅ FIXED — fields added to schema |
+> | 7 | Project drops current/githubUrl/liveUrl/demoUrl/videoUrl | ✅ FIXED — fields added to schema |
+> | 8 | UserSettings fetched without userId filter | ✅ FIXED — scoped query |
+> | 9 | `ref: 'User'` on 8 models | ✅ FIXED — all refs now `'Admin'` |
+> | 10 | `/api/resumes` lacks asyncHandler | ✅ FIXED |
+> | 11 | Dead/duplicate code (profile controller, base.js) | ✅ FIXED — controller deleted; base.js used |
+> | 12 | Job subsystem undocumented | ✅ FIXED — README "Job automation" section |
+> | 13 | Login persistence + token invalidation | ✅ FIXED — `tokenVersion` + change-password endpoint + UI |
+> | 14 | Persist per-provider apply flow | ✅ FIXED — `ApplyFlow` model + seed + loader + admin endpoint |
+> | 15 | LLM auto-fills from previous applies | ✅ FIXED — few-shot context + `ai_fewshot` source tracking |
+> | 16 | Cancel race (canceled app can submit) | ✅ FIXED — runStep re-check + markStep guard + pre-submit gate |
+> | 17 | sanitizeForAI hard-truncates to 2000 chars | ✅ FIXED — configurable `maxLen`, long-form callers unbounded |
+> | 18 | retryApplication ignores needsManualApply | ✅ FIXED — rejects manual-apply jobs; resets stale state |
+> | 19 | JOB_FETCH_SCHEDULE parsed but unused | ✅ FIXED — node-cron honored with interval fallback |
+> | 20 | JD injected into AI unsanitized | ✅ FIXED — `sanitizeJdForAI()` at all call sites |
+> | 21 | Batch-complete needInput always 0 | ✅ FIXED — counts waitingFields |
+> | 22 | Duplicate getUploadedResumeText | ✅ FIXED — single shared helper |
+> | 23 | Dead `$or` clause in buildFewShotContext | ✅ FIXED |
+> | 24 | match uses `$in: [null, undefined]` | ✅ FIXED — explicit `matchScore: null` |
+> | 25 | Duplicated regex alternative | ✅ FIXED |
+> | 26 | Stale AiUsage.purpose comment | ✅ FIXED |
+>
+> The rest of this document is kept as historical reference. For the newer job-pipeline improvement
+> plan and its live status, see `newimprovement.md`.
+
 ---
 
 ## High — real functional breakage

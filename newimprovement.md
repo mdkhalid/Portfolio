@@ -855,6 +855,69 @@ Independent re-review of the whole job pipeline (routes, worker, adapters, queue
 
 ---
 
+## Third Review (Aug 2026) — FINAL STATUS (supersedes the Second Review rollup)
+
+Independent re-verification of every item the Second Review marked OPEN/PARTIAL, checked against
+the current source. **The pipeline work is done** — everything previously open is now fixed in code
+except three minor items listed at the end.
+
+### ✅ Verified FIXED since the Second Review
+
+| Item | Evidence |
+|---|---|
+| **9.1 Loop breaks after step failure** (submit can no longer run without a resume) | `worker.js:785` — `break` after failure handling; comment documents why |
+| **9.2 Failure annotated on the step that actually failed** | `worker.js:750` — `'progress.steps.key': key` (no longer hardcoded to `submit`) |
+| **9.3 No double-submit after post-click crash** | `worker.js:74-102` — `withBrowserRetry` requires `checkBeforeRetry` for submit; 'applied' → synthetic success, 'unknown' → rethrow, only 'notApplied' retries |
+| **9.4 Scheduler overlap guard** | `scheduler.js:62-72` — `_tickRunning` flag skips overlapping firings |
+| **9.5 Stale expiry covers actionable statuses** | `scheduler.js:50` — `EXPIRABLE = ['new', 'not_applied', 'passed']` (`pending` deliberately exempt) |
+| **1.6 Cookie capture guarded against wiping good sessions** | `sessionRefresh.js:66` — `captureCookiesFromContext` verifies `detectLoggedIn` before saving; `refreshSiteCookies:33` same guard |
+| **1.7 getBrowser launch race** | `browser.js:92-136` — launch promise reserved synchronously before any await; disconnected handler evicts dead browsers |
+| **1.1 / 1.4 login-all persists password sessions** | `job-sites.js:165` — passes `userId: req.adminId` to `connectSite`; `job-sites.js:175,192` — captures cookies after automated logins |
+| **10.1 Indeed `%2B` encoding** | `indeed.js:73` — keywords joined with `' '` (space); URLSearchParams encodes correctly |
+| **10.2 Naukri location filter ignored** | `naukri.js:107-109` — path form `/<query>-jobs-in-<location>` |
+| **10.3 Field detection ran logged-out in wrong browser** | `applyFields.js:450` — accepts `site`; all adapters pass it (`e.g. naukri.js:174`) so detection runs in the logged-in per-site browser |
+| **10.4 Loose blocklist matching** | `jobs.js:47-64` — min length 2 + word-boundary regex inside company name |
+| **10.5 Over-ANDed search keywords** | `jobs.js:30-45` — per-site queries: Indeed title-only, Naukri title+2 skills, others title+3 |
+| **10.6 Resume upload grabbed first file input** | `browser.js:492-502` — prefers document-accept inputs, never image-only |
+| **10.7 Broad Naukri confirm-click selector** | `naukri.js:244-253` — scoped to `[role="dialog"]` / `[class*="modal"]` containers |
+| **11.1 confirmApplied defaulted unknown → applied:true** | `browser.js:622-636` — read failure/unknown defaults to `applied:false, uncertain:true`; post-submit navigation counted as applied-but-unconfirmed |
+| **2.2 `.select('+pdf')` missing on reuse query** | `worker.js:299-300` |
+| **2.3 No null-PDF guard before adapter** | `worker.js:481` — aborts unless `resume.pdf.length` (resume-free flows exempted) |
+| **2.5 Soft-deleted resumes still submitted** | `worker.js:299` — `deletedAt: null` filter; falls through to fresh generation |
+| **3.1 Budget exhaustion aborted whole application** | `worker.js:310-315` — deterministic fallback (no `skipOnBudgetExceeded`), matching manual generation; `aiSkipped` kept as safety net + now emits `emitJobsChanged` (`worker.js:331`) |
+| **3.3 Match budget checked once per batch of 50** | `jobs.js:308` — per-job `checkAICost` inside the loop |
+| **4.5 Manual mark-applied ignored in-flight pipeline app** | `jobs.js:506-510, 634-647` — cancels queued/running applications first |
+| **4.6 Invalid jobIds → 500 / wrong counts / silent truncation** | `jobs.js:706` — ObjectId validation (400); `jobs.js:733,830,839` — explicit `overCap` reporting |
+| **7.1 ApplyFlow steps don't match worker STEPS** | `seed-apply-flows.js` — every display step carries a `workerStep` field mapped to the real worker keys (`fetch_jd`/`prepare_application`/`submit`) |
+| **7.4 Dead Bull retry config** | `worker.js:674-676` — `attempts: 1` with explanatory comment (handler never rethrows) |
+| **8.1 Failure path emits jobs:changed + terminal progress (server)** | `worker.js:762-770` — catch block mirrors the success path |
+| **8.2 / 8.3 Tracking tab updates reactively by applicationId** | `AdminDashboard.jsx:512-535` — patches tracking items AND the open detail panel from `apply:progress` |
+| **8.4 notify:inapp refreshes active list on failure/pause/budget** | `AdminDashboard.jsx:540-564` — refreshes whichever tab is open on `apply_failed`, `needs_input`, `pipeline_paused`, `ai_budget` |
+| **8.5 Throttle masked rapid transitions** | Resolved by design: fine-grained updates flow through unthrottled `apply:progress`; the 2s throttle remains only on coarse structural `jobs:changed` (`AdminDashboard.jsx:571-579`) |
+| **4.1 No resume indicator/actions on job cards** | `AdminDashboard.jsx:2455-2476` — Generate/Regenerate Resume + "View Attached Resume" buttons on the job detail panel |
+| **4.4 login-all guidance for credential-less sites** | Button disabled when no site has credentials (tooltip explains), per-site skipped/error rows in results (`AdminDashboard.jsx:1708-1713, 1770-1784`) |
+| **5.5 Nothing verified Wellfound profile resume** | `worker.js:557-564` — one-time notification when the site profile has no resume attached |
+
+### ⚠️ Remaining (minor)
+
+| Item | Status | Notes |
+|---|---|---|
+| **4.3 Batch progress not restored on page refresh** | OPEN | `lastBatchId` lives only in React state (`AdminDashboard.jsx:85`); no mount-time call to `GET /api/jobs/apply/batch/:batchId`, and the id isn't persisted to localStorage. Fix: persist batchId and restore the panel on load. |
+| **4.2 appliedVia granularity** | PARTIAL | `manual` vs `system` are distinguished (`jobs.js:500` vs `worker.js:623`). Sub-types `manual_mark` vs `manual_browser` are not implemented — low value, both are genuinely manual. |
+| **5.3 In-browser PDF preview** | PARTIAL | "View Attached Resume" exists but downloads via blob (`AdminDashboard.jsx:990-1007`) instead of opening a preview tab. Cosmetic. |
+
+### Environment notes (unchanged)
+
+- Jest default Mongo URI is still `mongodb://localhost:27017/portfolio_test` (`__tests__/routes.test.js:11`) — works when overridden with `127.0.0.1`.
+- Redis still unavailable locally → memory-queue mode (safe post-7.3).
+- foundit search remains bot-walled (Akamai) — external blocker, documented above.
+- Client lint: pre-existing unused-var/react-hooks warnings remain (build passes).
+
+**Bottom line**: every functional issue from Phases 1–11 that was marked OPEN in the Second Review
+has been implemented and verified in code. Only the three minor items above remain.
+
+---
+
 ## Test Results (Aug 2026) — What Is Verified Working
 
 ### ✅ PASS

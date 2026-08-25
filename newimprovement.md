@@ -900,21 +900,27 @@ except three minor items listed at the end.
 
 ### ⚠️ Remaining (minor)
 
+> **All three resolved later the same day (Aug 2026)** — see "Post-Third-Review fixes" below.
+> Nothing functional remains open.
+
 | Item | Status | Notes |
 |---|---|---|
-| **4.3 Batch progress not restored on page refresh** | OPEN | `lastBatchId` lives only in React state (`AdminDashboard.jsx:85`); no mount-time call to `GET /api/jobs/apply/batch/:batchId`, and the id isn't persisted to localStorage. Fix: persist batchId and restore the panel on load. |
-| **4.2 appliedVia granularity** | PARTIAL | `manual` vs `system` are distinguished (`jobs.js:500` vs `worker.js:623`). Sub-types `manual_mark` vs `manual_browser` are not implemented — low value, both are genuinely manual. |
-| **5.3 In-browser PDF preview** | PARTIAL | "View Attached Resume" exists but downloads via blob (`AdminDashboard.jsx:990-1007`) instead of opening a preview tab. Cosmetic. |
+| **4.3 Batch progress not restored on page refresh** | ✅ FIXED | `lastBatchId` persisted to `localStorage` (`AdminDashboard.jsx`); on mount `GET /api/jobs/apply/batch/:id` rebuilds the pipeline panel; Clear drops the stored id. |
+| **4.2 appliedVia granularity** | ✅ FIXED | Enum extended to `manual_mark` (marked from job list, `PUT /api/jobs/:id`) vs `manual_browser` (finished in own browser, `POST /api/jobs/:id/mark-applied`); legacy `manual` kept valid; Tracking source filter updated. |
+| **5.3 In-browser PDF preview** | ✅ FIXED | `/pdf?inline=1` serves Content-Disposition inline (DOCX still downloads); client "View Attached Resume" + an eye button in Generated Resumes open a blob preview tab. |
 
-### Environment notes (unchanged)
+### Post-Third-Review fixes (Aug 2026)
 
-- Jest default Mongo URI is still `mongodb://localhost:27017/portfolio_test` (`__tests__/routes.test.js:11`) — works when overridden with `127.0.0.1`.
-- Redis still unavailable locally → memory-queue mode (safe post-7.3).
-- foundit search remains bot-walled (Akamai) — external blocker, documented above.
-- Client lint: pre-existing unused-var/react-hooks warnings remain (build passes).
+| Fix | Evidence |
+|---|---|
+| 4.3 batch progress restore | `AdminDashboard.jsx` — localStorage-backed `lastBatchId`, mount-time batch fetch + `toProgress` mapping |
+| 4.2 appliedVia split | `models/Application.js` enum; `routes/jobs.js` update → `manual_mark`, manualMarkApplied → `manual_browser`; test updated |
+| 5.3 inline PDF preview | `routes/resume-ai.js` `?inline=1`; `AdminDashboard.jsx` `previewGeneratedResume()` wired to job detail + resume list |
 
-**Bottom line**: every functional issue from Phases 1–11 that was marked OPEN in the Second Review
-has been implemented and verified in code. Only the three minor items above remain.
+**Bottom line**: every issue from Phases 1–11 is now implemented and verified in code.
+Remaining known limitations are environmental only: Jest default Mongo URI uses `localhost`
+(override with `127.0.0.1`), Redis unavailable locally (memory mode), foundit bot-walled by
+Akamai, and pre-existing client lint warnings (build passes).
 
 ---
 

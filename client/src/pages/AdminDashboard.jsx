@@ -2270,6 +2270,32 @@ export default function AdminDashboard() {
           </button>
         </div>
 
+        {/* Location switch: pipeline vs applied archive */}
+        <div className={'inline-flex rounded-xl border p-1 ' + (dark ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-gray-50')}>
+          {[
+            { key: '', label: 'Pipeline', icon: Zap },
+            { key: 'applied', label: 'Applied', icon: CheckCircle2 },
+            { key: 'passed', label: 'Passed', icon: XCircle },
+          ].map(seg => {
+            const active = (jobAppsFilters.status === seg.key) || (seg.key === '' && !['applied', 'passed', 'all', 'new', 'pending', 'not_applied', 'expired'].includes(jobAppsFilters.status))
+            const Icon = seg.icon
+            return (
+              <button key={seg.label} onClick={() => handleFilterChange('status', seg.key)}
+                className={'flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-all cursor-pointer ' + (
+                  active
+                    ? (seg.key === 'applied'
+                      ? 'bg-emerald-500 text-white'
+                      : seg.key === 'passed'
+                        ? 'bg-gray-500 text-white'
+                        : 'bg-blue-600 text-white')
+                    : (dark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')
+                )}>
+                <Icon size={14} /> {seg.label}
+              </button>
+            )
+          })}
+        </div>
+
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[200px]">
@@ -2330,9 +2356,11 @@ export default function AdminDashboard() {
             {items.map(job => (
               <div key={job._id}
                 className={'p-4 rounded-xl border transition-all cursor-pointer ' + (
-                  selectedJobs.has(job._id)
-                    ? (dark ? 'bg-blue-500/10 border-blue-500/40' : 'bg-blue-50 border-blue-300')
-                    : (dark ? 'bg-gray-800 border-gray-700 hover:border-gray-600' : 'bg-white border-gray-200 hover:border-gray-300')
+                  job.status === 'applied'
+                    ? 'bg-emerald-500/5 border-emerald-500/40 hover:border-emerald-500/70'
+                    : selectedJobs.has(job._id)
+                      ? (dark ? 'bg-blue-500/10 border-blue-500/40' : 'bg-blue-50 border-blue-300')
+                      : (dark ? 'bg-gray-800 border-gray-700 hover:border-gray-600' : 'bg-white border-gray-200 hover:border-gray-300')
                 )}
                 onClick={() => openJobDetail(job)}>
                 <div className="flex items-start justify-between gap-2">
@@ -2354,7 +2382,11 @@ export default function AdminDashboard() {
                           : (dark ? 'bg-purple-500/10 text-purple-400' : 'bg-purple-50 text-purple-700')
                       )}>{job.site}</span>
                       <span className={'text-xs ' + (dark ? 'text-gray-500' : 'text-gray-400')}>{formatDate(job.postedDate)}</span>
-                      {job.status === 'applied' && <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 font-medium">Applied</span>}
+                      {job.status === 'applied' && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 font-medium">
+                          Applied{job.appliedAt ? ' · ' + formatDate(job.appliedAt) : ''}
+                        </span>
+                      )}
                       {job.status === 'passed' && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-500/10 text-gray-500 font-medium">Passed</span>}
                       {job.resumeId && <span className="text-xs px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-500 font-medium">Resume</span>}
                     </div>

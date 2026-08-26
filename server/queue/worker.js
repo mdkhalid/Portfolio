@@ -52,11 +52,14 @@ function isManualApplyFailure(err) {
 }
 
 /**
- * Errors that mean the headless browser process died (not a site/login problem).
+ * Errors that mean the headless browser process died OR never started cleanly
+ * (not a site/login problem): Chrome crash/disconnect, and transient Windows
+ * profile-lock launch failures (exit code 4294967295). Also Puppeteer
+ * TimeoutErrors — a slow or bot-challenged page load is usually transient.
  * When one of these surfaces from login/submit we close the cached browser for
  * the site and retry once — the next getBrowser() relaunches a live instance.
  */
-const BROWSER_DISCONNECT_RE = /connection closed|target closed|protocol error|execution context (was |is )?destroyed|browser has been closed|browser is not connected|navigator is not connected|websocket/i;
+const BROWSER_DISCONNECT_RE = /connection closed|target closed|protocol error|execution context (was |is )?destroyed|browser has been closed|browser is not connected|navigator is not connected|websocket|Failed to launch the browser|Process failed to spawn|Timed out after waiting|TimeoutError|Navigation timeout/i;
 
 /**
  * Retry a browser operation once after a browser-process death.
@@ -489,7 +492,15 @@ if (jd && jd.length >= 30) {
         // by the interactive "Login via Browser" flow (Wellfound et al.).
         const fs = require('fs');
         const { getProfileDir } = require('../adapters/browser');
-        const hasProfile = fs.existsSync(getProfileDir(site));
+        // getProfileDir() creates the directory on first touch, so bare
+        // existsSync() is always true once any browser launched — a logged-out
+        // profile would pass this gate and only fail at submit time. Require
+        // actual profile CONTENT before trusting it as a session source.
+        let hasProfile = false;
+        try {
+          const profDir = getProfileDir(site);
+          hasProfile = fs.existsSync(profDir) && fs.readdirSync(profDir).length > 0;
+        } catch { hasProfile = false; }
         if (!cookieHeader && !(creds?.email && creds?.password) && !hasProfile) {
           throw new Error(
             `Login required for ${site} — no saved credentials or session cookie. Add them in the Job Sites tab, then retry.`

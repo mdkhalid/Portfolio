@@ -17,7 +17,41 @@ const LAUNCH_ARGS = [
   '--no-default-browser-check',
   '--disable-blink-features=AutomationControlled',
   '--disable-features=IsolateOrigins,site-per-process',
+  // A profile left by a killed/crashed Chrome otherwise shows a "Restore
+  // pages?" bubble that steals focus from automation clicks.
+  '--hide-crash-restore-bubble',
 ];
+
+// Chrome exiting immediately with 4294967295 / "Failed to launch the browser
+// process" is almost always a stale profile lock (a chrome.exe that outlived
+// the previous server run) — not a permanent condition.
+const LAUNCH_FAILURE_RE = /Failed to launch the browser|Process failed to spawn|browser process.*exit|singleton/i;
+
+/**
+ * Launch Puppeteer with bounded retries for transient Windows profile-lock
+ * crashes: kill stray profile holders and back off between attempts.
+ */
+async function launchWithRetry(launchOptions, site) {
+  let lastErr = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      if (site) {
+        await killProfileProcesses(site);
+        await delay(1500 + attempt * 1500);
+      } else {
+        await delay(1000 + attempt * 1000);
+      }
+    }
+    try {
+      return await _puppeteer.launch(launchOptions);
+    } catch (err) {
+      lastErr = err;
+      if (!LAUNCH_FAILURE_RE.test(String(err?.message || err))) throw err;
+      console.warn(`[browser] launch attempt ${attempt + 1}/3 failed${site ? ` (${site})` : ''}: ${err?.message || err}`);
+    }
+  }
+  throw lastErr;
+}
 
 // Sites with aggressive bot protection (Cloudflare/DataDome). Their clearance
 // cookies are bound to the browser fingerprint that earned them, and headless
@@ -120,7 +154,7 @@ async function getBrowser(site) {
           launchOptions.args = [...LAUNCH_ARGS, '--window-position=-32000,-32000', '--window-size=1366,768'];
         }
       }
-      return _puppeteer.launch(launchOptions);
+      return launchWithRetry(launchOptions, site);
     })();
     _browserPromises.set(key, promise);
     if (key === 'default') _browserPromise = promise;
@@ -632,7 +666,12 @@ function confirmApplied(state) {
   const stillApply = state.btnPresent && !state.btnDisabled
     && /apply|submit|register/.test(state.btnText)
     && !/applied|submitted|done/.test(state.btnText);
-  if (stillApply) return { applied: false };
+  if (stillApply) {
+    // A still-active "Apply"-labelled button means the wizard never completed
+    // (unfilled required fields, iframe-hosted form, silent rejection). Give
+    // the worker a specific reason instead of a generic unconfirmed fallback.
+    return { applied: false, reason: 'The apply button was still active after submitting — the application likely did not go through (form may be incomplete or hosted in an embedded frame).' };
+  }
   return { applied: true };
 }
 

@@ -5,7 +5,7 @@ import { useTheme } from '../context/ThemeContext'
 import { useApiAuth } from '../lib/api'
 import { motion } from 'framer-motion'
 import { io } from 'socket.io-client'
-import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, BookOpen, Phone, PhoneCall, MessagesSquare, Send, MessageCircle, Users, Globe, RefreshCw, Loader2, Filter, Search, ChevronLeft, ChevronRight, CheckSquare, Square, Target, Zap, Briefcase as BriefcaseIcon, ExternalLink, EyeOff, ListTodo, History, RotateCcw, Bell, CheckCheck, PauseCircle, PlayCircle, UserCheck, XCircle, Banknote, Star, Upload, LogIn, KeyRound, Share2 } from 'lucide-react'
+import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, BookOpen, Phone, PhoneCall, MessagesSquare, Send, MessageCircle, Users, Globe, RefreshCw, Loader2, Filter, Search, ChevronLeft, ChevronRight, CheckSquare, Square, Target, Zap, Briefcase as BriefcaseIcon, ExternalLink, EyeOff, ListTodo, History, RotateCcw, Bell, CheckCheck, PauseCircle, PlayCircle, UserCheck, XCircle, Banknote, Star, Upload, LogIn, KeyRound, Share2, FileStack } from 'lucide-react'
 import EditModal from '../features/admin/components/EditModal'
 import ProfileForm from '../features/admin/components/ProfileForm'
 import SocialTab from '../features/social/SocialTab'
@@ -18,6 +18,7 @@ const tabs = [
   { key: 'certifications', label: 'Certifications', icon: Award },
   { key: 'projects', label: 'Projects', icon: FolderGit2 },
   { key: 'resumes', label: 'Resumes', icon: FileText },
+  { key: 'generated', label: 'Generated Resumes', icon: FileStack },
   { key: 'articles', label: 'Blog', icon: BookOpen },
   { key: 'messages', label: 'Messages', icon: Mail },
   { key: 'leads', label: 'Leads', icon: Phone },
@@ -270,7 +271,7 @@ export default function AdminDashboard() {
     if (activeTab === 'manual-apply') {
       refreshManualJobs()
     }
-    if (activeTab === 'resumes') {
+    if (activeTab === 'resumes' || activeTab === 'generated') {
       loadGeneratedResumes()
     }
   }, [activeTab, refreshActivities])
@@ -1108,7 +1109,7 @@ export default function AdminDashboard() {
           API.get('/api/profile'), API.get('/api/skills'),
           API.get('/api/experiences'), API.get('/api/education'),
           API.get('/api/certifications'), API.get('/api/projects'),
-          API.get('/api/resumes'), API.get('/api/admin/articles'),
+          API.get('/api/resume-files'), API.get('/api/admin/articles'),
         ])
         setData({ profile: profile.data || {}, skills: skills.data, experiences: experiences.data, education: education.data, certifications: certifications.data, projects: projects.data, resumes: resumes.data, articles: articles.data })
       } catch (err) { console.error(err) }
@@ -1294,56 +1295,6 @@ export default function AdminDashboard() {
     const others = items.filter(i => !i.isMaster)
     return (
       <div className="space-y-6">
-        {/* Generated (ATS) Resumes */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <FileText size={16} className="text-violet-500" />
-              <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Generated Resumes (ATS)</h3>
-            </div>
-            <button onClick={loadGeneratedResumes} disabled={generatedResumesLoading}
-              className={'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ' + (dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
-              <RefreshCw size={12} className={generatedResumesLoading ? 'animate-spin' : ''} /> Refresh
-            </button>
-          </div>
-          {generatedResumesLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 size={20} className="animate-spin text-violet-500" />
-            </div>
-          ) : generatedResumes.length === 0 ? (
-            <p className={'text-sm text-center py-8 ' + (dark ? 'text-gray-500' : 'text-gray-400')}>
-              No generated resumes yet. Use "Generate Resume" on a job (or the bulk button in Job Applications) to create ATS-tailored resumes.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {generatedResumes.map(item => (
-                <div key={item._id} className={'p-4 rounded-xl border ' + (dark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold">{item.pdfFilename || 'Generated Resume'}</p>
-                      <p className={'text-sm mt-0.5 ' + (dark ? 'text-gray-400' : 'text-gray-500')}>
-                        {item.createdAt ? 'Generated ' + new Date(item.createdAt).toLocaleDateString() : ''}
-                        {item.keywordsMatched?.length ? ' · ' + item.keywordsMatched.length + ' keywords matched' : ''}
-                      </p>
-                      {item.content && (
-                        <p className={'text-xs mt-2 whitespace-pre-wrap line-clamp-2 ' + (dark ? 'text-gray-500' : 'text-gray-400')}>{item.content}</p>
-                      )}
-                    </div>
-                    <div className="flex gap-1 flex-shrink-0">
-                      <button onClick={() => previewGeneratedResume(item._id)} title="View in browser"
-                        className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-200 text-blue-600')}><Eye size={16} /></button>
-                      <button onClick={() => downloadGeneratedResume(item._id, item.pdfFilename)}
-                        className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-emerald-400' : 'hover:bg-gray-200 text-emerald-600')}><Download size={16} /></button>
-                      <button onClick={() => deleteGeneratedResume(item._id)}
-                        className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}><Trash2 size={16} /></button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
         {/* Master Resume */}
         <div>
           <div className="flex items-center gap-2 mb-2">
@@ -1435,6 +1386,62 @@ export default function AdminDashboard() {
             </button>
           </div>
         </div>
+      </div>
+    )
+  }
+
+  const renderGeneratedResumes = () => {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileStack size={16} className="text-violet-500" />
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Generated Resumes (ATS)</h3>
+          </div>
+          <button onClick={loadGeneratedResumes} disabled={generatedResumesLoading}
+            className={'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ' + (dark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}>
+            <RefreshCw size={12} className={generatedResumesLoading ? 'animate-spin' : ''} /> Refresh
+          </button>
+        </div>
+        <p className={'text-xs ' + (dark ? 'text-gray-500' : 'text-gray-400')}>
+          Per-job ATS-tailored resumes created by the auto-apply pipeline or the "Generate Resume" button. The master resume lives in the Resumes tab.
+        </p>
+        {generatedResumesLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 size={20} className="animate-spin text-violet-500" />
+          </div>
+        ) : generatedResumes.length === 0 ? (
+          <p className={'text-sm text-center py-8 ' + (dark ? 'text-gray-500' : 'text-gray-400')}>
+            No generated resumes yet. Use "Generate Resume" on a job (or the bulk button in Job Applications) to create ATS-tailored resumes.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {generatedResumes.map(item => (
+              <div key={item._id} className={'p-4 rounded-xl border ' + (dark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold">{item.pdfFilename || 'Generated Resume'}</p>
+                    <p className={'text-sm mt-0.5 ' + (dark ? 'text-gray-400' : 'text-gray-500')}>
+                      {item.createdAt ? 'Generated ' + new Date(item.createdAt).toLocaleDateString() : ''}
+                      {item.keywordsMatched?.length ? ' · ' + item.keywordsMatched.length + ' keywords matched' : ''}
+                    </p>
+                    {item.content && (
+                      <p className={'text-xs mt-2 whitespace-pre-wrap line-clamp-2 ' + (dark ? 'text-gray-500' : 'text-gray-400')}>{item.content}</p>
+                    )}
+                  </div>
+                  <div className="flex gap-1 flex-shrink-0">
+                    <button onClick={() => previewGeneratedResume(item._id)} title="View in browser"
+                      className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-200 text-blue-600')}><Eye size={16} /></button>
+                    <button onClick={() => downloadGeneratedResume(item._id, item.pdfFilename)}
+                      className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-emerald-400' : 'hover:bg-gray-200 text-emerald-600')}><Download size={16} /></button>
+                    <button onClick={() => deleteGeneratedResume(item._id)}
+                      className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}><Trash2 size={16} /></button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     )
   }
@@ -3234,6 +3241,7 @@ export default function AdminDashboard() {
       case 'certifications': return renderList('certifications', 'name')
       case 'projects': return renderList('projects', 'name')
       case 'resumes': return renderResumes()
+      case 'generated': return renderGeneratedResumes()
       case 'articles': return renderArticles()
       case 'messages': return renderMessages()
       case 'leads': return renderLeads()

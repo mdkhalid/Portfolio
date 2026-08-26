@@ -1,9 +1,9 @@
 const router = require('express').Router();
+const Resume = require('../models/Resume');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const Resume = require('../models/Resume');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const { str } = require('../middleware/validate');
 const { cleanPlain } = require('../middleware/sanitize');
@@ -35,6 +35,17 @@ const upload = multer({
     cb(null, true);
   },
 });
+
+// Admin list: returns ALL resumes including the master. The public
+// GET /api/resumes hides masters, which left the dashboard's Master Resume
+// card permanently empty even after an upload.
+router.get(
+  '/',
+  asyncHandler(async (req, res) => {
+    const items = await Resume.find().sort('order');
+    res.json(items);
+  })
+);
 
 router.post(
   '/',

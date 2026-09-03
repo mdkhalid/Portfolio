@@ -15,6 +15,7 @@ const { decrypt } = require('../utils/credentials');
 const { getAdapter, SITE_META, isAutomatedSite } = require('../adapters');
 const { buildDedupeKey, parsePostedDate } = require('../services/jobDedupe');
 const { getUploadedResumeText } = require('../services/resumeGenerate');
+const { toCanonicalKey } = require('../services/applyFields');
 const { getAIClient } = require('../ai/client');
 const { sanitizeJdForAI } = require('../utils/security');
 const { emitJobsChanged } = require('../services/notifications');
@@ -1110,10 +1111,15 @@ exports.submitApplicationAnswers = asyncHandler(async (req, res) => {
   }, {});
   for (const [k, v] of Object.entries(sanitized)) {
     const meta = metaByKey[k] || {};
+    // Store the canonical semantic key too — without it, user-taught answers
+    // never enter the cross-site memory (which only reads rows with a
+    // canonicalKey) and the same question would be asked again on every
+    // other site instead of auto-filled.
+    const canonicalKey = toCanonicalKey(meta.label || '', k);
     await ApplyField.updateOne(
       { userId: req.adminId, site, key: k },
       {
-        $set: { label: meta.label || '', type: meta.type || 'text', selector: meta.selector || '', options: meta.options || [], value: v, source: 'user' },
+        $set: { label: meta.label || '', type: meta.type || 'text', selector: meta.selector || '', options: meta.options || [], value: v, source: 'user', canonicalKey },
         $inc: { timesUsed: 1 },
       },
       { upsert: true }

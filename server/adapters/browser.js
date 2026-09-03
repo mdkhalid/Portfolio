@@ -58,7 +58,9 @@ async function launchWithRetry(launchOptions, site) {
 // Chrome has a different fingerprint — so these sites run in a REAL (headed)
 // Chrome parked off-screen. Logged-in sessions earned in the interactive
 // login window then survive in the headless worker.
-const HEADED_SITES = new Set(['wellfound']);
+// foundit: headless Chrome gets HTTP 403 on every page (bot protection blocks
+// the headless fingerprint outright, even with valid session cookies).
+const HEADED_SITES = new Set(['wellfound', 'foundit']);
 
 /** Get or create a persistent user data directory for a specific job site. */
 function getProfileDir(site = 'default') {

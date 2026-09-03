@@ -142,8 +142,8 @@ router.post('/generate', asyncHandler(async (req, res) => {
       // applied, e.g. the apply failed or needs manual action), reuse it instead
       // of spending AI budget regenerating the same document.
       if (job.resumeId) {
-        const existing = await GeneratedResume.findById(job.resumeId).select('+pdf').lean().catch(() => null);
-        if (existing) {
+        const existing = await GeneratedResume.findOne({ _id: job.resumeId, deletedAt: null }).select('+pdf').lean().catch(() => null);
+        if (existing && existing.pdf && existing.pdf.length) {
           results.push({
             jobId: job._id,
             resumeId: existing._id,

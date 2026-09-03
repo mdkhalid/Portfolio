@@ -310,6 +310,23 @@ if (jd && jd.length >= 30) {
         }
       }
 
+      // Retry safety: the Application record is reused across retries and keeps
+      // its own resumeId. If the job-level pointer is missing or dangling
+      // (soft-deleted resume, lost PDF, recreated Job doc), reuse the
+      // application's own resume and re-link it — never spend AI budget on a
+      // duplicate for a job that already has one.
+      if (app.resumeId) {
+        const own = await GeneratedResume.findOne({ _id: app.resumeId, deletedAt: null })
+          .select('+pdf')
+          .lean()
+          .catch(() => null);
+        if (own && own.pdf && own.pdf.length) {
+          await Job.updateOne({ _id: job._id }, { $set: { resumeId: own._id } }).catch(() => {});
+          await markStep(application, key, { status: 'done', finishedAt: new Date() });
+          break;
+        }
+      }
+
       // Build a tailored, ATS-friendly PDF resume from profile data. When the
       // AI budget is exhausted, buildTailoredResume falls back to the
       // deterministic path (no AI spend) instead of skipping — auto-apply must

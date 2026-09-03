@@ -5,15 +5,61 @@ const BASE = 'https://www.indeed.com';
 
 const normalize = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 
+/** True when the page is an Indeed bot-check / rate-limit interstitial, not the site. */
+async function isIndeedChallengePage(page) {
+  try {
+    const text = await page.evaluate(() => (document.body && document.body.innerText || '').slice(0, 3000));
+    return /verify you are (a )?human|checking your browser|just a moment|attention required|too many requests|rate limit|unusual traffic|px-captcha|recaptcha|cf-challenge|enable javascript and cookies/i.test(text);
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Indeed auth check — shared between login() and the pre-submit check. Only a
- * genuine /account/login link (header/nav) or a login page counts as logged
- * out, so an apply modal that happens to mention login isn't misread.
+ * Indeed auth check — shared between login() and the pre-submit check.
+ * Absence of a login link alone is NOT proof of a session: the nav renders
+ * late (only ~2s after domcontentloaded) and Indeed's logged-out CTA markup
+ * changes often, so both directions produced false readings. Require a
+ * POSITIVE logged-in signal (account menu / notifications / profile link)
+ * and treat a login URL or visible sign-in CTA as logged out.
+ * A bot-check / rate-limit interstitial is neither — return false so callers
+ * can classify it as transient instead of mistaking it for a live session.
  */
 async function isIndeedAuthenticated(page) {
   const url = page.url();
-  const loggedOut = await page.$('nav a[href*="/account/login"], header a[href*="/account/login"], a[data-testid="login-link"]');
-  return !(url.includes('/login') || loggedOut);
+  if (url.includes('/login') || url.includes('/account/login')) return false;
+  if (await isIndeedChallengePage(page)) return false;
+  return page.evaluate(() => {
+    const isVisible = (el) => {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none';
+    };
+    // Positive logged-in signals: account/notifications menus only render for
+    // authenticated users. Cover current and recent header markups.
+    const loggedInSels = [
+      '[data-testid="account-menu"]',
+      '[data-testid="notifications-menu"]',
+      '[data-gnav-element-name="Account"]',
+      '[data-gnav-element-name="Notifications"]',
+      'a[href*="/account/settings"]',
+      'a[href*="/myjobs"]',
+      'button[aria-label*="account" i]',
+      'button[aria-label*="notification" i]',
+    ];
+    const hasSession = loggedInSels.some((sel) =>
+      Array.from(document.querySelectorAll(sel)).some(isVisible)
+    );
+    if (hasSession) return true;
+    // Logged-out signals: a visible sign-in CTA anywhere in header/nav/main.
+    const signIn = Array.from(document.querySelectorAll('a, button')).some((el) => {
+      if (!isVisible(el)) return false;
+      const href = el.getAttribute('href') || '';
+      const text = (el.textContent || '').trim().toLowerCase();
+      return href.includes('/account/login') || /^(sign in|log in)$/.test(text);
+    });
+    return !signIn;
+  }).catch(() => false);
 }
 
 /** Fill and submit the Indeed email/password login form on `page`. Throws on failure. */
@@ -44,11 +90,19 @@ async function indeedPasswordLogin(page, email, password) {
  */
 async function login({ email, password, cookies, cookieOrigin }) {
   if (cookies && cookieOrigin) {
-    const ok = await withPage(async (page) => {
-      const isLoggedIn = await loginWithCookies(page, cookies, cookieOrigin, isIndeedAuthenticated);
-      return isLoggedIn;
+    // Three-way verdict: the cookie check always runs against the same home
+    // URL, so a failure on one job while others succeed is a TRANSIENT
+    // bot-check / rate-limit interstitial — not a dead cookie — and must not
+    // be misreported as "session expired" (which marks the job login_failed).
+    const verdict = await withPage(async (page) => {
+      if (await loginWithCookies(page, cookies, cookieOrigin, isIndeedAuthenticated)) return 'ok';
+      if (await isIndeedChallengePage(page)) return 'challenge';
+      return 'logged_out';
     }, 'indeed');
-    if (ok) return { ok: true, via: 'cookies' };
+    if (verdict === 'ok') return { ok: true, via: 'cookies' };
+    if (verdict === 'challenge') {
+      throw new Error('Indeed is bot-checking automated traffic right now (transient) — retry this job later. Your saved Indeed connection is still valid.');
+    }
     // Cookie present but didn't authenticate → it's expired/invalid. Without
     // credentials there's no point falling through to a doomed password login
     // that would only surface a confusing Puppeteer selector-timeout error.
@@ -171,6 +225,11 @@ async function submitApplication({ url, credentials, cookie, cookieOrigin, resum
       passwordLogin: () => indeedPasswordLogin(page, credentials?.email || '', credentials?.password || ''),
     });
     if (!auth) {
+      // Same transient-vs-dead distinction as login(): a challenge page here
+      // means throttling, not an expired cookie.
+      if (await isIndeedChallengePage(page)) {
+        throw new Error('Indeed is bot-checking automated traffic right now (transient) — retry this job later. Your saved Indeed connection is still valid.');
+      }
       throw new Error('Login required — save credentials or paste a session cookie for Indeed, then retry.');
     }
     if (auth !== 'session') {

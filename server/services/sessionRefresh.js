@@ -34,11 +34,32 @@ async function refreshSiteCookies(userId, site) {
       const cookies = cookiesForSite(await page.cookies().catch(() => []), site);
       return cookies.length ? cookiesToHeader(cookies) : null;
     });
-    if (!fresh) return;
+    if (fresh) {
+      doc.cookies = encrypt({ value: fresh });
+      doc.cookieUpdatedAt = new Date();
+      await doc.save();
+      return;
+    }
 
-    doc.cookies = encrypt({ value: fresh });
-    doc.cookieUpdatedAt = new Date();
-    await doc.save();
+    // The stored session no longer authenticates. Previously this returned
+    // silently, so the user only found out when an application failed at
+    // submit time (e.g. "Indeed session cookie is invalid or expired").
+    // Surface it now: flag the site and notify once (deduped) so the user
+    // reconnects BEFORE the next auto-apply run.
+    if (doc.status === 'connected') {
+      doc.status = 'error';
+      await doc.save().catch(() => {});
+    }
+    const { notify } = require('./notifications');
+    await notify({
+      userId,
+      type: 'system',
+      title: `${site} session expired`,
+      body: `Your saved ${site} login no longer works — use the Login via Browser button in the Job Sites tab to reconnect before the next auto-apply run.`,
+      metadata: { site },
+      dedupeKey: `${site}-session-expired`,
+      maxAgeMs: 24 * 60 * 60 * 1000,
+    }).catch(() => {});
   } catch (err) {
     // Best-effort: a failed refresh must never break the apply flow.
     console.error('[sessionRefresh] cookie refresh failed for', site, ':', err?.message || err);

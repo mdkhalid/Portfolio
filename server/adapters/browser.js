@@ -339,7 +339,7 @@ startIdleReaper();
  * @param {{ site?: string }} [opts]
  * @returns {Promise<{ browser: import('puppeteer').Browser, page: import('puppeteer').Page, navError: string | null }>}
  */
-async function launchInteractiveBrowser(startUrl, { site } = {}) {
+async function launchInteractiveBrowser(startUrl, { site, fallbackUrl } = {}) {
   // Release this site's profile lock only (other sites keep their sessions).
   // The worker's off-screen headed browser (HEADED_SITES, e.g. Wellfound) holds
   // a lock on the shared profile dir; if it is still alive the interactive
@@ -348,12 +348,20 @@ async function launchInteractiveBrowser(startUrl, { site } = {}) {
   if (site) {
     await closeBrowserForSite(site);
     await killProfileProcesses(site);
-    // Wait until Chrome actually releases the SingletonLock on disk (closing is
+    // Wait until Chrome actually releases the profile lock on disk (closing is
     // async and the OS can lag a beat, especially on Windows) — launching too
     // early is exactly what produced a blank login window before.
-    const lockPath = path.join(getProfileDir(site), 'SingletonLock');
+    // Windows Chrome writes "lockfile" (not the Linux "SingletonLock"), so
+    // check both or the loop below exits instantly on Windows.
+    const profDir = getProfileDir(site);
+    const lockPaths = [
+      path.join(profDir, 'SingletonLock'),
+      path.join(profDir, 'lockfile'),
+      path.join(profDir, 'SingletonCookie'),
+      path.join(profDir, 'SingletonSocket'),
+    ];
     for (let i = 0; i < 30; i++) {
-      if (!fs.existsSync(lockPath)) break;
+      if (!lockPaths.some((p) => fs.existsSync(p))) break;
       await delay(400);
     }
   }
@@ -378,9 +386,11 @@ async function launchInteractiveBrowser(startUrl, { site } = {}) {
     _interactiveSites.add(key);
     browser.once('disconnected', () => _interactiveSites.delete(key));
   }
-  await page.setUserAgent(
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'
-  );
+  // Do NOT override the User-Agent with a hardcoded string here: a UA that
+  // doesn't match the real Chrome binary's version (and its JS fingerprint)
+  // is a classic bot-detection trigger — Indeed's PerimeterX shield on
+  // secure.indeed.com answers it with a BLANK page. A headed real Chrome
+  // sends its own genuine, internally-consistent UA.
   await page.evaluateOnNewDocument(() => {
     Object.defineProperty(navigator, 'webdriver', { get: () => false });
     delete navigator.__proto__.webdriver;
@@ -399,6 +409,44 @@ async function launchInteractiveBrowser(startUrl, { site } = {}) {
         await delay(2000);
       }
     }
+    // Bot-fronted login pages (Indeed/PerimeterX, foundit/Akamai, Cloudflare)
+    // often serve an empty interstitial or an "Access Denied" page first and
+    // finish the challenge via JS a few seconds later. Give the page time to
+    // settle, then escalate: reload → clear poisoned bot cookies → fall back
+    // to the site home page (where the user can click Login themselves).
+    await delay(2500);
+    try {
+      const blocked = () => page
+        .evaluate(() => (document.body && document.body.innerText || '').trim())
+        .then((t) => !t || /access denied|verify you are (a )?human|just a moment|unusual traffic|checking your browser|attention required|too many requests/i.test(t))
+        .catch(() => false);
+      if (await blocked()) {
+        await delay(4000);
+        if (await blocked()) {
+          await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+          await delay(3000);
+        }
+        if (await blocked()) {
+          // Akamai (foundit) persists a poisoned _abck cookie in the shared
+          // profile directory — every later request stays denied until it is
+          // cleared. Wipe ALL cookies and retry with a clean slate.
+          try {
+            const client = await page.createCDPSession();
+            await client.send('Network.clearBrowserCookies');
+            await client.detach().catch(() => {});
+          } catch { /* best-effort */ }
+          await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+          await delay(3000);
+        }
+        if (await blocked() && fallbackUrl) {
+          // Last resort: land on the site home page — the main page often
+          // clears the bot check even when the deep /login URL refuses. The
+          // user can click "Login" in the window themselves.
+          await page.goto(fallbackUrl, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+          await delay(3000);
+        }
+      }
+    } catch { /* page mid-navigation — leave it alone */ }
   }
   return { browser, page, navError };
 }
@@ -637,7 +685,10 @@ async function readApplyState(page, applySelector) {
         btnDisabled: btn ? btn.disabled === true || btn.getAttribute('aria-disabled') === 'true' : false,
       };
     }, sel);
-    return state;
+    // Carry the final URL along so callers can tell WHICH page was read —
+    // a state read that succeeded on a foreign (employer) page means
+    // nothing and must not be trusted as an on-site confirmation.
+    return { ...state, url: (() => { try { return page.url(); } catch { return ''; } })() };
   } catch (err) {
     // The page navigated while we were reading it (common after a successful
     // submit redirects to a confirmation page). Flag it so confirmApplied can

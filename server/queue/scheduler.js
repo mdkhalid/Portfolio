@@ -32,7 +32,10 @@ async function runScheduledFetch() {
   }
   for (const [userId, sites] of Object.entries(byUser)) {
     for (const site of sites) {
-      await fetchFromSite({ userId, site, pageCount: 1, maxJobs: 50 }).catch((err) =>
+      // 2 pages: Naukri/Indeed show ~20 jobs per page — 1 page capped every
+      // scheduled run at ~20 raw listings, most of which were already known
+      // (deduped), so very few NEW jobs ever appeared.
+      await fetchFromSite({ userId, site, pageCount: 2, maxJobs: 50 }).catch((err) =>
         console.error('[scheduler] fetch failed', userId, site, err.message)
       );
     }

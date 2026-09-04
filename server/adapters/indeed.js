@@ -1,7 +1,22 @@
 const { withPage, safeText, delay, loginWithCookies, uploadResumeFile, clickButtonByText, readApplyState, confirmApplied, safeClick, ensureLoggedIn } = require('./browser');
 const { detectApplyFormFields, fillFields } = require('../services/applyFields');
+const fs = require('fs');
+const path = require('path');
 
 const BASE = 'https://www.indeed.com';
+
+// Positive logged-in signals: account/notifications menus only render for
+// authenticated users. Cover current and recent header markups.
+const LOGGED_IN_SELS = [
+  '[data-testid="account-menu"]',
+  '[data-testid="notifications-menu"]',
+  '[data-gnav-element-name="Account"]',
+  '[data-gnav-element-name="Notifications"]',
+  'a[href*="/account/settings"]',
+  'a[href*="/myjobs"]',
+  'button[aria-label*="account" i]',
+  'button[aria-label*="notification" i]',
+];
 
 const normalize = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 
@@ -16,6 +31,51 @@ async function isIndeedChallengePage(page) {
 }
 
 /**
+ * Detailed Indeed auth probe — same logic as the boolean check below, but
+ * returns WHY it concluded what it did so a failed cookie check is
+ * diagnosable from logs instead of a bare "expired" message.
+ * Returns { ok, url, challenge, matchedSignal, signInFound, reason }.
+ */
+async function probeIndeedAuth(page) {
+  const url = page.url();
+  if (url.includes('/login') || url.includes('/account/login')) {
+    return { ok: false, url, challenge: false, matchedSignal: '', signInFound: true, reason: 'login-url' };
+  }
+  if (await isIndeedChallengePage(page)) {
+    return { ok: false, url, challenge: true, matchedSignal: '', signInFound: false, reason: 'challenge' };
+  }
+  const probe = await page.evaluate((sels) => {
+    const isVisible = (el) => {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none';
+    };
+    const matchedSignal = sels.find((sel) =>
+      Array.from(document.querySelectorAll(sel)).some(isVisible)
+    ) || '';
+    if (matchedSignal) return { matchedSignal, signInFound: false };
+    // Logged-out signals: a visible sign-in CTA anywhere in header/nav/main.
+    const signInFound = Array.from(document.querySelectorAll('a, button')).some((el) => {
+      if (!isVisible(el)) return false;
+      const href = el.getAttribute('href') || '';
+      const text = (el.textContent || '').trim().toLowerCase();
+      return href.includes('/account/login') || /^(sign in|log in)$/.test(text);
+    });
+    return { matchedSignal: '', signInFound };
+  }, LOGGED_IN_SELS).catch(() => null);
+  if (!probe) {
+    return { ok: false, url, challenge: false, matchedSignal: '', signInFound: false, reason: 'evaluate-failed' };
+  }
+  if (probe.matchedSignal) {
+    return { ok: true, url, challenge: false, matchedSignal: probe.matchedSignal, signInFound: false, reason: 'positive-signal' };
+  }
+  return {
+    ok: !probe.signInFound, url, challenge: false, matchedSignal: '',
+    signInFound: probe.signInFound, reason: probe.signInFound ? 'sign-in-cta' : 'no-signal',
+  };
+}
+
+/**
  * Indeed auth check — shared between login() and the pre-submit check.
  * Absence of a login link alone is NOT proof of a session: the nav renders
  * late (only ~2s after domcontentloaded) and Indeed's logged-out CTA markup
@@ -26,40 +86,20 @@ async function isIndeedChallengePage(page) {
  * can classify it as transient instead of mistaking it for a live session.
  */
 async function isIndeedAuthenticated(page) {
-  const url = page.url();
-  if (url.includes('/login') || url.includes('/account/login')) return false;
-  if (await isIndeedChallengePage(page)) return false;
-  return page.evaluate(() => {
-    const isVisible = (el) => {
-      const r = el.getBoundingClientRect();
-      const cs = getComputedStyle(el);
-      return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none';
-    };
-    // Positive logged-in signals: account/notifications menus only render for
-    // authenticated users. Cover current and recent header markups.
-    const loggedInSels = [
-      '[data-testid="account-menu"]',
-      '[data-testid="notifications-menu"]',
-      '[data-gnav-element-name="Account"]',
-      '[data-gnav-element-name="Notifications"]',
-      'a[href*="/account/settings"]',
-      'a[href*="/myjobs"]',
-      'button[aria-label*="account" i]',
-      'button[aria-label*="notification" i]',
-    ];
-    const hasSession = loggedInSels.some((sel) =>
-      Array.from(document.querySelectorAll(sel)).some(isVisible)
-    );
-    if (hasSession) return true;
-    // Logged-out signals: a visible sign-in CTA anywhere in header/nav/main.
-    const signIn = Array.from(document.querySelectorAll('a, button')).some((el) => {
-      if (!isVisible(el)) return false;
-      const href = el.getAttribute('href') || '';
-      const text = (el.textContent || '').trim().toLowerCase();
-      return href.includes('/account/login') || /^(sign in|log in)$/.test(text);
-    });
-    return !signIn;
-  }).catch(() => false);
+  return (await probeIndeedAuth(page)).ok;
+}
+
+/** Best-effort screenshot of a failed login check for post-mortem diagnosis. */
+async function captureDebugShot(page, tag = 'indeed') {
+  try {
+    const dir = path.join(__dirname, '..', 'data', 'login-debug');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `${tag}-${Date.now()}.png`);
+    await page.screenshot({ path: file, fullPage: false });
+    return file;
+  } catch {
+    return '';
+  }
 }
 
 /** Fill and submit the Indeed email/password login form on `page`. Throws on failure. */
@@ -95,12 +135,18 @@ async function login({ email, password, cookies, cookieOrigin }) {
     // bot-check / rate-limit interstitial — not a dead cookie — and must not
     // be misreported as "session expired" (which marks the job login_failed).
     const verdict = await withPage(async (page) => {
-      if (await loginWithCookies(page, cookies, cookieOrigin, isIndeedAuthenticated)) return 'ok';
-      if (await isIndeedChallengePage(page)) return 'challenge';
-      return 'logged_out';
+      if (await loginWithCookies(page, cookies, cookieOrigin, isIndeedAuthenticated)) return { status: 'ok' };
+      const probe = await probeIndeedAuth(page);
+      if (probe.challenge) return { status: 'challenge' };
+      // Log the full diagnosis + keep a screenshot: "cookie expired" on one
+      // job while others succeed means the page state — not the cookie — is
+      // at fault, and the reason field says which.
+      const shot = await captureDebugShot(page, 'indeed-login');
+      console.error('[indeed] cookie check failed:', JSON.stringify({ ...probe, shot }));
+      return { status: 'logged_out' };
     }, 'indeed');
-    if (verdict === 'ok') return { ok: true, via: 'cookies' };
-    if (verdict === 'challenge') {
+    if (verdict.status === 'ok') return { ok: true, via: 'cookies' };
+    if (verdict.status === 'challenge') {
       throw new Error('Indeed is bot-checking automated traffic right now (transient) — retry this job later. Your saved Indeed connection is still valid.');
     }
     // Cookie present but didn't authenticate → it's expired/invalid. Without
@@ -248,6 +294,12 @@ async function submitApplication({ url, credentials, cookie, cookieOrigin, resum
       }
       const state = await readApplyState(page, 'button[data-testid="applyButton"], #indeedApplyButton, button[class*="apply"]');
       if (state?.successText) return { ok: true, applied: true, via: 'submitApplication' };
+      // A missing apply button is often a bot-check interstitial (nothing on
+      // the page renders). Throw the TRANSIENT message so the retry path can
+      // pick it up later instead of wrongly routing it to Manual Apply.
+      if (await isIndeedChallengePage(page)) {
+        throw new Error('Indeed is bot-checking automated traffic right now (transient) — retry this job later. Your saved Indeed connection is still valid.');
+      }
       throw new Error('No apply button found on this Indeed job (may redirect to employer site or require interaction).');
     }
 
@@ -261,6 +313,22 @@ async function submitApplication({ url, credentials, cookie, cookieOrigin, resum
     const urlNow = page.url();
     if (!urlNow.includes('indeed.com')) {
       throw new Error('Indeed redirected to an employer site — complete the application manually.');
+    }
+    // Employer sites frequently open the apply page in a NEW TAB/WINDOW — the
+    // original page URL stays on indeed.com, so also scan the browser for any
+    // non-Indeed page opened by this click.
+    try {
+      const pages = page.browser().pages ? page.browser().pages() : [];
+      for (const p of pages) {
+        if (p === page || p.isClosed?.()) continue;
+        const u = p.url();
+        if (/^https?:\/\//i.test(u) && !u.includes('indeed.com')) {
+          throw new Error('Indeed redirected to an employer site (opened in a new tab) — complete the application manually.');
+        }
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('employer site')) throw err;
+      // best-effort only — page enumeration issues must not break the flow
     }
 
     // Walk the Indeed apply wizard: fill fields, upload resume, click Continue/Next/Submit.

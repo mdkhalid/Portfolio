@@ -580,6 +580,15 @@ if (jd && jd.length >= 30) {
           }), { checkBeforeRetry: verifySubmitState });
           if (result?.error) throw new Error(result.error);
 
+          // SAFETY NET against false "Applied": an adapter success that could
+          // NOT be confirmed on-site (post-click navigation read failed —
+          // e.g. the site silently handed off to an external employer page)
+          // must never be recorded as Applied. A false "Applied" can't be
+          // undone; a false "not applied" just gets verified and retried.
+          if (result?.applied && result?.uncertain) {
+            throw new Error(result.reason || 'Application was not confirmed on the site (page navigated during submit) — verify on the site, then apply manually if needed.');
+          }
+
           // One-time warning for resumeFree sites (e.g. Wellfound): they submit
           // whatever resume is attached to the candidate's SITE profile. If the
           // apply UI reported no profile resume, applications go out with only
@@ -680,6 +689,64 @@ if (jd && jd.length >= 30) {
   }
 }
 
+/**
+ * Re-queue applications that failed with `login_failed` for `site`.
+ *
+ * A login failure used to be terminal: the user reconnected the site in the
+ * Job Sites tab, but every application that had already failed stayed
+ * not_applied and had to be retried by hand. Called (fire-and-forget) after a
+ * successful site connect / login-all / browser-login, this puts those
+ * applications back into the apply queue for user action.
+ * Returns the number of applications re-queued.
+ */
+async function requeueLoginFailedApps(userId, site) {
+  try {
+    const jobs = await Job.find({ userId, site }).select('_id').lean();
+    if (!jobs.length) return 0;
+    const apps = await Application.find({
+      userId,
+      jobId: { $in: jobs.map((j) => j._id) },
+      status: 'not_applied',
+      notAppliedReason: 'login_failed',
+      needsManualApply: { $ne: true },
+    })
+      .select('_id batchId')
+      .limit(50)
+      .lean();
+    if (!apps.length) return 0;
+    const queue = await getQueue();
+    for (const appRec of apps) {
+      // Guarded update: only flip it while it is still login_failed, so a
+      // concurrent run can't double-process the same application.
+      const res = await Application.updateOne(
+        { _id: appRec._id, status: 'not_applied', notAppliedReason: 'login_failed' },
+        { $set: { status: 'queued', lastAction: 'Re-queued after site reconnection' } }
+      );
+      if (!res.modifiedCount) continue;
+      await queue.add(
+        'apply',
+        { applicationId: appRec._id, batchId: appRec.batchId || '' },
+        {
+          // Unique per re-queue: a previous FAILED job (removeOnFail: false)
+          // with the bare applicationId would make Bull silently ignore the add.
+          jobId: `requeue-${appRec._id}-${Date.now()}`,
+          attempts: 1,
+          removeOnComplete: true,
+          removeOnFail: false,
+        }
+      );
+      emitJobsChanged(userId);
+    }
+    if (apps.length) {
+      console.log(`[worker] re-queued ${apps.length} login_failed application(s) for site ${site}`);
+    }
+    return apps.length;
+  } catch (err) {
+    console.error('[worker] requeue login_failed apps failed:', err?.message || err);
+    return 0;
+  }
+}
+
 async function rescueStuckApplications() {
   try {
     // Applications left 'queued'/'running' by a previous process (crash/restart,
@@ -765,7 +832,13 @@ async function startWorker() {
             { _id: applicationId },
             { $set: {
                 status: 'not_applied',
-                notAppliedReason: mapNotAppliedReason(err),
+                // A manual-apply failure (external employer redirect / no
+                // automation) is NOT a site error — the pipeline intentionally
+                // handed the job to the user. Label it manual_skip so the
+                // dashboard and filters treat it as "queued for user action",
+                // matching the flow.manualApply and result.needsManualApply
+                // paths above.
+                notAppliedReason: manualApply ? 'manual_skip' : mapNotAppliedReason(err),
                 lastAction: rawReason,
                 needsManualApply: manualApply,
                 manualApplyReason: manualApply ? rawReason : '',
@@ -773,10 +846,11 @@ async function startWorker() {
           );
           // Persist the raw failure detail on the step that actually failed +
           // timeline so the user sees exactly why, while the enum reason stays
-          // filterable.
+          // filterable. A routed-to-manual apply is recorded as a completed
+          // handoff (done), not a failed step.
           await Application.updateOne(
             { _id: applicationId, 'progress.steps.key': key },
-            { $set: { 'progress.steps.$.error': rawReason, 'progress.steps.$.status': 'failed' } }
+            { $set: { 'progress.steps.$.error': rawReason, 'progress.steps.$.status': manualApply ? 'done' : 'failed' } }
           ).catch(() => {});
           // Route the job into the Manual Apply list so the user can finish in
           // the browser (external employer redirect / no automation for site).
@@ -789,21 +863,35 @@ async function startWorker() {
           const jobDoc = a.jobId ? await Job.findById(a.jobId).select('title company site').lean().catch(() => null) : null;
           // Mirror the success path: push a change signal AND a terminal
           // progress payload so the dashboard lists and the pipeline panel
-          // update without a manual refresh (the catch block previously
+          // update without a manual reload (the catch block previously
           // emitted neither, leaving failures invisible until reload).
           emitJobsChanged(a.userId);
           const failedApp = await Application.findById(applicationId).lean().catch(() => null);
           if (failedApp) {
             emitProgress({ ...failedApp, jobTitle: jobDoc?.title || '' });
           }
-          notify({
-            userId: a.userId,
-            type: 'apply_failed',
-            title: `Apply failed — ${jobDoc?.title || 'job'}`,
-            body: String(err?.message || 'site_error').slice(0, 200),
-            metadata: { applicationId: String(a._id), jobId: a.jobId ? String(a.jobId) : '', jobTitle: jobDoc?.title || '', company: jobDoc?.company },
-            dedupeKey: `apply-failed-${applicationId}`,
-          }).catch(() => {});
+          if (manualApply) {
+            // The job was intentionally handed to the user (external employer
+            // site / no automation) — notify as a manual-action handoff, not
+            // as an "Apply failed" error.
+            notify({
+              userId: a.userId,
+              type: 'system',
+              title: `Manual apply needed — ${jobDoc?.title || 'job'}`,
+              body: rawReason.slice(0, 200),
+              metadata: { applicationId: String(a._id), jobId: a.jobId ? String(a.jobId) : '', jobTitle: jobDoc?.title || '', company: jobDoc?.company },
+              dedupeKey: `manual-apply-${applicationId}`,
+            }).catch(() => {});
+          } else {
+            notify({
+              userId: a.userId,
+              type: 'apply_failed',
+              title: `Apply failed — ${jobDoc?.title || 'job'}`,
+              body: rawReason.slice(0, 200),
+              metadata: { applicationId: String(a._id), jobId: a.jobId ? String(a.jobId) : '', jobTitle: jobDoc?.title || '', company: jobDoc?.company },
+              dedupeKey: `apply-failed-${applicationId}`,
+            }).catch(() => {});
+          }
         }
         // Failure already handled above — the application is now not_applied
         // (or routed to manual apply). Stop the chain: without this break the
@@ -842,4 +930,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { startWorker, setIO, maybeNotifyBatchComplete };
+module.exports = { startWorker, setIO, maybeNotifyBatchComplete, requeueLoginFailedApps };

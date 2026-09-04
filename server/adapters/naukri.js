@@ -33,6 +33,32 @@ async function isNaukriAuthenticated(page) {
   return !(/\/login|\/nlogin|\/nLogin/i.test(url) || loggedOut);
 }
 
+/**
+ * Throw the manual-apply handoff error when the apply flow left naukri.com —
+ * either by navigating the SAME tab to an employer careers page or by opening
+ * the employer site in a NEW tab. Without this, the post-click state read
+ * fails on the foreign page, confirmApplied() mistakes the navigation for a
+ * confirmation redirect, and the job is falsely marked "Applied".
+ */
+async function assertStillOnNaukri(page) {
+  if (!/naukri\.com/i.test(page.url() || '')) {
+    throw new Error('Naukri redirected to an employer site — complete the application manually.');
+  }
+  try {
+    const pages = page.browser().pages ? page.browser().pages() : [];
+    for (const p of pages) {
+      if (p === page || (typeof p.isClosed === 'function' && p.isClosed())) continue;
+      const u = p.url();
+      if (/^https?:\/\//i.test(u) && !/naukri\.com/i.test(u)) {
+        throw new Error('Naukri redirected to an employer site (opened in a new tab) — complete the application manually.');
+      }
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('employer site')) throw err;
+    // best-effort only — page enumeration issues must not break the flow
+  }
+}
+
 /** Fill and submit the Naukri email/password login form on `page`. Throws on failure. */
 async function naukriPasswordLogin(page, email, password) {
   await page.goto(`${BASE}/nlogin/login`, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -215,6 +241,9 @@ const applyBtn = await page.$('.apply-button, button[class*="apply"], a[class*="
       const clicked = await clickButtonByText(page, ['apply']);
       if (clicked) {
         await delay(3000);
+        // The click may have handed off to the employer's site — detect it
+        // BEFORE reading state, or the failed read gets misread as success.
+        await assertStillOnNaukri(page);
         const state = await readApplyState(page, '.apply-button, button[class*="apply"], a[class*="apply"]');
         return { ok: true, ...confirmApplied(state), via: 'submitApplication' };
       }
@@ -228,6 +257,11 @@ const applyBtn = await page.$('.apply-button, button[class*="apply"], a[class*="
         safeClick(page, applyBtn, 'apply'),
       ]);
     await delay(3000);
+
+    // The apply click frequently navigates to the employer's own careers page
+    // (Naukri hands off external applications). Detect it here, before the
+    // resume upload / field fill run against the WRONG page.
+    await assertStillOnNaukri(page);
 
     // Upload the tailored resume if the apply flow offers a file input.
     if (resume) {
@@ -263,7 +297,10 @@ const applyBtn = await page.$('.apply-button, button[class*="apply"], a[class*="
     }
 
     // Naukri keeps the apply button in the DOM but swaps its label to "Applied"
-    // — check the button text/state, not just its presence.
+    // — check the button text/state, not just its presence. But FIRST make sure
+    // the confirm click didn't dump us on the employer's site: the read below
+    // would fail there and confirmApplied() would misreport it as applied.
+    await assertStillOnNaukri(page);
     const state = await readApplyState(page, '.apply-button, button[class*="apply"], a[class*="apply"]');
     return { ok: true, ...confirmApplied(state), via: 'submitApplication' };
   }, 'naukri');

@@ -24,9 +24,10 @@ const MAX_FETCH_JOBS = 100;
 
 /**
  * Build the search query for a site from the profile title + top skills.
- * Sites AND together every word they receive, so mashing title + 4 skills
- * into one query yields noisy/empty results: Indeed gets the title only,
- * Naukri title + top 2 skills, others title + top 3.
+ * Sites AND together every word they receive, so mashing title + skills into
+ * one query yields noisy/empty results: Indeed and Naukri get the title only
+ * (Naukri's URL slug ANDs every word — title + 2 skills cut result counts
+ * dramatically), the rest get title + top 3.
  */
 async function getSearchKeywords(site = '') {
   const [profile, skills] = await Promise.all([
@@ -39,7 +40,7 @@ async function getSearchKeywords(site = '') {
     .map((s) => (typeof s === 'string' ? s : s?.name || ''))
     .filter(Boolean);
   const key = String(site || '').toLowerCase();
-  const skillCount = key === 'indeed' ? 0 : key === 'naukri' ? 2 : 3;
+  const skillCount = key === 'indeed' || key === 'naukri' ? 0 : 3;
   const parts = title ? [title] : [];
   parts.push(...stack.slice(0, skillCount));
   return parts.join(' ').trim();

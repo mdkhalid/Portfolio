@@ -8,4 +8,5 @@ dist/
 server/uploads/*
 server/__tmp-*
 server/data/browser_profiles/*
+server/data/
 suggestion.md

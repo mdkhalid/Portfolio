@@ -193,6 +193,9 @@ router.post('/login-all', asyncHandler(async (req, res) => {
         } catch {}
       }
       await UserJobSite.updateOne({ userId: req.adminId, name: t.name }, { $set: updates });
+      // Site just reconnected — re-queue applications that failed with
+      // login_failed so the user doesn't have to retry each one by hand.
+      require('../queue/worker').requeueLoginFailedApps(req.adminId, t.name).catch(() => {});
       return { name: t.name, label: t.label, ok: true, status: 'connected', via: r.via };
     } catch (err) {
       await UserJobSite.updateOne({ userId: req.adminId, name: t.name }, { $set: { status: 'error' } });
@@ -303,6 +306,8 @@ router.post('/:name/test', asyncHandler(async (req, res) => {
       });
       doc.status = 'connected';
       await doc.save();
+      // Re-queue applications that failed with login_failed (see login-all).
+      require('../queue/worker').requeueLoginFailedApps(req.adminId, name).catch(() => {});
       return res.json({ ok: true, status: 'connected', message: 'Connected successfully', via: cookieHeader ? 'cookies' : 'password' });
     } catch (err) {
       // Unrecoverable failures (network/DNS/TLS/config) fail fast — a visible
@@ -334,6 +339,8 @@ router.post('/:name/test', asyncHandler(async (req, res) => {
   doc.enabled = true;
   doc.status = 'connected';
   await doc.save();
+  // Re-queue applications that failed with login_failed (see login-all).
+  require('../queue/worker').requeueLoginFailedApps(req.adminId, name).catch(() => {});
   res.json({ ok: true, status: 'connected', message: `Logged in — ${result.cookieCount} session cookies captured. Site enabled.`, via: 'browser' });
 }));
 
@@ -372,6 +379,8 @@ router.post('/:name/browser-login', asyncHandler(async (req, res) => {
       status: 'connected',
     });
   }
+  // Re-queue applications that failed with login_failed (see login-all).
+  require('../queue/worker').requeueLoginFailedApps(req.adminId, name).catch(() => {});
   res.json({ ...toSafeSite(doc), message: `Logged in — ${result.cookieCount} session cookies captured. Site enabled.` });
 }));
 

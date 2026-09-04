@@ -137,7 +137,12 @@ async function interactiveLogin(site, { timeoutMs, startUrl } = {}) {
   let browser = null;
   try {
     if (!openUrl) return { ok: false, reason: 'No site URL configured for ' + site };
-    const session = await launchInteractiveBrowser(openUrl, { site });
+    const session = await launchInteractiveBrowser(openUrl, {
+      site,
+      // If the bot wall refuses the deep /login URL, land on the site home
+      // page instead — the user can click Login there themselves.
+      fallbackUrl: meta.homeUrl && meta.homeUrl !== openUrl ? meta.homeUrl : undefined,
+    });
     browser = session.browser;
     const page = session.page;
 

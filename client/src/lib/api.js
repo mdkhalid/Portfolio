@@ -1,8 +1,13 @@
 import axios from 'axios'
+import { useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 
+// VITE_API_URL set for split FE/BE deploys (e.g. https://api.example.com).
+// Empty string = same-origin relative URLs: works with Vite dev proxy
+// and with express serving client/dist in production.
 const api = axios.create({
-  timeout: 120000,
+  baseURL: import.meta.env.VITE_API_URL || '',
+  timeout: 30000,
 })
 
 let logoutHandler = null
@@ -35,7 +40,7 @@ api.interceptors.request.use((config) => {
     config.headers = config.headers || {}
     config.headers.Authorization = `Bearer ${authToken}`
   }
-  if (csrfToken && !config.headers['X-CSRF-Token']) {
+  if (csrfToken && !config.headers['x-csrf-token']) {
     config.headers = config.headers || {}
     config.headers['x-csrf-token'] = csrfToken
   }
@@ -54,8 +59,13 @@ api.interceptors.response.use(
 
 export const useApiAuth = () => {
   const { token, logout } = useAuth()
-  setAuthToken(token)
-  setLogoutHandler(() => logout())
+  useEffect(() => {
+    setAuthToken(token)
+  }, [token])
+  useEffect(() => {
+    setLogoutHandler(logout)
+    return () => setLogoutHandler(null)
+  }, [logout])
   return api
 }
 

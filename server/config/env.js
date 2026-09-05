@@ -23,6 +23,7 @@ const env = {
   NODE_ENV: optional('NODE_ENV', 'development'),
   MONGODB_URI: required('MONGODB_URI'),
   JWT_SECRET: required('JWT_SECRET'),
+  JWT_EXPIRES_IN: optional('JWT_EXPIRES_IN', '12h'),
   CLIENT_URL: optional('CLIENT_URL', ''),
   EMAIL_USER: optional('EMAIL_USER', ''),
   EMAIL_PASS: optional('EMAIL_PASS', ''),

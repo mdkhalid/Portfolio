@@ -78,8 +78,10 @@ router.post(
     }
 
     const secrets = getJwtSecrets();
+    // Short-lived admin tokens (default 12h, overridable via JWT_EXPIRES_IN).
+    // tokenVersion still invalidates tokens on password change.
     const token = jwt.sign({ id: admin._id.toString(), tv: admin.tokenVersion || 0 }, secrets[0], {
-      expiresIn: '365d',
+      expiresIn: process.env.JWT_EXPIRES_IN || '12h',
       algorithm: 'HS256',
     });
     res.json({ token, username: admin.username });

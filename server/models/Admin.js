@@ -6,6 +6,8 @@ const adminSchema = new mongoose.Schema({
   failedAttempts: { type: Number, default: 0 },
   lockedUntil: { type: Date, default: null },
   tokenVersion: { type: Number, default: 0 },
+  refreshTokenHash: { type: String, select: false, default: null },
+  refreshTokenExpiry: { type: Date, default: null },
 });
 
 adminSchema.virtual('isLocked').get(function () {

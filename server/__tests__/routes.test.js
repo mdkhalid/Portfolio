@@ -162,6 +162,54 @@ describe('POST /api/auth/login', () => {
   });
 });
 
+// ─── Refresh Token Flow Tests ─────────────────────────────────────────────────
+
+describe('Refresh token flow', () => {
+  it('login issues a rotating refresh cookie; logout and password change kill it', async () => {
+    const bcrypt = require('bcryptjs');
+    const Admin = require('../models/Admin');
+
+    await Admin.deleteMany({});
+    await Admin.create({ username: 'admin', password: bcrypt.hashSync('admin123', 10) });
+
+    const agent = request.agent(app);
+    const login = await agent.post('/api/auth/login').send({ username: 'admin', password: 'admin123' });
+    expect(login.status).toBe(200);
+    expect(login.body.token).toBeTruthy();
+
+    // /refresh (relying on the httpOnly cookie the agent stored from login)
+    // must return a fresh access token, different from the login one.
+    const refresh = await agent.post('/api/auth/refresh');
+    expect(refresh.status).toBe(200);
+    expect(refresh.body.token).toBeTruthy();
+    expect(refresh.body.token).not.toBe(login.body.token);
+
+    // The rotated cookie is still valid.
+    const refresh2 = await agent.post('/api/auth/refresh');
+    expect(refresh2.status).toBe(200);
+
+    // Logout invalidates the server-side refresh token → next refresh 401s.
+    const logout = await agent.post('/api/auth/logout');
+    expect(logout.status).toBe(200);
+    const after = await agent.post('/api/auth/refresh');
+    expect(after.status).toBe(401);
+
+    // Password change wipes the stored refresh token too.
+    const agent2 = request.agent(app);
+    const login2 = await agent2.post('/api/auth/login').send({ username: 'admin', password: 'admin123' });
+    expect(login2.status).toBe(200);
+    const csrfRes = await agent2.get('/api/csrf-token');
+    const change = await agent2
+      .post('/api/auth/change-password')
+      .set('Authorization', 'Bearer ' + login2.body.token)
+      .set('x-csrf-token', csrfRes.body.csrfToken)
+      .send({ currentPassword: 'admin123', newPassword: 'admin1234' });
+    expect(change.status).toBe(200);
+    const afterChange = await agent2.post('/api/auth/refresh');
+    expect(afterChange.status).toBe(401);
+  });
+});
+
 // ─── Contact Endpoint Tests ──────────────────────────────────────────────────
 
 describe('POST /api/contact', () => {

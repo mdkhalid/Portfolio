@@ -131,7 +131,10 @@ app.get('/api/postmortems/:slug', postmortemsCtrl.getBySlug);
 app.post('/api/chat', chatLimiter, chatCtrl.chat);
 app.post('/api/ats-score', atsLimiter, atsRouter.uploadMiddleware, atsRouter.score);
 
-app.use('/api/auth', authLimiter, require('./routes/auth'));
+// authLimiter is applied per-route inside routes/auth.js so only the
+// password-login endpoint counts against the brute-force budget (refresh/
+// logout use a high-entropy httpOnly cookie, not a guessable credential).
+app.use('/api/auth', require('./routes/auth'));
 
 app.get('/api/activity', auth, require('./routes/activity').getRecent);
 

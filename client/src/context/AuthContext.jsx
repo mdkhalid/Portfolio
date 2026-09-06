@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react'
-import api, { setAuthToken, fetchCsrfToken } from '../lib/api'
+import api, { setAuthToken, setTokenUpdateHandler, fetchCsrfToken } from '../lib/api'
 
 const AuthContext = createContext()
 
@@ -45,6 +45,18 @@ export function AuthProvider({ children }) {
     }
   }, [token])
 
+  // Register a handler so the axios 401 interceptor can persist a
+  // silently-refreshed JWT back into localStorage + React state.
+  useEffect(() => {
+    setTokenUpdateHandler((newToken) => {
+      if (newToken && user) {
+        saveAuth({ token: newToken, user })
+        setToken(newToken)
+      }
+    })
+    return () => setTokenUpdateHandler(null)
+  }, [user])
+
   const login = useCallback(async (username, password) => {
     const { data } = await api.post('/api/auth/login', { username, password })
     const next = { token: data.token, user: { username: data.username } }
@@ -54,10 +66,13 @@ export function AuthProvider({ children }) {
     await fetchCsrfToken()
   }, [])
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     saveAuth(null)
     setToken(null)
     setUser(null)
+    // Best-effort: invalidate the server-side refresh cookie so a stolen
+    // token can't be silently renewed. Never block on this.
+    try { await api.post('/api/auth/logout') } catch { /* ignore */ }
   }, [])
 
   return (

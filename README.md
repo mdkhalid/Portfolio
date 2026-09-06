@@ -268,7 +268,11 @@ The provider-specific apply steps are also stored in the `ApplyFlow` collection 
 
 - URL: `/admin` (login) → `/admin/dashboard`
 - Manages: profile (incl. section visibility + layout preference + AI provider), skills, experience, education, certifications, projects, resume files, blog articles (draft/published), contact messages, chat leads, **live chat** (queue + active sessions, max 3), and analytics (page views + activity feed)
-- Auth: JWT in localStorage + CSRF-protected mutations; login is rate-limited (5 attempts / 15 min) and locked out for 15 min after 5 failures
+- Auth: short-lived JWT in localStorage + CSRF-protected mutations; a 30-day
+  httpOnly refresh-token cookie is silently rotated on 401 so the admin stays
+  signed in without re-login (password change invalidates everything via
+  `tokenVersion`). Login is rate-limited (5 attempts / 15 min) and locked out
+  for 15 min after 5 failures
 - Live chat admin connections are authenticated with the same JWT over Socket.io
 
 ---

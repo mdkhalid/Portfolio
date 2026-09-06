@@ -35,6 +35,18 @@ export const fetchCsrfToken = async () => {
   }
 }
 
+// Token-update handler lets AuthContext persist a refreshed JWT to
+// localStorage / React state when it silently renews after a 401.
+let tokenUpdateHandler = null
+export const setTokenUpdateHandler = (fn) => {
+  tokenUpdateHandler = fn
+}
+
+// Refresh-on-401 bookkeeping: a single in-flight refresh serves all
+// requests that fail while it's running.
+let isRefreshing = false
+let refreshQueue = []
+
 api.interceptors.request.use((config) => {
   if (authToken) {
     config.headers = config.headers || {}
@@ -47,10 +59,66 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+/**
+ * Attempt a silent JWT refresh via the httpOnly refresh-token cookie.
+ * Returns the new access token on success, or null on failure.
+ */
+async function attemptRefresh() {
+  if (isRefreshing) {
+    // Another refresh is already in flight — queue behind it.
+    return new Promise((resolve) => {
+      refreshQueue.push((token) => resolve(token))
+    })
+  }
+
+  isRefreshing = true
+  try {
+    // The refresh endpoint is authenticated by the httpOnly cookie only — no
+    // bearer needed. (The request interceptor may attach a stale one, which
+    // the server ignores on this route.)
+    const { data } = await api.post('/api/auth/refresh')
+    if (data?.token) {
+      setAuthToken(data.token)
+      if (tokenUpdateHandler) tokenUpdateHandler(data.token)
+      // Serve all queued waiters with the new token.
+      refreshQueue.forEach((cb) => cb(data.token))
+      refreshQueue = []
+      return data.token
+    }
+    throw new Error('Refresh did not return a token')
+  } catch {
+    // Refresh failed (expired/invalid cookie) — everyone queued gets null.
+    refreshQueue.forEach((cb) => cb(null))
+    refreshQueue = []
+    return null
+  } finally {
+    isRefreshing = false
+  }
+}
+
 api.interceptors.response.use(
   (res) => res,
-  (err) => {
-    if (err.response?.status === 401 && logoutHandler) {
+  async (err) => {
+    const { config, response } = err
+
+    // Only retry on auth failure, and never retry the refresh/logout
+    // endpoints themselves (would cause an infinite loop).
+    if (response?.status === 401 && !config._retry &&
+        config.url !== '/api/auth/refresh' && config.url !== '/api/auth/logout') {
+      config._retry = true
+      const newToken = await attemptRefresh()
+      if (newToken) {
+        config.headers = config.headers || {}
+        config.headers.Authorization = `Bearer ${newToken}`
+        return api(config)
+      }
+      // Refresh failed — force logout.
+      if (logoutHandler) logoutHandler()
+      return Promise.reject(err)
+    }
+
+    // Any other 401 (e.g. refresh endpoint returned 401) → log out.
+    if (response?.status === 401 && logoutHandler) {
       logoutHandler()
     }
     return Promise.reject(err)

@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
@@ -6,10 +7,36 @@ const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const { str } = require('../middleware/validate');
 const { redactEmail } = require('../utils/security');
 const Activity = require('../models/Activity');
+const { authLimiter } = require('../middleware/rateLimiter');
 
 const USERNAME_RE = /^[A-Za-z0-9_.-]{3,32}$/;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+
+const REFRESH_TOKEN_EXPIRY_DAYS = 30;
+const REFRESH_COOKIE = 'refresh_token';
+const REFRESH_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax',
+  maxAge: REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
+};
+
+function generateRefreshToken() {
+  return crypto.randomBytes(64).toString('hex');
+}
+
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function setRefreshCookie(res, token) {
+  res.cookie(REFRESH_COOKIE, token, REFRESH_COOKIE_OPTIONS);
+}
+
+function clearRefreshCookie(res) {
+  res.clearCookie(REFRESH_COOKIE, { ...REFRESH_COOKIE_OPTIONS, maxAge: 0 });
+}
 
 function getJwtSecrets() {
   const current = process.env.JWT_SECRET;
@@ -17,8 +44,18 @@ function getJwtSecrets() {
   return previous ? [current, previous] : [current];
 }
 
+function signJwt(admin) {
+  const secrets = getJwtSecrets();
+  return jwt.sign(
+    { id: admin._id.toString(), tv: admin.tokenVersion || 0 },
+    secrets[0],
+    { expiresIn: process.env.JWT_EXPIRES_IN || '12h', algorithm: 'HS256' }
+  );
+}
+
 router.post(
   '/login',
+  authLimiter,
   asyncHandler(async (req, res) => {
     const username = str(req.body, 'username', { min: 3, max: 32 });
     const password = str(req.body, 'password', { min: 8, max: 200 });
@@ -77,13 +114,16 @@ router.post(
       await admin.save();
     }
 
-    const secrets = getJwtSecrets();
-    // Short-lived admin tokens (default 12h, overridable via JWT_EXPIRES_IN).
-    // tokenVersion still invalidates tokens on password change.
-    const token = jwt.sign({ id: admin._id.toString(), tv: admin.tokenVersion || 0 }, secrets[0], {
-      expiresIn: process.env.JWT_EXPIRES_IN || '12h',
-      algorithm: 'HS256',
-    });
+    const token = signJwt(admin);
+
+    // Issue a long-lived refresh token (30d) in an httpOnly cookie so the
+    // client can silently obtain a new short-lived JWT without re-login.
+    const refresh = generateRefreshToken();
+    admin.refreshTokenHash = hashToken(refresh);
+    admin.refreshTokenExpiry = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+    await admin.save();
+    setRefreshCookie(res, refresh);
+
     res.json({ token, username: admin.username });
   })
 );
@@ -108,11 +148,57 @@ router.post(
 
     admin.password = await bcrypt.hash(newPassword, 10);
     admin.tokenVersion = (admin.tokenVersion || 0) + 1;
+    admin.refreshTokenHash = null;
+    admin.refreshTokenExpiry = null;
     admin.failedAttempts = 0;
     admin.lockedUntil = null;
     await admin.save();
 
+    clearRefreshCookie(res);
     res.json({ message: 'Password changed. Please log in again.' });
+  })
+);
+
+router.post(
+  '/refresh',
+  asyncHandler(async (req, res) => {
+    const token = req.cookies?.[REFRESH_COOKIE];
+    if (!token) {
+      return res.status(401).json({ error: 'No refresh token' });
+    }
+
+    const tokenHash = hashToken(token);
+    const admin = await Admin.findOne({
+      refreshTokenHash: tokenHash,
+      refreshTokenExpiry: { $gt: new Date() },
+    }).select('tokenVersion');
+
+    if (!admin) {
+      clearRefreshCookie(res);
+      return res.status(401).json({ error: 'Invalid or expired refresh token' });
+    }
+
+    // Rotate the refresh token on each use (single-use sliding window).
+    const newRefresh = generateRefreshToken();
+    admin.refreshTokenHash = hashToken(newRefresh);
+    admin.refreshTokenExpiry = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+    await admin.save();
+    setRefreshCookie(res, newRefresh);
+
+    res.json({ token: signJwt(admin) });
+  })
+);
+
+router.post(
+  '/logout',
+  asyncHandler(async (req, res) => {
+    const token = req.cookies?.[REFRESH_COOKIE];
+    if (token) {
+      const tokenHash = hashToken(token);
+      await Admin.updateOne({ refreshTokenHash: tokenHash }, { $unset: { refreshTokenHash: 1, refreshTokenExpiry: 1 } });
+    }
+    clearRefreshCookie(res);
+    res.json({ message: 'Logged out' });
   })
 );
 

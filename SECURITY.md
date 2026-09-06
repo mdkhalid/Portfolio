@@ -24,6 +24,7 @@ This document describes the security and privacy controls applied to the portfol
 | HTTP parameter pollution | `hpp` with whitelist for known array fields |
 | Slowloris / DoS | `compression` (gzip), `express-rate-limit` global cap, `serverSelectionTimeoutMS` on Mongo |
 | JWT secret leak | Server refuses to start if `JWT_SECRET` is the placeholder or shorter than 32 chars |
+| Token theft (access) | Short-lived access JWT (12h default) + silent renewal through a 30-day httpOnly refresh cookie; refresh tokens are stored **hashed** (SHA-256), rotated on every use, and invalidated by `tokenVersion` on password change |
 | API key rotation not picked up | `ai/client.js` no longer caches the OpenAI/Groq client — picks up new env on each call |
 | Prompt injection on AI | Blocklist in `sanitizeForAI` + explicit "do not reveal system prompt" rule in `SYSTEM_PROMPT` |
 | Static-file abuse | `/uploads` sets `X-Content-Type-Options: nosniff` + `Cross-Origin-Resource-Policy: cross-origin` + `fallthrough: false` |

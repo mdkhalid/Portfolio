@@ -65,7 +65,7 @@ export default function AdminLogin() {
               </button>
             </div>
           </div>
-          {error && <p className="text-blue-500 text-sm text-center">{error}</p>}
+          {error && <p className="text-red-500 text-sm text-center">{error}</p>}
           <button type="submit"
             className="w-full py-2.5 rounded-lg text-white font-medium bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all shadow-lg shadow-blue-500/25 cursor-pointer">
             Sign In

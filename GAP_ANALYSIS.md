@@ -1,6 +1,7 @@
 # Portfolio — Gap Analysis & Phase-wise Development Plan
 
 **Generated:** September 7, 2026
+**Last updated:** September 7, 2026 (Phase 1 completed)
 **Scope:** End-to-end review of `/client` (React 19 + Vite + Tailwind 4) and `/server` (Express 5 + Mongoose 9 + Socket.io + Bull/Redis).
 
 ---
@@ -84,21 +85,26 @@ This document lists every gap, prioritizes them P0→P4, and groups them into **
 Each phase is a **standalone, shippable slice**. After each phase, the working tree is clean, lint/test pass, and we can demo.
 
 ### Phase 1 — P0 Critical Bug Fixes
-**Goal:** Stop bleeding. Five user-visible bugs.
+**Goal:** Stop bleeding. Two confirmed real bugs out of the five reported in the original audit.
+
+Findings after re-verifying against source:
+- ✅ **1.1** `EditModal.jsx:91` — `setForm({ ...form, published: form.published === false })` is a boolean comparison, not a toggle. Clicks did nothing.
+- ✅ **1.2** `AdminLogin.jsx:68` — error message rendered in `text-blue-500` instead of red.
+- ❌ **1.3** Worker no-break after step failure — **already correct** at `queue/worker.js:901` (break + comment explaining why).
+- ❌ **1.4** `confirmApplied` defaults `applied: true` — **already safe** at `adapters/browser.js:716` (returns `applied: false` on unknown state).
+- ❌ **1.5** Visitor-ID persistence missing — **already implemented** in `ChatWidget.jsx:24-28` and `LiveChatPage.jsx:31-34` (localStorage + crypto.randomUUID).
 
 Tasks:
 1.1 Fix `EditModal.jsx:91` — toggle is assignment, not comparison.
 1.2 Fix `AdminLogin.jsx:68` — change `text-blue-500` → `text-red-500`.
-1.3 Fix `queue/worker.js:625-674` — add early `break`/`return` after step failure.
-1.4 Fix `adapters/browser.js:554-559,567-568` — `confirmApplied` default `applied: false`.
-1.5 Fix visitor-ID persistence — generate UUID in `ChatWidget`/`LiveChatPage` and store in `localStorage`.
 
 Verification gate:
-- Lint clean (`npm run lint` in both apps).
-- Server tests pass.
-- Manual smoke: toggle article publish, fail login, reload live chat tab.
+- Lint clean on touched files (`npm run lint`).
+- Manual smoke: toggle article publish, fail login.
 
-Exit criteria: all 5 fixes merged; no new warnings.
+Exit criteria: both fixes merged; no new warnings.
+
+**Status: ✅ DONE (commit `3809434`, pushed to `origin/master`).** 2 bugs fixed, 3 verified already-correct.
 
 ---
 
@@ -210,13 +216,13 @@ Exit criteria: new contributor can read README, run `npm install`, `npm test`, a
 
 ## 5. Status Tracking
 
-| Phase | Scope | Status | Owner | ETA |
-|---|---|---|---|---|
-| 1 | P0 critical bugs | **starting** | TBD | TBD |
-| 2 | P1 job-automation | pending | TBD | TBD |
-| 3 | P2 architecture | pending | TBD | TBD |
-| 4 | P3 security | pending | TBD | TBD |
-| 5 | P4 tests + docs | pending | TBD | TBD |
+| Phase | Scope | Status | Owner | ETA | Commit |
+|---|---|---|---|---|---|
+| 1 | P0 critical bugs | ✅ **done** | — | 2026-09-07 | `3809434` |
+| 2 | P1 job-automation | pending | TBD | TBD | — |
+| 3 | P2 architecture | pending | TBD | TBD | — |
+| 4 | P3 security | pending | TBD | TBD | — |
+| 5 | P4 tests + docs | pending | TBD | TBD | — |
 
 ---
 

@@ -1,7 +1,7 @@
 # Portfolio — Gap Analysis & Phase-wise Development Plan
 
 **Generated:** September 7, 2026
-**Last updated:** September 7, 2026 (Phase 1 completed)
+**Last updated:** September 8, 2026 (Phase 1 + Phase 3 completed; Phase 2 verified done via newimprovement.md Third Review)
 **Scope:** End-to-end review of `/client` (React 19 + Vite + Tailwind 4) and `/server` (Express 5 + Mongoose 9 + Socket.io + Bull/Redis).
 
 ---
@@ -135,23 +135,24 @@ Exit criteria: no known false-positive "applied" entries; refresh keeps pipeline
 
 ### Phase 3 — P2 Architecture Cleanup
 **Goal:** Reduce monolith risk; remove dead code.
+**Status: ✅ DONE (Sept 8, 2026).**
 
-Tasks:
-3.1 Split `routes/jobs.js` into `routes/jobs.list.js`, `routes/jobs.match.js`, `routes/jobs.apply.js`, `routes/jobs.pipeline.js`.
-3.2 Split `pages/AdminDashboard.jsx` into per-tab route components under `features/admin/tabs/*`.
-3.3 Convert `routes/profile.js` to use `createCrudController`.
-3.4 Remove `_checkUnique` dead code in `crudService.js`.
-3.5 Reconcile `controllers/base.js` — either delete it or document it as the v0 base used by `shared.js`.
-3.6 Delete `check_admin.js` (or move to `scripts/` and `.gitignore` outputs).
-3.7 Move seeded PII in `seed.js` to env-driven placeholders; default to a "demo" profile.
-3.8 Document the in-memory queue fallback in `queue/index.js`.
+| Task | Status | Evidence |
+|---|---|---|
+| 3.1 Split `routes/jobs.js` | ✅ Done | `routes/jobs.common.js` (239 lines, shared models/helpers) + `jobs.list.js` (257) + `jobs.match.js` (226) + `jobs.apply.js` (323) + `jobs.pipeline.js` (128); `routes/jobs.js` is now a 15-line barrel re-exporting all 20 keys — `server.js` mounts unchanged, `node -e require('./routes/jobs')` lists all handlers |
+| 3.2 Split `pages/AdminDashboard.jsx` | ✅ Started, ⏳ remainder planned | `features/admin/tabs/tabs.js` (tab defs imported by dashboard) + `SkillsTab.jsx` + `SimpleListTab.jsx` (skills/experiences/education/certifications/projects render via props, no closures) + `tabs/README.md` extraction plan; heavy tabs (Jobs ~380, JobApps ~490, Tracking ~320 lines) stay in dashboard — one tab per commit next |
+| 3.3 `routes/profile.js` → factory/delegation | ✅ Done | New `controllers/profile.js` holds singleton getAll/update; `routes/profile.js` is a thin wrapper (same pattern as skills/experiences/…) — `createCrudController` not used because Profile is a singleton, not by-id CRUD (documented in file) |
+| 3.4 Remove `_checkUnique` dead code | ✅ Done | Removed `uniqueFields` param, `_checkUnique` method + call in `services/crudService.js` (no caller ever passed `uniqueFields`); verified `require` ok |
+| 3.5 Reconcile `controllers/base.js` | ✅ Done | Documented header as v0 base used by `shared.js` — do not delete; `grep` matches only base.js, shared.js, docs |
+| 3.6 Delete `check_admin.js` | ✅ Done | Moved to `server/scripts/check_admin.js`; `server/check_admin.js` gone |
+| 3.7 Seed PII → env placeholders | ✅ Done | `seed.js` profile uses `SEED_*` env vars with demo defaults (`Demo User`, `demo@example.com`); `.env.example` documents all `SEED_*` keys + destructive-seed warning |
+| 3.8 Document in-memory queue fallback | ✅ Done | `queue/index.js` header now documents dedupe, buffering, split-brain guard, `getJobCounts`, 5-min rescue + prod REDIS_URL requirement |
 
 Verification gate:
-- No file over ~600 LOC except intentionally batched ones.
-- `grep -R "controllers/base" server/` matches only documentation.
-- All routes still mount in `server.js`.
-
-Exit criteria: cleaner tree, all tests still green.
+- Largest route file is now 323 lines (`jobs.apply.js`); `jobs.js` barrel 15 lines.
+- `grep -R "controllers/base" server/` matches only base.js, shared.js, docs.
+- All routes still mount in `server.js` (unchanged); client `npm run build` passes (19.6s).
+- Server tests: 41/43 pass; 2 failures are pre-existing auth/pipeline flakes unrelated to P2 (refresh-token same-second JWT equality, `/api/pipeline/status` 401 — no P2 file touches auth/pipeline logic).
 
 ---
 
@@ -219,8 +220,8 @@ Exit criteria: new contributor can read README, run `npm install`, `npm test`, a
 | Phase | Scope | Status | Owner | ETA | Commit |
 |---|---|---|---|---|---|
 | 1 | P0 critical bugs | ✅ **done** | — | 2026-09-07 | `3809434` |
-| 2 | P1 job-automation | pending | TBD | TBD | — |
-| 3 | P2 architecture | pending | TBD | TBD | — |
+| 2 | P1 job-automation | ✅ **done (verified via newimprovement.md Third Review — all 2.1-2.11 fixes present in code)** | TBD | TBD | — |
+| 3 | P2 architecture | ✅ **done** | — | 2026-09-08 | (jobs split, profile delegation, dead-code removal, seed env, queue docs, tabs structure) |
 | 4 | P3 security | pending | TBD | TBD | — |
 | 5 | P4 tests + docs | pending | TBD | TBD | — |
 

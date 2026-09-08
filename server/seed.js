@@ -22,17 +22,18 @@ const seed = async () => {
     Article.deleteMany({}), Admin.deleteMany({}),
   ]);
 
-  // Profile
+  // Profile — demo defaults, override with SEED_* env vars for real data.
+  // Never commit real PII here; the seed defaults to a "demo" profile.
   await Profile.create({
-    name: 'Mohammad Khalid',
-    email: 'khalid_bib@yahoo.com',
-    phone: '9811291878',
-    location: 'Delhi, India',
-    title: 'Senior Solution Architect',
-    summary: 'Senior Solution Architect with 18 years of experience in designing and delivering scalable, enterprise-grade solutions. Expert in .NET Core, Angular, React, Node.js, and cloud platforms, with a proven record of leading teams, driving innovation, and building high-quality applications.',
-    experienceYears: 18,
-    linkedIn: 'https://www.linkedin.com/in/mohammad-khalid-software-architect/',
-    github: 'https://github.com/mohammad-khalid',
+    name: process.env.SEED_NAME || 'Demo User',
+    email: process.env.SEED_EMAIL || 'demo@example.com',
+    phone: process.env.SEED_PHONE || '',
+    location: process.env.SEED_LOCATION || 'Remote',
+    title: process.env.SEED_TITLE || 'Full Stack Developer',
+    summary: process.env.SEED_SUMMARY || 'Demo profile seeded for local development. Replace via the admin dashboard or SEED_* env vars.',
+    experienceYears: Number(process.env.SEED_EXPERIENCE_YEARS) || 5,
+    linkedIn: process.env.SEED_LINKEDIN || '',
+    github: process.env.SEED_GITHUB || '',
     avatar: '/uploads/avatar.jpg',
   });
 

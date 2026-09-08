@@ -6,11 +6,10 @@
 const { AppError } = require('../middleware/errorHandler');
 
 class CrudService {
-  constructor(Model, { allowedFields = [], requiredFields = [], uniqueFields = [] } = {}) {
+  constructor(Model, { allowedFields = [], requiredFields = [] } = {}) {
     this.Model = Model;
     this.allowedFields = allowedFields;
     this.requiredFields = requiredFields;
-    this.uniqueFields = uniqueFields;
   }
 
   /**
@@ -35,7 +34,6 @@ class CrudService {
   async create(data) {
     const sanitized = this._sanitize(data);
     this._validateRequired(sanitized);
-    await this._checkUnique(sanitized);
     return this.Model.create(sanitized);
   }
 
@@ -86,20 +84,6 @@ class CrudService {
     for (const field of this.requiredFields) {
       if (!data[field] || (typeof data[field] === 'string' && !data[field].trim())) {
         throw new AppError(`${field} is required`, 400, 'MISSING_FIELDS');
-      }
-    }
-  }
-
-  /**
-   * Check uniqueness constraints.
-   */
-  async _checkUnique(data) {
-    for (const field of this.uniqueFields) {
-      if (data[field]) {
-        const existing = await this.Model.findOne({ [field]: data[field] });
-        if (existing) {
-          throw new AppError(`${field} already exists`, 409, 'DUPLICATE');
-        }
       }
     }
   }

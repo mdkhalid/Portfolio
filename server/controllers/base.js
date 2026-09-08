@@ -1,6 +1,9 @@
 /**
- * Base controller factory that wraps a CrudService with asyncHandler
- * for clean Express route handlers.
+ * Base controller factory (v0 base, still in use).
+ * Wraps a CrudService with asyncHandler for clean Express route handlers.
+ * Used by controllers/shared.js -> createCrudController(); do not delete.
+ * `grep -R "controllers/base" server/` should only match this file,
+ * shared.js (importer), and documentation.
  */
 const { asyncHandler } = require('../middleware/errorHandler');
 

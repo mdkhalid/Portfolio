@@ -5,31 +5,13 @@ import { useTheme } from '../context/ThemeContext'
 import { useApiAuth } from '../lib/api'
 import { motion } from 'framer-motion'
 import { io } from 'socket.io-client'
-import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, BarChart3, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, BookOpen, Phone, PhoneCall, MessagesSquare, Send, MessageCircle, Users, Globe, RefreshCw, Loader2, Filter, Search, ChevronLeft, ChevronRight, CheckSquare, Square, Target, Zap, Briefcase as BriefcaseIcon, ExternalLink, EyeOff, ListTodo, History, RotateCcw, Bell, CheckCheck, PauseCircle, PlayCircle, UserCheck, XCircle, Banknote, Star, Upload, LogIn, KeyRound, Share2, FileStack } from 'lucide-react'
+import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, FileText, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, Phone, PhoneCall, MessagesSquare, Send, MessageCircle, Users, Globe, RefreshCw, Loader2, Filter, Search, ChevronLeft, ChevronRight, CheckSquare, Square, Target, Zap, ExternalLink, EyeOff, ListTodo, History, RotateCcw, Bell, CheckCheck, PauseCircle, PlayCircle, UserCheck, XCircle, Banknote, Star, Upload, LogIn, KeyRound, FileStack } from 'lucide-react'
 import EditModal from '../features/admin/components/EditModal'
 import ProfileForm from '../features/admin/components/ProfileForm'
 import SocialTab from '../features/social/SocialTab'
-
-const tabs = [
-  { key: 'profile', label: 'Profile', icon: User },
-  { key: 'skills', label: 'Skills', icon: Code2 },
-  { key: 'experiences', label: 'Experience', icon: Briefcase },
-  { key: 'education', label: 'Education', icon: GraduationCap },
-  { key: 'certifications', label: 'Certifications', icon: Award },
-  { key: 'projects', label: 'Projects', icon: FolderGit2 },
-  { key: 'resumes', label: 'Resumes', icon: FileText },
-  { key: 'generated', label: 'Generated Resumes', icon: FileStack },
-  { key: 'articles', label: 'Blog', icon: BookOpen },
-  { key: 'messages', label: 'Messages', icon: Mail },
-  { key: 'leads', label: 'Leads', icon: Phone },
-  { key: 'livechat', label: 'Live Chat', icon: MessagesSquare },
-  { key: 'analytics', label: 'Analytics', icon: BarChart3 },
-  { key: 'jobs', label: 'Job Sites', icon: Globe },
-  { key: 'job-apps', label: 'Job Applications', icon: BriefcaseIcon },
-  { key: 'tracking', label: 'Tracking', icon: ListTodo },
-  { key: 'manual-apply', label: 'Manual Apply', icon: UserCheck },
-  { key: 'social', label: 'Social', icon: Share2 },
-]
+import { tabs } from '../features/admin/tabs/tabs'
+import SkillsTab from '../features/admin/tabs/SkillsTab'
+import SimpleListTab from '../features/admin/tabs/SimpleListTab'
 
 export default function AdminDashboard() {
   const API = useApiAuth()
@@ -1226,68 +1208,27 @@ export default function AdminDashboard() {
     }
   }
 
-  const renderSkills = () => {
-    const items = data.skills || []
-    return (
-      <div className="space-y-3">
-        {items.map(cat => (
-          <div key={cat._id} className={'p-4 rounded-xl border ' + (dark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200')}>
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="font-semibold">{cat.category}</h4>
-              <div className="flex gap-1">
-                <button onClick={() => setEditing({ collection: 'skills', id: cat._id, data: cat })}
-                  className={'p-1.5 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-200 text-blue-600')}><Edit3 size={14} /></button>
-                <button onClick={() => deleteItem('skills', cat._id)}
-                  className={'p-1.5 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}><Trash2 size={14} /></button>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {cat.items?.map(s => (
-                <span key={s.name} className={'px-2.5 py-1 rounded-lg text-xs font-medium ' + (dark ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-600')}>
-                  {s.name} ({s.level}%)
-                </span>
-              ))}
-            </div>
-          </div>
-        ))}
-        <button onClick={() => setEditing({ collection: 'skills', id: null })}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all cursor-pointer">
-          <Plus size={16} /> Add Category
-        </button>
-      </div>
-    )
-  }
+  const renderSkills = () => (
+    <SkillsTab
+      items={data.skills || []}
+      dark={dark}
+      onEdit={(v) => setEditing(v)}
+      onDelete={deleteItem}
+      onAdd={() => setEditing({ collection: 'skills', id: null })}
+    />
+  )
 
-  const renderList = (collection, titleField) => {
-    const items = data[collection] || []
-    return (
-      <div className="space-y-3">
-        {items.map(item => (
-          <div key={item._id} className={'p-4 rounded-xl border ' + (dark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200')}>
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold">{item[titleField] || 'Untitled'}</p>
-                <p className={'text-sm ' + (dark ? 'text-gray-400' : 'text-gray-500')}>
-                  {item.company || item.institution || item.issuer || item.role || ''}
-                  {item.startDate ? ' | ' + item.startDate + ' - ' + (item.endDate || 'Present') : ''}
-                </p>
-              </div>
-              <div className="flex gap-1 flex-shrink-0">
-                <button onClick={() => setEditing({ collection, id: item._id, data: item })}
-                  className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-blue-400' : 'hover:bg-gray-200 text-blue-600')}><Edit3 size={16} /></button>
-                <button onClick={() => deleteItem(collection, item._id)}
-                  className={'p-2 rounded-lg cursor-pointer ' + (dark ? 'hover:bg-gray-700 text-red-400' : 'hover:bg-gray-200 text-red-600')}><Trash2 size={16} /></button>
-              </div>
-            </div>
-          </div>
-        ))}
-        <button onClick={() => setEditing({ collection, id: null })}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 transition-all cursor-pointer">
-          <Plus size={16} /> Add New
-        </button>
-      </div>
-    )
-  }
+  const renderList = (collection, titleField) => (
+    <SimpleListTab
+      items={data[collection] || []}
+      titleField={titleField}
+      collection={collection}
+      dark={dark}
+      onEdit={(v) => setEditing(v)}
+      onDelete={deleteItem}
+      onAdd={() => setEditing({ collection, id: null })}
+    />
+  )
 
   const renderResumes = () => {
     const items = data.resumes || []

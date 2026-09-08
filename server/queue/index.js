@@ -9,6 +9,17 @@ const REDIS_URL = env.REDIS_URL || 'redis://127.0.0.1:6379';
  * Uses Bull backed by Redis. If Redis is unreachable we fall back to an
  * in-process queue (memory mode) so development keeps working; production
  * should always set REDIS_URL and rely on the Redis-backed queue.
+ *
+ * In-memory fallback semantics (hardened, see newimprovement.md Phase 7.3):
+ * - Bull-style `jobId` dedupe while a job is waiting/active (duplicate add
+ *   absorbed, re-add after completion allowed).
+ * - Jobs added before `queue.process()` registers are buffered and flushed
+ *   on registration (no silent drops).
+ * - `npm run worker` REFUSES to start in memory mode (exit 1) to prevent
+ *   split-brain double-apply from two independent in-process queues.
+ * - `getJobCounts()` returns real waiting/active/completed/failed counters.
+ * - Stuck-application rescue runs on a 5-min interval in the worker.
+ * For production or any multi-process setup, set REDIS_URL.
  */
 
 let _redisClient = null;

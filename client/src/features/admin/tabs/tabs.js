@@ -1,10 +1,9 @@
 import { User, Code2, Briefcase, GraduationCap, Award, FolderGit2, FileText, FileStack, BookOpen, Mail, Phone, MessagesSquare, BarChart3, Globe, Briefcase as BriefcaseIcon, ListTodo, UserCheck, Share2 } from 'lucide-react'
 
-// Per-tab route components live alongside this file (Phase 3.2).
-// Heavy tabs (Jobs, JobApps, Tracking, ManualApply, Resumes, Articles,
-// Messages, Leads, Analytics, LiveChat) still render inside
-// pages/AdminDashboard.jsx and will be extracted incrementally — each
-// extracted tab takes a props contract, never closes over dashboard state.
+// Per-tab components live alongside this file (Phase 3.2, complete).
+// All heavy tabs (Jobs, JobApps, Tracking, ManualApply, Resumes, Articles,
+// Messages, Leads, Analytics, LiveChat) are extracted — each takes a props
+// contract, never closes over dashboard state.
 export const tabs = [
   { key: 'profile', label: 'Profile', icon: User },
   { key: 'skills', label: 'Skills', icon: Code2 },

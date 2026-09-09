@@ -221,7 +221,7 @@ Exit criteria: new contributor can read README, run `npm install`, `npm test`, a
 |---|---|---|---|---|---|
 | 1 | P0 critical bugs | ✅ **done** | — | 2026-09-07 | `3809434` |
 | 2 | P1 job-automation | ✅ **done (verified via newimprovement.md Third Review — all 2.1-2.11 fixes present in code)** | TBD | TBD | — |
-| 3 | P2 architecture | ✅ **done** | — | 2026-09-08 | (jobs split, profile delegation, dead-code removal, seed env, queue docs, tabs structure) |
+| 3 | P2 architecture | ✅ **done** | — | 2026-09-09 | `8e8a5c5` (jobs split, profile delegation, dead-code removal, seed env, queue docs, tabs structure) + `630a210` (11 admin tabs extracted, dashboard 3366 → ~1560 lines) |
 | 4 | P3 security | pending | TBD | TBD | — |
 | 5 | P4 tests + docs | pending | TBD | TBD | — |
 

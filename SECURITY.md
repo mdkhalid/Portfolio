@@ -18,12 +18,12 @@ This document describes the security and privacy controls applied to the portfol
 | Path traversal in resume download | `isPathSafe()` regex + `path.resolve` containment check |
 | Malicious uploads (fake extensions) | Magic-byte sniffing (JPEG/PNG/GIF/WebP/PDF/DOC signatures) before saving |
 | Oversized requests | `express.json({ limit: '100kb' })` + `express.urlencoded({ limit: '100kb' })` + Multer per-route caps |
-| Stack-trace leaks in errors | Global `errorHandler` returns generic message in production |
+| Logs print PII on errors | `errorHandler` scrubs unhandled/infra error logs in production: emails, bearer tokens, and PII-named keys (`password`, `token`, `cookie`, …) are redacted; depth/length-bounded (see `middleware/errorHandler.js`) |
 | CORS misuse | Origin allow-list driven by `CLIENT_URL` env var (not `*`) |
 | Missing security headers | `helmet` (HSTS in prod, `frameguard: deny`, `noSniff`, `xssFilter`) + CSP in prod |
 | HTTP parameter pollution | `hpp` with whitelist for known array fields |
 | Slowloris / DoS | `compression` (gzip), `express-rate-limit` global cap, `serverSelectionTimeoutMS` on Mongo |
-| JWT secret leak | Server refuses to start if `JWT_SECRET` is the placeholder or shorter than 32 chars |
+| JWT secret leak | Server refuses to start if `JWT_SECRET` (or `JWT_SECRET_PREVIOUS`) is a placeholder, well-known weak value (`changeme`, `secret`, …), or shorter than 32 chars — see `server/config/weakSecret.js` |
 | Token theft (access) | Short-lived access JWT (12h default) + silent renewal through a 30-day httpOnly refresh cookie; refresh tokens are stored **hashed** (SHA-256), rotated on every use, and invalidated by `tokenVersion` on password change |
 | API key rotation not picked up | `ai/client.js` no longer caches the OpenAI/Groq client — picks up new env on each call |
 | Prompt injection on AI | Blocklist in `sanitizeForAI` + explicit "do not reveal system prompt" rule in `SYSTEM_PROMPT` |
@@ -45,10 +45,15 @@ This document describes the security and privacy controls applied to the portfol
 
 See `.env.example`. **Never** commit a real `.env` file. Important rules:
 
-- `JWT_SECRET` — minimum 32 characters, never the placeholder. Generate with:
+- `JWT_SECRET` — minimum 32 characters, never the placeholder. The server also refuses to start for well-known weak values (`changeme`, `secret`, `password`, …) or values that embed a placeholder fragment. Generate with:
   ```
   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
   ```
+- `JWT_SECRET_PREVIOUS` — previous secret, set **only during rotation**. New tokens are signed with `JWT_SECRET`; both secrets verify until the old tokens expire. Rotation flow:
+  1. Move the old `JWT_SECRET` value to `JWT_SECRET_PREVIOUS`, set the new secret in `JWT_SECRET`, restart.
+  2. Wait ≥ `JWT_EXPIRES_IN` (default 12h) so every client re-authenticates and refresh tokens are re-issued.
+  3. Remove `JWT_SECRET_PREVIOUS` and restart.
+  Both secrets must pass the same weak-value/length startup check.
 - `CLIENT_URL` — comma-separated list of allowed origins. In production, set this to your real domain(s).
 - `ANALYTICS_SALT` — any random string; changing it invalidates all existing analytics hashes.
 - `OPENAI_API_KEY` / `GROQ_API_KEY` — at least one is required for `/api/chat` and `/api/ats-score`. Without a key, the AI features fall back to a rule-based responder that does not call any external API.
@@ -63,11 +68,12 @@ Before deploying:
 - [ ] `MONGODB_URI` points to a managed instance with auth + TLS.
 - [ ] Server runs behind HTTPS (Caddy, Nginx, or a PaaS that terminates TLS).
 - [ ] Trust proxy is set to the correct hop count (`TRUST_PROXY`).
-- [ ] `npm audit` reports no high/critical vulnerabilities.
+- [ ] `npm audit` reports no high/critical vulnerabilities (remaining moderates documented: `adm-zip` symlink write — the app only reads/creates zips, never extracts attacker-supplied archives; `sanitize-html` 2.17.4 pinned — 2.17.7's advisories target attrs the app's allowlist never permits, and 2.17.7 breaks the Jest CJS test pipeline via ESM-only `htmlparser2`; `bull`→`uuid` — Redis-queue-only dependency).
 - [ ] `helmet` CSP policy in `middleware/security.js` is reviewed and adjusted for your real asset hosts (fonts, images, etc.).
 - [ ] A backup strategy exists for the MongoDB database.
 - [ ] The admin password is ≥ 12 characters and unique to this service.
-- [ ] Logs are not printed to STDOUT in a way that includes PII — review the few `console.log`/`console.error` calls in routes.
+- [ ] Logs are not printed to STDOUT in a way that includes PII — unhandled/infra error logs are scrubbed automatically (`middleware/errorHandler.js`); review remaining `console.log`/`console.error` calls in routes.
+- [ ] Email notification path verified once via `node scripts/test-email.js` (needs `EMAIL_USER`/`EMAIL_PASS`).
 
 ## 5. Reporting a Vulnerability
 

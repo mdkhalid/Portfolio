@@ -1,4 +1,5 @@
 const path = require('path');
+const { isWeakSecret } = require('./weakSecret');
 // override: true makes the .env file the single source of truth, so a stale
 // OS-level environment variable (e.g. an old OPENAI_API_KEY) can never shadow
 // the value configured in .env.
@@ -23,6 +24,7 @@ const env = {
   NODE_ENV: optional('NODE_ENV', 'development'),
   MONGODB_URI: required('MONGODB_URI'),
   JWT_SECRET: required('JWT_SECRET'),
+  JWT_SECRET_PREVIOUS: optional('JWT_SECRET_PREVIOUS', ''),
   JWT_EXPIRES_IN: optional('JWT_EXPIRES_IN', '12h'),
   CLIENT_URL: optional('CLIENT_URL', ''),
   EMAIL_USER: optional('EMAIL_USER', ''),
@@ -57,12 +59,19 @@ const env = {
   SOCIAL_CREDENTIALS_KEY: optional('SOCIAL_CREDENTIALS_KEY', ''),
 };
 
-const isKnownPlaceholder =
-  env.JWT_SECRET === 'your_jwt_secret_here' ||
-  env.JWT_SECRET === 'generate_a_random_secret_that_is_at_least_32_chars_long' ||
-  env.JWT_SECRET.includes('generate_a_random_secret');
-if (isKnownPlaceholder || env.JWT_SECRET.length < 32) {
-  console.error('[startup] FATAL: JWT_SECRET must be set to a strong value (>= 32 chars) and not the placeholder.');
+if (isWeakSecret(env.JWT_SECRET)) {
+  console.error(
+    '[startup] FATAL: JWT_SECRET must be a strong random value (>= 32 chars), ' +
+      'not a placeholder or well-known weak value. Generate one with:\n' +
+      '  node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"'
+  );
+  process.exit(1);
+}
+
+// Previous secret during rotation: optional, but if set it must be strong too
+// (it can still verify tokens, so a placeholder there is just as dangerous).
+if (env.JWT_SECRET_PREVIOUS && isWeakSecret(env.JWT_SECRET_PREVIOUS)) {
+  console.error('[startup] FATAL: JWT_SECRET_PREVIOUS is set but is a placeholder/weak value. Remove it or set it to the real previous secret.');
   process.exit(1);
 }
 

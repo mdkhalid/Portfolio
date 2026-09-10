@@ -1,7 +1,7 @@
 # Portfolio — Gap Analysis & Phase-wise Development Plan
 
 **Generated:** September 7, 2026
-**Last updated:** September 8, 2026 (Phase 1 + Phase 3 completed; Phase 2 verified done via newimprovement.md Third Review)
+**Last updated:** September 10, 2026 (Phases 1–4 completed; Phase 5 pending)
 **Scope:** End-to-end review of `/client` (React 19 + Vite + Tailwind 4) and `/server` (Express 5 + Mongoose 9 + Socket.io + Bull/Redis).
 
 ---
@@ -158,21 +158,24 @@ Verification gate:
 
 ### Phase 4 — P3 Security & Hygiene
 **Goal:** Tighten trust boundary and clean repo.
+**Status: ✅ DONE (Sept 10, 2026).**
 
-Tasks:
-4.1 Add `server/data/login-debug/` to `.gitignore`; purge from history if committed recently; rotate any leaked cookies.
-4.2 Strengthen `env.js` placeholder detection — reject well-known weak keys ("changeme", "secret", "password", empty, <32 chars where required).
-4.3 Verify email notifications actually send (smoke test against Mailtrap/Ethereal); add scheduled digest loop.
-4.4 Add `JWT_SECRET_PREVIOUS` to `.env.example` and document rotation flow.
-4.5 Add operator warning doc for adapter-scraping ToS risk.
-4.6 Audit `errorHandler.js` — strip PII from logs (already noted as LOW).
+| Task | Status | Evidence |
+|---|---|---|
+| 4.1 Purge `server/data/login-debug/` | ✅ Done | `git log --all -- server/data` is empty — the 17 PNGs were **never committed**; `.gitignore` already covers `server/data/` wholesale. Local files remain untracked. No history purge needed. |
+| 4.2 Strengthen `env.js` placeholder detection | ✅ Done | New `server/config/weakSecret.js` (42 well-known weak values + 8 placeholder fragments + ≥32-char rule, case-insensitive); `env.js` fails fast for `JWT_SECRET` **and** `JWT_SECRET_PREVIOUS`; unit tests in `__tests__/weakSecret.test.js` |
+| 4.3 Verify email send + digest loop | ✅ Done | Digest loop already existed (`scheduler.js` tick + 6h interval → `sendDailyDigests()`); now covered by 9 tests in `__tests__/notifications.test.js` (mocked SMTP: instant/daily/none fan-out, rate-cap fallback, digest grouping + delivered-marking). Real-send smoke script: `node scripts/test-email.js` (SKIPs cleanly when EMAIL_USER/EMAIL_PASS unset — current dev `.env` has them empty). |
+| 4.4 `JWT_SECRET_PREVIOUS` in `.env.example` + rotation docs | ✅ Done | `.env.example` documents the 4-step rotation flow; `SECURITY.md` §3 documents it; `env.js` validates it with the same weak-secret check |
+| 4.5 Adapter-scraping ToS operator warning | ✅ Done | New `server/adapters/OPERATOR_WARNING.md` (risks, politeness controls, operator checklist, liability); linked from README "Job automation" banner + notice at top of `adapters/index.js` |
+| 4.6 Strip PII from `errorHandler.js` logs | ✅ Done | `logError()` scrubs unhandled/infra log lines in prod: emails → `j***@domain`, bearer/basic tokens → `[redacted]`, PII-named keys → `[redacted]`, depth/array/length-bounded; dev logs unchanged; 5 tests in `weakSecret.test.js` |
+| (bonus) `npm audit` high/critical | ✅ Done | `npm audit fix` cleared all highs (multer 2.3.0, nodemailer 9.1.1, mongoose 9.9.5, nanoid/postcss/socket.io-parser/browserslist patched in-range). `sanitize-html` deliberately pinned to `~2.17.4`: 2.17.7 pulls ESM-only `htmlparser2@12` which breaks the Jest CJS pipeline (43/43 route tests failed); its advisories target attrs the app's allowlist never permits. `adm-zip` 0.6.0 (bumped from 0.5.9 for the memory-allocation advisory; extraction path smoke-tested). Remaining 4 moderates documented in SECURITY.md. |
 
 Verification gate:
-- `git log -- server/data/login-debug` reviewed; clean.
-- Email send verified in dev.
-- `npm audit` shows no high/critical.
+- `git log --all -- server/data` — empty (never committed).
+- New tests: 22 passing (8 weak-secret + 5 scrub + 9 notifications); routes suite back to its 41/43 baseline (2 pre-existing flakes documented in Phase 3).
+- `npm audit` — 0 high/critical, 4 documented moderates.
 
-Exit criteria: repo hygiene passes, secrets rotation documented.
+Exit criteria: repo hygiene passes, secrets rotation documented. ✅
 
 ---
 
@@ -222,7 +225,7 @@ Exit criteria: new contributor can read README, run `npm install`, `npm test`, a
 | 1 | P0 critical bugs | ✅ **done** | — | 2026-09-07 | `3809434` |
 | 2 | P1 job-automation | ✅ **done (verified via newimprovement.md Third Review — all 2.1-2.11 fixes present in code)** | TBD | TBD | — |
 | 3 | P2 architecture | ✅ **done** | — | 2026-09-09 | `8e8a5c5` (jobs split, profile delegation, dead-code removal, seed env, queue docs, tabs structure) + `630a210` (11 admin tabs extracted, dashboard 3366 → ~1560 lines) |
-| 4 | P3 security | pending | TBD | TBD | — |
+| 4 | P3 security | ✅ **done** | — | 2026-09-10 | this commit (weakSecret guard + tests, email smoke script + digest tests, JWT rotation docs, OPERATOR_WARNING.md, PII log scrubbing, audit fix) |
 | 5 | P4 tests + docs | pending | TBD | TBD | — |
 
 ---

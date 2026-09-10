@@ -220,6 +220,8 @@ Then start: `npm start` (in `server/`).
 
 ## Job automation
 
+> ⚠️ **Operator warning:** the adapters drive automated browsers against third-party job sites, which likely violates their Terms of Service and can get accounts banned. Read [`server/adapters/OPERATOR_WARNING.md`](server/adapters/OPERATOR_WARNING.md) before enabling any site in a live deployment.
+
 The admin dashboard includes a job-search + automated-apply subsystem (the "Job Sites", "Job Applications", "Tracking", and "Manual Apply" tabs). It fetches jobs from supported providers, matches them against the profile, optionally generates a tailored resume, and applies — or routes the job to the Manual Apply list when a provider cannot be automated.
 
 **Supported providers** (in `server/adapters/`):

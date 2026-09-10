@@ -1,3 +1,6 @@
+// Operator notice: these adapters drive automated browsers against
+// third-party job sites, which likely violates their Terms of Service.
+// Read adapters/OPERATOR_WARNING.md before enabling any site in production.
 const naukriAdapter = require('./naukri');
 const indeedAdapter = require('./indeed');
 const genericAdapter = require('./generic');

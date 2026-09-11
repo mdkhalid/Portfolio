@@ -35,6 +35,8 @@ export default function JobAppsTab({
   const formatDate = (date) => {
     if (!date) return 'Unknown'
     const d = new Date(date)
+    // Display-only relative date; Date.now() drift between renders is harmless.
+    // eslint-disable-next-line react-hooks/purity
     const diff = Date.now() - d.getTime()
     const days = Math.floor(diff / (1000 * 60 * 60 * 24))
     if (days < 1) return 'Today'

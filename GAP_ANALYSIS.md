@@ -1,8 +1,8 @@
 # Portfolio — Gap Analysis & Phase-wise Development Plan
 
 **Generated:** September 7, 2026
-**Last updated:** September 10, 2026 (Phases 1–4 completed; Phase 5 pending)
-**Scope:** End-to-end review of `/client` (React 19 + Vite + Tailwind 4) and `/server` (Express 5 + Mongoose 9 + Socket.io + Bull/Redis).
+**Last updated:** September 11, 2026 (Phases 1–4 completed; Phase 5 in progress — client lint fixed, test infra added)
+**Scope:** End-to-end review of `/client` (React 19 + Vite + Tailwind 4) and `/server` (Express 5 + Mongoose 9 + Socket.io + Bull/Redis + Puppeteer).
 
 ---
 
@@ -11,6 +11,13 @@
 The codebase is **broad and ambitious** — a full portfolio + AI chat + ATS checker + blog/postmortems + live chat + admin dashboard (17 tabs) + multi-adapter job auto-apply + AI resume generator + social publisher (LinkedIn/X) — and most of it works. But there are **5 user-visible bugs**, **~10 job-automation correctness issues**, **significant monolith/architecture debt**, **no client tests**, and **doc drift**.
 
 This document lists every gap, prioritizes them P0→P4, and groups them into **5 phases** that are independently shippable. Each phase ends with a verification gate before moving on.
+
+**Phase 5 progress (started Sept 11):**
+- ✅ Client lint errors fixed (54 → 0 errors, 11 pre-existing warnings remain)
+- ✅ Vitest + React Testing Library + jsdom installed in `client/`
+- ✅ `vite.config.js` extended with `test` config (environment jsdom, globals, setupFiles)
+- ✅ `client/test/setup.js` created (localStorage mock, matchMedia, crypto.randomUUID)
+- 🔄 5 smoke tests in progress: router, AuthContext, ChatWidget, EditModal toggle, ATSChecker form submit
 
 ---
 
@@ -181,14 +188,16 @@ Exit criteria: repo hygiene passes, secrets rotation documented. ✅
 
 ### Phase 5 — P4 Tests, Docs, Polish
 **Goal:** Make this maintainable by future-you / future-team.
+**Status: 🔄 IN PROGRESS (started Sept 11, 2026).**
 
-Tasks:
-5.1 Add Vitest + React Testing Library to `client/`; ship 5 smoke tests (router, AuthContext, ChatWidget, EditModal toggle, ATSChecker form submit).
-5.2 Add Jest tests for blog/postmortem CRUD, social OAuth state validation, worker happy-path + step-failure.
-5.3 Add GitHub Actions CI: lint (both), server tests, build client.
-5.4 Update `important_resource/features.md` to reflect 17 admin tabs.
-5.5 Correct `improvement.md` (Issues 2/5/11 not actually fixed); either fix or remove the false claim.
-5.6 Update `README.md` to mention multi-adapter auto-apply and social publisher.
+| Task | Status | Evidence |
+|---|---|---|
+| 5.1 Add Vitest + RTL to `client/`; ship 5 smoke tests | 🔄 In progress | Test infra installed + configured; tests being written |
+| 5.2 Add Jest tests for blog/postmortem CRUD, social OAuth state validation, worker happy-path + step-failure | pending | — |
+| 5.3 Add GitHub Actions CI: lint (both), server tests, build client | pending | — |
+| 5.4 Update `important_resource/features.md` to reflect 18 admin tabs | pending | — |
+| 5.5 Correct `improvement.md` (issues 2/5/11 are now fixed via Phases 1/3; annotate) | pending | — |
+| 5.6 Update `README.md` to mention social publisher + fix known-issues list | pending | — |
 
 Verification gate:
 - CI green on a clean clone.
@@ -226,7 +235,7 @@ Exit criteria: new contributor can read README, run `npm install`, `npm test`, a
 | 2 | P1 job-automation | ✅ **done (verified via newimprovement.md Third Review — all 2.1-2.11 fixes present in code)** | TBD | TBD | — |
 | 3 | P2 architecture | ✅ **done** | — | 2026-09-09 | `8e8a5c5` (jobs split, profile delegation, dead-code removal, seed env, queue docs, tabs structure) + `630a210` (11 admin tabs extracted, dashboard 3366 → ~1560 lines) |
 | 4 | P3 security | ✅ **done** | — | 2026-09-10 | this commit (weakSecret guard + tests, email smoke script + digest tests, JWT rotation docs, OPERATOR_WARNING.md, PII log scrubbing, audit fix) |
-| 5 | P4 tests + docs | pending | TBD | TBD | — |
+| 5 | P4 tests + docs | 🔄 **in progress** | — | 2026-09-11+ | — |
 
 ---
 

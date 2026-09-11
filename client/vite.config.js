@@ -19,4 +19,10 @@ export default defineConfig({
     reportCompressedSize: false,
     chunkSizeWarningLimit: 1000,
   },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./test/setup.js'],
+    include: ['**/*.test.{js,jsx}'],
+  },
 })

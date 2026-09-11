@@ -5,7 +5,7 @@ import { useTheme } from '../context/ThemeContext'
 import { useApiAuth } from '../lib/api'
 import { motion } from 'framer-motion'
 import { io } from 'socket.io-client'
-import { LogOut, Sun, Moon, Plus, Edit3, Trash2, X, FileText, Mail, MailOpen, Eye, Download, Clock, CheckCircle2, AlertCircle, Phone, PhoneCall, MessagesSquare, Send, MessageCircle, Users, Globe, RefreshCw, Loader2, Filter, Search, ChevronLeft, ChevronRight, CheckSquare, Square, Target, Zap, ExternalLink, EyeOff, ListTodo, History, RotateCcw, Bell, CheckCheck, PauseCircle, PlayCircle, UserCheck, XCircle, Banknote, Star, Upload, LogIn, KeyRound, FileStack } from 'lucide-react'
+import { LogOut, Sun, Moon, X, CheckCircle2, AlertCircle, Bell, CheckCheck, PauseCircle, PlayCircle, UserCheck, XCircle, Banknote, KeyRound } from 'lucide-react'
 import EditModal from '../features/admin/components/EditModal'
 import ProfileForm from '../features/admin/components/ProfileForm'
 import SocialTab from '../features/social/SocialTab'
@@ -74,7 +74,6 @@ export default function AdminDashboard() {
   const [selectedJobs, setSelectedJobs] = useState(new Set())
   const [jobDetailPanel, setJobDetailPanel] = useState(null) // { job, matchDetails }
   const [matchingJobs, setMatchingJobs] = useState(false)
-  const [bulkAction, setBulkAction] = useState(null) // 'apply' | 'pass'
   const [applying, setApplying] = useState(false)
   // Persisted so a page refresh can restore the pipeline panel via
   // GET /api/jobs/apply/batch/:id (progress used to vanish on reload).
@@ -239,57 +238,6 @@ export default function AdminDashboard() {
     finally { setActivitiesLoading(false) }
   }, [])
 
-  useEffect(() => {
-    if (activeTab === 'analytics') {
-      if (!analytics) API.get('/api/analytics/stats').then(r => setAnalytics(r.data)).catch(() => {})
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      refreshActivities()
-    }
-    if (activeTab === 'messages') {
-      API.get('/api/messages').then(r => setMessages(r.data)).catch(() => {})
-    }
-    if (activeTab === 'leads') {
-      API.get('/api/leads').then(r => setLeads(r.data.items)).catch(() => {})
-    }
-    if (activeTab === 'jobs') {
-      refreshJobSites()
-    }
-    if (activeTab === 'job-apps') {
-      refreshJobApps()
-      refreshPipeline()
-    }
-    if (activeTab === 'tracking') {
-      refreshTracking()
-    }
-    if (activeTab === 'manual-apply') {
-      refreshManualJobs()
-    }
-    if (activeTab === 'resumes' || activeTab === 'generated') {
-      loadGeneratedResumes()
-    }
-  }, [activeTab, refreshActivities])
-
-  // Refresh job apps when page or filters change
-  useEffect(() => {
-    if (activeTab === 'job-apps') {
-      refreshJobApps()
-    }
-  }, [activeTab, jobApps.page, jobAppsFilters])
-
-  // Refresh tracking when page or filters change
-  useEffect(() => {
-    if (activeTab === 'tracking') {
-      refreshTracking()
-    }
-  }, [activeTab, tracking.page, trackingFilters])
-
-  // Refresh manual-apply list when page or filters change
-  useEffect(() => {
-    if (activeTab === 'manual-apply') {
-      refreshManualJobs()
-    }
-  }, [activeTab, manualJobs.page, manualFilters])
-
   const refreshJobSites = useCallback(async () => {
     setJobSitesLoading(true)
     try {
@@ -353,7 +301,7 @@ export default function AdminDashboard() {
       await API.delete('/api/job-sites/' + name)
       setJobSites(prev => prev.filter(s => s.name !== name))
       showToast('Removed', 'success')
-    } catch (err) { showToast('Remove failed', 'error') }
+    } catch { showToast('Remove failed', 'error') }
   }
 
   const toggleSite = async (name, enabled) => {
@@ -603,13 +551,13 @@ export default function AdminDashboard() {
           setApplyProgress(data.applications.map(toProgress))
         } else {
           setLastBatchId(null)
-          try { localStorage.removeItem('lastApplyBatchId') } catch {}
+          try { localStorage.removeItem('lastApplyBatchId') } catch { /* unavailable */ }
         }
       })
       .catch(() => {
         if (!cancelled) {
           setLastBatchId(null)
-          try { localStorage.removeItem('lastApplyBatchId') } catch {}
+          try { localStorage.removeItem('lastApplyBatchId') } catch { /* unavailable */ }
         }
       })
     return () => { cancelled = true }
@@ -695,7 +643,7 @@ export default function AdminDashboard() {
       // Reload from the server so the persisted matchScore/keywords are the
       // source of truth (the local map above is an optimistic preview).
       await refreshJobApps()
-    } catch (err) {
+    } catch {
       showToast('Matching failed', 'error')
     } finally { setMatchingJobs(false) }
   }
@@ -732,7 +680,7 @@ export default function AdminDashboard() {
         return next
       })
       showToast(`${ids.length} job${ids.length > 1 ? 's' : ''} marked as ${newStatus}`, 'success')
-    } catch (err) {
+    } catch {
       showToast('Action failed', 'error')
     }
   }
@@ -745,12 +693,12 @@ export default function AdminDashboard() {
       setApplying(true)
       const { data } = await API.post('/api/jobs/apply', { jobIds: ids })
       setLastBatchId(data.batchId)
-      try { localStorage.setItem('lastApplyBatchId', data.batchId) } catch {}
+      try { localStorage.setItem('lastApplyBatchId', data.batchId) } catch { /* unavailable */ }
       setApplyProgress([])
       setSelectedJobs(new Set())
       showToast(`${data.queued} jobs queued for automated apply`, 'success')
-    } catch (err) {
-      showToast(err.response?.data?.error || 'Failed to queue jobs', 'error')
+    } catch (e) {
+      showToast(e.response?.data?.error || 'Failed to queue jobs', 'error')
     } finally { setApplying(false) }
   }
 
@@ -1016,8 +964,8 @@ export default function AdminDashboard() {
       const url = URL.createObjectURL(res.data)
       window.open(url, '_blank', 'noopener')
       setTimeout(() => URL.revokeObjectURL(url), 60 * 1000)
-    } catch (err) {
-      showToast(err.response?.data?.error || 'Failed to open resume preview', 'error')
+    } catch {
+      showToast('Failed to open resume preview', 'error')
     }
   }
 
@@ -1026,14 +974,78 @@ export default function AdminDashboard() {
       await API.delete('/api/resume/generated/' + id)
       setGeneratedResumes(prev => prev.filter(r => r._id !== id))
       showToast('Generated resume deleted', 'success')
-    } catch (err) {
+    } catch {
       showToast('Failed to delete resume', 'error')
     }
   }
 
+  // Load the data each tab needs when it becomes active. Declared after all
+  // the refresh callbacks it references (React compiler rules forbid calling
+  // ahead of a declaration inside the same component body).
+  useEffect(() => {
+    if (activeTab === 'analytics') {
+      if (!analytics) API.get('/api/analytics/stats').then(r => setAnalytics(r.data)).catch(() => {})
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      refreshActivities()
+    }
+    if (activeTab === 'messages') {
+      API.get('/api/messages').then(r => setMessages(r.data)).catch(() => {})
+    }
+    if (activeTab === 'leads') {
+      API.get('/api/leads').then(r => setLeads(r.data.items)).catch(() => {})
+    }
+    if (activeTab === 'jobs') {
+      refreshJobSites()
+    }
+    if (activeTab === 'job-apps') {
+      refreshJobApps()
+      refreshPipeline()
+    }
+    if (activeTab === 'tracking') {
+      refreshTracking()
+    }
+    if (activeTab === 'manual-apply') {
+      refreshManualJobs()
+    }
+    if (activeTab === 'resumes' || activeTab === 'generated') {
+      loadGeneratedResumes()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab])
+
+  // Refresh job apps when page or filters change
+  useEffect(() => {
+    if (activeTab === 'job-apps') {
+      // eslint-disable-next-line
+      refreshJobApps()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, jobApps.page, jobAppsFilters])
+
+  // Refresh tracking when page or filters change
+  useEffect(() => {
+    if (activeTab === 'tracking') {
+      // eslint-disable-next-line
+      refreshTracking()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, tracking.page, trackingFilters])
+
+  // Refresh manual-apply list when page or filters change
+  useEffect(() => {
+    if (activeTab === 'manual-apply') {
+      // eslint-disable-next-line
+      refreshManualJobs()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, manualJobs.page, manualFilters])
+
+  // Display-only relative date; Date.now() drift between renders is harmless.
   const formatDate = (date) => {
     if (!date) return 'Unknown'
     const d = new Date(date)
+    // Display-only relative date; Date.now() drift between renders is harmless.
+    // eslint-disable-next-line react-hooks/purity
     const diff = Date.now() - d.getTime()
     const days = Math.floor(diff / (1000 * 60 * 60 * 24))
     if (days < 1) return 'Today'
@@ -1268,7 +1280,7 @@ export default function AdminDashboard() {
   const handleClearApplyProgress = () => {
     setApplyProgress([])
     setLastBatchId(null)
-    try { localStorage.removeItem('lastApplyBatchId') } catch {}
+    try { localStorage.removeItem('lastApplyBatchId') } catch { /* unavailable */ }
   }
 
   const handleAnswerDraft = (key, value) => setAnswerDraft(trackingDetail?._id, key, value)

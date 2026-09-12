@@ -52,20 +52,26 @@ Complete feature inventory of the Portfolio app (Mohammad Khalid, Senior Solutio
 
 ## 7. Admin Dashboard (`/admin/dashboard`)
 
-Protected by `ProtectedRoute` + JWT. **12 tabs**:
+Protected by `ProtectedRoute` + JWT. **18 tabs** (see `client/src/features/admin/tabs/tabs.js`):
 
 1. **Profile** — edit bio, titles, contact info, social links, `aiProvider`, `useBentoTheme`.
 2. **Skills** — CRUD with proficiency levels.
-3. **Experiences** — CRUD (role, company, dates, bullets, order).
+3. **Experience** — CRUD (role, company, dates, bullets, order).
 4. **Education** — CRUD.
 5. **Certifications** — CRUD.
 6. **Projects** — CRUD (name, role, description, dates, bullets, techStack, links, order).
-7. **Resumes** — upload new resume file, list/download, delete.
-8. **Articles** — CRUD with publish/draft.
-9. **Messages** — inbox from contact form.
-10. **Leads** — lead capture records.
-11. **Livechat** — real-time chat console (reply to visitors, end sessions).
-12. **Analytics** — traffic dashboard.
+7. **Resumes** — upload new resume file, list/download, delete (master + other files).
+8. **Generated Resumes** — per-job ATS-tailored resumes (preview/download/delete).
+9. **Blog** — articles CRUD with publish/draft.
+10. **Messages** — inbox from contact form.
+11. **Leads** — lead capture records.
+12. **Live Chat** — real-time chat console (reply to visitors, end sessions).
+13. **Analytics** — traffic dashboard.
+14. **Job Sites** — provider credentials, cookies, browser login, login-all.
+15. **Job Applications** — pipeline/matched jobs with resume badges + auto-apply.
+16. **Tracking** — application records with per-step progress.
+17. **Manual Apply** — external-redirect / custom-site jobs to apply in the browser.
+18. **Social** — LinkedIn + X publisher (OAuth connect, AI compose, preview, publish, history).
 
 - All CRUD backed by the `createCrudController` factory (field allow-listing, required checks, validation).
 - Toasts on success/error; modal forms for edit.

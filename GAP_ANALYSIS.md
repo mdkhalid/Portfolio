@@ -1,7 +1,7 @@
 # Portfolio — Gap Analysis & Phase-wise Development Plan
 
 **Generated:** September 7, 2026
-**Last updated:** September 11, 2026 (Phases 1–4 completed; Phase 5 in progress — client lint fixed, test infra added)
+**Last updated:** September 12, 2026 (Phases 1–5 completed)
 **Scope:** End-to-end review of `/client` (React 19 + Vite + Tailwind 4) and `/server` (Express 5 + Mongoose 9 + Socket.io + Bull/Redis + Puppeteer).
 
 ---
@@ -12,12 +12,12 @@ The codebase is **broad and ambitious** — a full portfolio + AI chat + ATS che
 
 This document lists every gap, prioritizes them P0→P4, and groups them into **5 phases** that are independently shippable. Each phase ends with a verification gate before moving on.
 
-**Phase 5 progress (started Sept 11):**
+**Phase 5 progress (completed Sept 12):**
 - ✅ Client lint errors fixed (54 → 0 errors, 11 pre-existing warnings remain)
 - ✅ Vitest + React Testing Library + jsdom installed in `client/`
 - ✅ `vite.config.js` extended with `test` config (environment jsdom, globals, setupFiles)
 - ✅ `client/test/setup.js` created (localStorage mock, matchMedia, crypto.randomUUID)
-- 🔄 5 smoke tests in progress: router, AuthContext, ChatWidget, EditModal toggle, ATSChecker form submit
+- ✅ 5 smoke tests shipped, 17/17 passing: router (`App.test.jsx`), AuthContext, ChatWidget, EditModal toggle, ATSChecker form submit
 
 ---
 
@@ -188,16 +188,16 @@ Exit criteria: repo hygiene passes, secrets rotation documented. ✅
 
 ### Phase 5 — P4 Tests, Docs, Polish
 **Goal:** Make this maintainable by future-you / future-team.
-**Status: 🔄 IN PROGRESS (started Sept 11, 2026).**
+**Status: ✅ DONE (Sept 12, 2026).**
 
 | Task | Status | Evidence |
 |---|---|---|
-| 5.1 Add Vitest + RTL to `client/`; ship 5 smoke tests | 🔄 In progress | Test infra installed + configured; tests being written |
-| 5.2 Add Jest tests for blog/postmortem CRUD, social OAuth state validation, worker happy-path + step-failure | pending | — |
-| 5.3 Add GitHub Actions CI: lint (both), server tests, build client | pending | — |
-| 5.4 Update `important_resource/features.md` to reflect 18 admin tabs | pending | — |
-| 5.5 Correct `improvement.md` (issues 2/5/11 are now fixed via Phases 1/3; annotate) | pending | — |
-| 5.6 Update `README.md` to mention social publisher + fix known-issues list | pending | — |
+| 5.1 Add Vitest + RTL to `client/`; ship 5 smoke tests | ✅ Done | `App.test.jsx` (router), `AuthContext.test.jsx`, `ChatWidget.test.jsx`, `EditModal.test.jsx` (Phase-1 toggle regression), `ATSCheckerPage.test.jsx` — `npm test`: 5 files, 17/17 passing |
+| 5.2 Add Jest tests for blog/postmortem CRUD, social OAuth state validation, worker happy-path + step-failure | ✅ Done | `server/__tests__/phase5.test.js` (15 tests: article CRUD + invalid input, postmortem CRUD + bad severity, OAuth state round-trip/tamper/expiry/PKCE + guarded entry points, STEPS order, failure-reason mapping, batch_complete counts, active-batch guard, login_failed requeue); `mapNotAppliedReason` + `STEPS` exported from `queue/worker.js` for testability |
+| 5.3 Add GitHub Actions CI: lint (both), server tests, build client | ✅ Done | `.github/workflows/ci.yml` — client-lint, client-test, client-build, server-test (MongoDB 7 service) |
+| 5.4 Update `important_resource/features.md` to reflect 18 admin tabs | ✅ Done | §7 rewritten: 12 → 18 tabs matching `tabs.js` (incl. Generated Resumes, Job Sites/Applications, Tracking, Manual Apply, Social) |
+| 5.5 Correct `improvement.md` (issues 2/5/11 are now fixed via Phases 1/3; annotate) | ✅ Done | Phase-5 annotation appended to the status block with per-issue evidence |
+| 5.6 Update `README.md` to mention social publisher + fix known-issues list | ✅ Done | Features table + new "Social publisher" section; removed fixed AdminLogin color note (code is `text-red-500`) |
 
 Verification gate:
 - CI green on a clean clone.
@@ -235,7 +235,7 @@ Exit criteria: new contributor can read README, run `npm install`, `npm test`, a
 | 2 | P1 job-automation | ✅ **done (verified via newimprovement.md Third Review — all 2.1-2.11 fixes present in code)** | TBD | TBD | — |
 | 3 | P2 architecture | ✅ **done** | — | 2026-09-09 | `8e8a5c5` (jobs split, profile delegation, dead-code removal, seed env, queue docs, tabs structure) + `630a210` (11 admin tabs extracted, dashboard 3366 → ~1560 lines) |
 | 4 | P3 security | ✅ **done** | — | 2026-09-10 | this commit (weakSecret guard + tests, email smoke script + digest tests, JWT rotation docs, OPERATOR_WARNING.md, PII log scrubbing, audit fix) |
-| 5 | P4 tests + docs | 🔄 **in progress** | — | 2026-09-11+ | — |
+| 5 | P4 tests + docs | ✅ **done** | — | 2026-09-12 | this commit (5 client smoke tests 17/17, `phase5.test.js` 15/15, CI workflow, docs 5.4–5.6) |
 
 ---
 

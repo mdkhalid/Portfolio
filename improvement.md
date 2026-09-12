@@ -37,6 +37,14 @@ Full-stack bug & inconsistency review. Confirmed findings, ordered by impact. Ea
 >
 > The rest of this document is kept as historical reference. For the newer job-pipeline improvement
 > plan and its live status, see `newimprovement.md`.
+>
+> > **Phase 5 annotation (Sept 2026):** GAP_ANALYSIS originally flagged this claim as
+> > premature — Issues **2** (Published/Draft toggle), **5** (visitor identity), and
+> > **11** (dead/duplicate profile controller + `base.js`) are now genuinely fixed:
+> > Issue 2 via Phase 1 (`3809434`, toggle is a real assignment in `EditModal.jsx:91`,
+> > covered by `EditModal.test.jsx`); Issue 5 verified already-correct in Phase 1
+> > (`ChatWidget.jsx:24-28`, `LiveChatPage.jsx:31-34`, covered by `ChatWidget.test.jsx`);
+> > Issue 11 via Phase 3 (`8e8a5c5`, profile delegation + dead-code removal).
 
 ---
 

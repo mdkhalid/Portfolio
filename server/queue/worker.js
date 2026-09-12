@@ -930,4 +930,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { startWorker, setIO, maybeNotifyBatchComplete, requeueLoginFailedApps };
+module.exports = { startWorker, setIO, maybeNotifyBatchComplete, requeueLoginFailedApps, mapNotAppliedReason, STEPS };

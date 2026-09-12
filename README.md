@@ -21,6 +21,7 @@ The site includes a classic portfolio layout, a bento-grid layout, an AI resume 
 | **Blog** (`/blog`, `/blog/:slug`) | Markdown articles with Mermaid diagrams, reading time, tags, SEO |
 | **Postmortems** (`/postmortems`) | Production incident write-ups with severity, timeline, action items |
 | **Live Chat** (`/live-chat`) | Visitors chat with the admin in real time (Socket.io) with queueing (max 3 active) and session history |
+| **Social** (admin tab) | LinkedIn + X publisher: OAuth connect, AI-generated post + image, live preview, one-click publish, history. See [`SOCIAL_PUBLISHER_PLAN.md`](./SOCIAL_PUBLISHER_PLAN.md) |
 | **Admin** (`/admin`) | Login + dashboard: manage profile, skills, experience, education, certs, projects, resumes, articles, messages, leads, live chat, analytics |
 | **Analytics** | Anonymized page views (IPs hashed with `ANALYTICS_SALT`) + activity feed |
 | **Security** | JWT auth (secret rotation), CSRF double-submit cookies, rate limiting, helmet/CSP, CORS whitelist, input sanitization, path-traversal protection, magic-byte file validation |
@@ -266,6 +267,20 @@ The provider-specific apply steps are also stored in the `ApplyFlow` collection 
 
 ---
 
+## Social publisher
+
+The admin dashboard's **Social** tab publishes AI-written posts to LinkedIn and X. Full plan and setup guide: [`SOCIAL_PUBLISHER_PLAN.md`](./SOCIAL_PUBLISHER_PLAN.md).
+
+- **Connect** — official OAuth 2.0 (PKCE for X, HMAC-signed state); tokens encrypted with `SOCIAL_CREDENTIALS_KEY`
+- **Compose** — topic notes → content prompt + image prompt → generated post text + image (async Bull jobs, Socket.io progress)
+- **Preview** — LinkedIn lookalike card with inline editing + independent text/image regeneration
+- **Publish** — LinkedIn image upload + post, then an X teaser linking to the LinkedIn URL; counters increment only on confirmed success
+- **History** — paginated archive + per-post detail with publish log
+
+**Relevant environment variables** (all in `server/.env.example`): `CONTENT_AI_*`, `IMAGE_AI_*`, `LINKEDIN_CLIENT_ID/SECRET`, `X_CLIENT_ID/SECRET`, `SOCIAL_CREDENTIALS_KEY`, `SERVER_BASE_URL`.
+
+---
+
 ## Admin dashboard
 
 - URL: `/admin` (login) → `/admin/dashboard`
@@ -281,7 +296,6 @@ The provider-specific apply steps are also stored in the `ApplyFlow` collection 
 
 ## Notes & gotchas
 
-- **Known UI issue:** the admin login page renders error messages in blue (`text-blue-500`) instead of red.
 - **Resume file cleanup**: replacing or deleting a resume via the admin leaves the old file on disk in `server/uploads/`.
 - **Analytics counts page loads once per visit** to the home/bento pages; logged-in admin views are excluded.
 - **CSP in production** requires all first-party scripts/styles; inline styles are allowed, third-party trackers are not (by design).
